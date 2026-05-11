@@ -1,0 +1,311 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Agent/Process Scheduler with neural weight modulation
+-- Implements priority queues, time quantum, and adaptive scheduling
+
+module Scheduler {|
+
+  requires :: [:memory, :signals]
+  version :: "0.1.0"
+
+  -- Process states
+  enum ProcessState {|
+    :Ready
+    :Running
+    :Blocked
+    :Sleeping
+    :Terminated
+    :Suspended
+  |}
+
+  -- Priority levels (0 = highest)
+  enum PriorityClass {|
+    :Realtime    -- 0: kernel daemons, watchdog
+    :High        -- 1: signal handlers, syscall dispatch
+    :Normal      -- 2: user agents, standard processes
+    :Low         -- 3: background tasks, GC
+    :Idle        -- 4: only when nothing else runs
+  |}
+
+  -- Process Control Block
+  struct PCB {|
+    pid :: UInt32
+    parent_pid :: UInt32
+    name :: String
+    state :: ProcessState
+    priority :: PriorityClass
+    neural_weight :: Float64          -- modulated by activity/relevance
+    time_quantum :: Duration          -- allocated CPU slice
+    time_used :: Duration             -- consumed this epoch
+    activation_level :: Float64       -- symbolic activation (0.0 - 1.0)
+    capabilities :: List[Capability]
+    memory_slots :: List[SlotId]
+    signal_mask :: UInt64
+    ipc_channels :: List[ChannelId]
+    created_at :: Timestamp
+    last_scheduled :: Timestamp
+    context :: ProcessContext         -- saved register state
+  |}
+
+  -- Scheduler configuration
+  config SchedulerConfig {|
+    base_quantum :: 50ms
+    max_quantum :: 500ms
+    min_quantum :: 5ms
+    epoch_duration :: 1s
+    max_processes :: 4096
+    neural_decay_rate :: 0.05
+    activation_threshold :: 0.1
+    preemption_enabled :: true
+    weight_modulation_enabled :: true
+  |}
+
+  -- Priority queues (one per priority class)
+  state ready_queues :: Map[PriorityClass, Queue[PCB]] = {|
+    :Realtime -> Queue.empty()
+    :High     -> Queue.empty()
+    :Normal   -> Queue.empty()
+    :Low      -> Queue.empty()
+    :Idle     -> Queue.empty()
+  |}
+
+  state running_process :: Option[PCB] = None
+  state process_table :: Map[UInt32, PCB] = Map.empty()
+  state next_pid :: UInt32 = 1
+  state epoch_clock :: Duration = 0ms
+
+  -- Neural weight calculation
+  -- Combines base priority with activation level and recency
+  service compute_neural_weight(pcb :: PCB) -> Float64 {|
+    let base_weight = match pcb.priority {|
+      :Realtime -> 1.0
+      :High     -> 0.8
+      :Normal   -> 0.5
+      :Low      -> 0.3
+      :Idle     -> 0.1
+    |}
+
+    let recency_factor = 1.0 / (1.0 + elapsed_since(pcb.last_scheduled) / 1000.0)
+    let activation = pcb.activation_level
+
+    -- Weighted combination with neural modulation
+    let weight = (base_weight * 0.4) + (activation * 0.4) + (recency_factor * 0.2)
+
+    -- Apply decay if process has been idle
+    if pcb.state == :Ready and elapsed_since(pcb.last_scheduled) > 5s {|
+      return weight * (1.0 - SchedulerConfig.neural_decay_rate)
+    |}
+
+    return clamp(weight, 0.0, 1.0)
+  |}
+
+  -- Compute time quantum based on neural weight
+  service compute_quantum(pcb :: PCB) -> Duration {|
+    let weight = compute_neural_weight(pcb)
+    let quantum = SchedulerConfig.base_quantum * (1.0 + weight)
+    return clamp(quantum, SchedulerConfig.min_quantum, SchedulerConfig.max_quantum)
+  |}
+
+  -- Spawn a new process
+  syscall spawn(name :: String, entry :: Symbol, priority :: PriorityClass,
+                caps :: List[Capability]) -> Result[UInt32, Error] {|
+    if Map.size(process_table) >= SchedulerConfig.max_processes {|
+      return Err(:ProcessLimitReached)
+    |}
+
+    let pid = next_pid
+    next_pid = next_pid + 1
+
+    let pcb = PCB {|
+      pid :: pid
+      parent_pid :: running_process.map(p -> p.pid).unwrap_or(0)
+      name :: name
+      state :: :Ready
+      priority :: priority
+      neural_weight :: 0.5
+      time_quantum :: SchedulerConfig.base_quantum
+      time_used :: 0ms
+      activation_level :: 0.5
+      capabilities :: caps
+      memory_slots :: []
+      signal_mask :: 0
+      ipc_channels :: []
+      created_at :: now()
+      last_scheduled :: now()
+      context :: ProcessContext.new(entry)
+    |}
+
+    process_table = Map.insert(process_table, pid, pcb)
+    ready_queues[priority] = Queue.enqueue(ready_queues[priority], pcb)
+
+    emit :ProcessSpawned with {| pid :: pid, name :: name, priority :: priority |}
+    return Ok(pid)
+  |}
+
+  -- Yield current process voluntarily
+  syscall yield() -> Void {|
+    match running_process {|
+      Some(pcb) -> {|
+        let updated = pcb with {|
+          state :: :Ready
+          time_used :: 0ms
+          activation_level :: pcb.activation_level * 0.95  -- slight decay on yield
+        |}
+        process_table = Map.insert(process_table, pcb.pid, updated)
+        ready_queues[pcb.priority] = Queue.enqueue(ready_queues[pcb.priority], updated)
+        running_process = None
+        invoke schedule()
+      |}
+      None -> invoke schedule()
+    |}
+  |}
+
+  -- Terminate a process
+  syscall terminate(pid :: UInt32, reason :: Symbol) -> Result[Void, Error] {|
+    match Map.get(process_table, pid) {|
+      Some(pcb) -> {|
+        -- Release all resources
+        for slot in pcb.memory_slots {|
+          invoke Memory.free(slot)
+        |}
+        for chan in pcb.ipc_channels {|
+          invoke IPC.close_channel(chan)
+        |}
+
+        let terminated = pcb with {| state :: :Terminated |}
+        process_table = Map.insert(process_table, pid, terminated)
+
+        -- Remove from ready queue if present
+        ready_queues[pcb.priority] = Queue.remove(ready_queues[pcb.priority],
+                                                   p -> p.pid == pid)
+
+        if running_process.map(p -> p.pid) == Some(pid) {|
+          running_process = None
+        |}
+
+        emit :ProcessTerminated with {| pid :: pid, reason :: reason |}
+
+        -- Notify parent
+        signal :SIGCHLD to pcb.parent_pid with {| child_pid :: pid |}
+
+        invoke schedule()
+        return Ok(())
+      |}
+      None -> return Err(:NoSuchProcess)
+    |}
+  |}
+
+  -- Suspend a process (stop scheduling it)
+  syscall suspend(pid :: UInt32) -> Result[Void, Error] {|
+    match Map.get(process_table, pid) {|
+      Some(pcb) -> {|
+        let suspended = pcb with {| state :: :Suspended |}
+        process_table = Map.insert(process_table, pid, suspended)
+        ready_queues[pcb.priority] = Queue.remove(ready_queues[pcb.priority],
+                                                   p -> p.pid == pid)
+        emit :ProcessSuspended with {| pid :: pid |}
+        return Ok(())
+      |}
+      None -> return Err(:NoSuchProcess)
+    |}
+  |}
+
+  -- Resume a suspended process
+  syscall resume(pid :: UInt32) -> Result[Void, Error] {|
+    match Map.get(process_table, pid) {|
+      Some(pcb) where pcb.state == :Suspended -> {|
+        let resumed = pcb with {| state :: :Ready |}
+        process_table = Map.insert(process_table, pid, resumed)
+        ready_queues[pcb.priority] = Queue.enqueue(ready_queues[pcb.priority], resumed)
+        emit :ProcessResumed with {| pid :: pid |}
+        return Ok(())
+      |}
+      Some(_) -> return Err(:InvalidState)
+      None -> return Err(:NoSuchProcess)
+    |}
+  |}
+
+  -- Main scheduling algorithm
+  -- Uses neural-weighted multilevel feedback queue
+  service schedule() -> Void {|
+    -- Save context of current process if preempting
+    match running_process {|
+      Some(current) where current.time_used >= current.time_quantum -> {|
+        -- Time quantum expired, preempt
+        let demoted = current with {|
+          state :: :Ready
+          time_used :: 0ms
+          neural_weight :: compute_neural_weight(current)
+        |}
+        process_table = Map.insert(process_table, current.pid, demoted)
+        ready_queues[current.priority] = Queue.enqueue(ready_queues[current.priority], demoted)
+        running_process = None
+      |}
+      Some(_) -> return  -- still has quantum, keep running
+      None -> ()         -- no process running, pick one
+    |}
+
+    -- Select next process: scan queues from highest priority
+    let selected = None
+    for priority_class in [:Realtime, :High, :Normal, :Low, :Idle] {|
+      if not Queue.is_empty(ready_queues[priority_class]) {|
+        -- Within same priority, pick highest neural weight
+        if SchedulerConfig.weight_modulation_enabled {|
+          selected = Queue.extract_max(ready_queues[priority_class],
+                                        p -> compute_neural_weight(p))
+        |} else {|
+          selected = Queue.dequeue(ready_queues[priority_class])
+        |}
+        break
+      |}
+    |}
+
+    match selected {|
+      Some(next_pcb) -> {|
+        let quantum = compute_quantum(next_pcb)
+        let dispatched = next_pcb with {|
+          state :: :Running
+          time_quantum :: quantum
+          time_used :: 0ms
+          last_scheduled :: now()
+          neural_weight :: compute_neural_weight(next_pcb)
+        |}
+        running_process = Some(dispatched)
+        process_table = Map.insert(process_table, dispatched.pid, dispatched)
+        invoke context_switch(dispatched.context)
+      |}
+      None -> {|
+        -- No runnable process, enter idle
+        invoke idle_loop()
+      |}
+    |}
+  |}
+
+  -- Timer interrupt handler: called every tick
+  on :TimerTick {|
+    epoch_clock = epoch_clock + 1ms
+
+    match running_process {|
+      Some(current) -> {|
+        let updated = current with {| time_used :: current.time_used + 1ms |}
+        running_process = Some(updated)
+
+        -- Check if quantum expired
+        if updated.time_used >= updated.time_quantum and SchedulerConfig.preemption_enabled {|
+          invoke schedule()
+        |}
+      |}
+      None -> invoke schedule()
+    |}
+
+    -- Epoch boundary: recalculate all neural weights
+    if epoch_clock >= SchedulerConfig.epoch_duration {|
+      epoch_clock = 0ms
+      for pid, pcb in process_table where pcb.state == :Ready {|
+        let new_weight = compute_neural_weight(pcb)
+        let updated = pcb with {| neural_weight :: new_weight |}
+        process_table = Map.insert(process_table, pid, updated)
+      |}
+    |}
+  |}
+
+|}

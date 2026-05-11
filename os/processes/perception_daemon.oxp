@@ -1,0 +1,194 @@
+-- OpenXnet Neuro-Symbolic OS
+-- Perception Daemon: transforms raw input events into structured percepts
+-- Applies pattern matching from symbols/patterns.nxs
+
+process PerceptionDaemon :: :daemon {|
+
+  requires :: [:scheduler, :signals, :ipc, :memory, :syscall]
+  version :: "0.1.0"
+
+  enum PerceptClass {|
+    :Visual
+    :Textual
+    :Temporal
+    :Contextual
+    :Composite
+    :Unknown
+  |}
+
+  struct RawEvent {|
+    id :: UInt64
+    source :: Symbol
+    modality :: Symbol
+    payload :: Any
+    priority :: Float64
+    timestamp :: Timestamp
+  |}
+
+  struct Percept {|
+    id :: UInt64
+    class :: PerceptClass
+    confidence :: Float64
+    symbols :: List[Symbol]
+    source_event_id :: UInt64
+    activation :: Float64
+    timestamp :: Timestamp
+  |}
+
+  struct PatternRule {|
+    pattern :: Symbol
+    conditions :: List[Condition]
+    output_class :: PerceptClass
+    weight :: Float64
+  |}
+
+  config PerceptionConfig {|
+    max_queue_depth :: 512
+    confidence_threshold :: 0.6
+    activation_boost :: 0.4
+    batch_size :: 16
+    feedback_learning_rate :: 0.05
+  |}
+
+  state event_queue :: Queue[RawEvent] = Queue.empty()
+  state pattern_registry :: Map[Symbol, PatternRule] = Map.empty()
+  state percept_counter :: UInt64 = 0
+  state events_processed :: UInt64 = 0
+
+  channels {|
+    channel raw_input :: Recv<RawEvent>
+    channel percept_out :: Send<Percept>
+    channel feedback :: Duplex<FeedbackMessage>
+  |}
+
+  lifecycle {|
+    on init {|
+      invoke load_patterns_from_store()
+      emit :PerceptionReady with {| patterns :: Map.size(pattern_registry) |}
+    |}
+
+    on suspend {|
+      invoke flush_queue()
+      emit :PerceptionSuspended with {| queued :: Queue.size(event_queue) |}
+    |}
+
+    on resume {|
+      invoke load_patterns_from_store()
+    |}
+
+    on terminate {|
+      invoke flush_queue()
+      emit :PerceptionTerminated with {| total_processed :: events_processed |}
+    |}
+  |}
+
+  behavior {|
+    on recv(event) from raw_input {|
+      if Queue.size(event_queue) >= PerceptionConfig.max_queue_depth {|
+        Queue.extract_min(event_queue, e -> e.priority)
+      |}
+      event_queue = Queue.enqueue(event_queue, event)
+      if Queue.size(event_queue) >= PerceptionConfig.batch_size {|
+        invoke process_batch()
+      |}
+    |}
+
+    on recv(fb) from feedback {|
+      match fb.type {|
+        :correction -> invoke apply_correction(fb.percept_id, fb.correct_class)
+        :reinforcement -> invoke reinforce_pattern(fb.pattern_symbol, fb.reward)
+        :pattern_update -> invoke register_pattern(fb.pattern)
+      |}
+    |}
+
+    on signal(:TICK) {|
+      if not Queue.is_empty(event_queue) {| invoke process_batch() |}
+    |}
+
+    on signal(:SIGMEM) {|
+      invoke shed_low_weight_patterns()
+    |}
+  |}
+
+  service process_batch() -> Void {|
+    let count = min(PerceptionConfig.batch_size, Queue.size(event_queue))
+    for _ in List.range(0, count) {|
+      match Queue.dequeue(event_queue) {|
+        Some(event) -> {|
+          let percept = invoke classify_event(event)
+          emit percept_out <- percept
+          events_processed = events_processed + 1
+        |}
+        None -> ()
+      |}
+    |}
+  |}
+
+  service classify_event(event :: RawEvent) -> Percept {|
+    let best_class = :Unknown
+    let best_confidence = 0.0
+    let matched = []
+
+    for sym, rule in pattern_registry {|
+      let score = invoke evaluate_pattern(rule, event)
+      if score > best_confidence {|
+        best_confidence = score
+        best_class = rule.output_class
+        matched = List.append(matched, sym)
+      |}
+    |}
+
+    if best_confidence < PerceptionConfig.confidence_threshold {|
+      best_class = :Unknown
+    |}
+
+    percept_counter = percept_counter + 1
+    return Percept {|
+      id :: percept_counter
+      class :: best_class
+      confidence :: best_confidence
+      symbols :: matched
+      source_event_id :: event.id
+      activation :: best_confidence * PerceptionConfig.activation_boost
+      timestamp :: now()
+    |}
+  |}
+
+  service evaluate_pattern(rule :: PatternRule, event :: RawEvent) -> Float64 {|
+    let matched = 0
+    for cond in rule.conditions {|
+      if invoke check_condition(cond, event) {| matched = matched + 1 |}
+    |}
+    let total = List.length(rule.conditions)
+    if total == 0 {| return 0.0 |}
+    return (matched as Float64 / total as Float64) * rule.weight
+  |}
+
+  service load_patterns_from_store() -> Void {|
+    let slots = invoke Memory.query_by_tag(:pattern)
+    for slot in slots {|
+      match slot.symbol {|
+        Some(sym) -> {|
+          let rule = invoke decode_pattern_rule(sym, slot.metadata)
+          pattern_registry = Map.insert(pattern_registry, sym, rule)
+        |}
+        None -> ()
+      |}
+    |}
+  |}
+
+  service apply_correction(percept_id :: UInt64, correct_class :: PerceptClass) -> Void {|
+    for sym, rule in pattern_registry where rule.output_class != correct_class {|
+      let adjusted = rule with {|
+        weight :: clamp(rule.weight - PerceptionConfig.feedback_learning_rate, 0.1, 1.0)
+      |}
+      pattern_registry = Map.insert(pattern_registry, sym, adjusted)
+    |}
+  |}
+
+  service shed_low_weight_patterns() -> Void {|
+    pattern_registry = Map.filter(pattern_registry, (_, rule) -> rule.weight >= 0.2)
+    emit :PatternsShed with {| remaining :: Map.size(pattern_registry) |}
+  |}
+
+|}

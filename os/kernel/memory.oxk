@@ -1,0 +1,358 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Symbolic Memory Pool Manager
+-- Manages symbol slots with activation decay, reference counting, and GC
+
+module Memory {|
+
+  requires :: []
+  version :: "0.1.0"
+
+  -- Slot states
+  enum SlotState {|
+    :Free
+    :Allocated
+    :Pinned
+    :Decaying
+    :Garbage
+  |}
+
+  -- Symbol slot: the fundamental unit of symbolic memory
+  struct SymbolSlot {|
+    id :: SlotId
+    owner_pid :: UInt32
+    symbol :: Option[Symbol]
+    state :: SlotState
+    ref_count :: UInt32
+    activation :: Float64        -- 0.0 to 1.0, decays over time
+    last_access :: Timestamp
+    created_at :: Timestamp
+    size_bytes :: UInt64
+    generation :: UInt32         -- GC generation (0=young, 1=mid, 2=old)
+    links :: List[SlotId]       -- references to other slots (graph edges)
+    metadata :: Map[String, Any]
+  |}
+
+  -- Memory pool configuration
+  config MemoryConfig {|
+    total_slots :: 65536
+    young_gen_size :: 32768
+    mid_gen_size :: 16384
+    old_gen_size :: 16384
+    activation_decay_rate :: 0.02     -- per tick decay
+    activation_floor :: 0.01          -- below this -> eligible for GC
+    gc_interval :: 5s
+    gc_young_interval :: 1s
+    gc_pressure_threshold :: 0.85     -- trigger GC at 85% usage
+    pin_max_duration :: 60s
+    defrag_threshold :: 0.3           -- defrag when 30% fragmented
+  |}
+
+  -- Pool state
+  state slot_pool :: Array[SymbolSlot] = Array.new(MemoryConfig.total_slots, empty_slot)
+  state free_list :: List[SlotId] = List.range(0, MemoryConfig.total_slots)
+  state allocated_count :: UInt64 = 0
+  state generation_counts :: Map[UInt32, UInt64] = {| 0 -> 0, 1 -> 0, 2 -> 0 |}
+  state gc_running :: Bool = false
+  state last_gc :: Timestamp = epoch()
+  state fragmentation_ratio :: Float64 = 0.0
+
+  -- Create an empty slot template
+  const empty_slot :: SymbolSlot = SymbolSlot {|
+    id :: 0
+    owner_pid :: 0
+    symbol :: None
+    state :: :Free
+    ref_count :: 0
+    activation :: 0.0
+    last_access :: epoch()
+    created_at :: epoch()
+    size_bytes :: 0
+    generation :: 0
+    links :: []
+    metadata :: Map.empty()
+  |}
+
+  -- Allocate a new symbol slot
+  syscall allocate(owner :: UInt32, symbol :: Symbol,
+                   size :: UInt64) -> Result[SlotId, Error] {|
+    -- Check memory pressure
+    if allocated_count >= MemoryConfig.total_slots {|
+      -- Try emergency GC
+      invoke gc_young()
+      if List.is_empty(free_list) {|
+        invoke gc_full()
+        if List.is_empty(free_list) {|
+          return Err(:OutOfMemory)
+        |}
+      |}
+    |}
+
+    -- Check pressure threshold
+    let usage = allocated_count as Float64 / MemoryConfig.total_slots as Float64
+    if usage > MemoryConfig.gc_pressure_threshold and not gc_running {|
+      invoke gc_young()
+    |}
+
+    match List.pop(free_list) {|
+      Some(slot_id, remaining) -> {|
+        free_list = remaining
+
+        let slot = SymbolSlot {|
+          id :: slot_id
+          owner_pid :: owner
+          symbol :: Some(symbol)
+          state :: :Allocated
+          ref_count :: 1
+          activation :: 1.0
+          last_access :: now()
+          created_at :: now()
+          size_bytes :: size
+          generation :: 0
+          links :: []
+          metadata :: Map.empty()
+        |}
+
+        slot_pool[slot_id] = slot
+        allocated_count = allocated_count + 1
+        generation_counts[0] = generation_counts[0] + 1
+
+        emit :SlotAllocated with {| id :: slot_id, owner :: owner, symbol :: symbol |}
+        return Ok(slot_id)
+      |}
+      None -> return Err(:OutOfMemory)
+    |}
+  |}
+
+  -- Free a symbol slot explicitly
+  syscall free(slot_id :: SlotId) -> Result[Void, Error] {|
+    let slot = slot_pool[slot_id]
+
+    if slot.state == :Free {|
+      return Err(:DoubleFree)
+    |}
+
+    if slot.state == :Pinned {|
+      return Err(:SlotPinned)
+    |}
+
+    -- Decrement ref counts on linked slots
+    for linked_id in slot.links {|
+      invoke decrement_ref(linked_id)
+    |}
+
+    slot_pool[slot_id] = empty_slot with {| id :: slot_id |}
+    free_list = List.push(free_list, slot_id)
+    allocated_count = allocated_count - 1
+    generation_counts[slot.generation] = generation_counts[slot.generation] - 1
+
+    emit :SlotFreed with {| id :: slot_id |}
+    return Ok(())
+  |}
+
+  -- Increment reference count
+  service increment_ref(slot_id :: SlotId) -> Result[Void, Error] {|
+    let slot = slot_pool[slot_id]
+    if slot.state == :Free {|
+      return Err(:InvalidSlot)
+    |}
+    slot_pool[slot_id] = slot with {| ref_count :: slot.ref_count + 1 |}
+    return Ok(())
+  |}
+
+  -- Decrement reference count
+  service decrement_ref(slot_id :: SlotId) -> Result[Void, Error] {|
+    let slot = slot_pool[slot_id]
+    if slot.state == :Free {|
+      return Err(:InvalidSlot)
+    |}
+
+    let new_count = slot.ref_count - 1
+    if new_count == 0 and slot.state != :Pinned {|
+      -- Mark for collection
+      slot_pool[slot_id] = slot with {| state :: :Garbage, ref_count :: 0 |}
+    |} else {|
+      slot_pool[slot_id] = slot with {| ref_count :: new_count |}
+    |}
+    return Ok(())
+  |}
+
+  -- Pin a slot to prevent GC
+  syscall pin(slot_id :: SlotId) -> Result[Void, Error] {|
+    let slot = slot_pool[slot_id]
+    if slot.state == :Free {|
+      return Err(:InvalidSlot)
+    |}
+    slot_pool[slot_id] = slot with {| state :: :Pinned |}
+    return Ok(())
+  |}
+
+  -- Unpin a slot
+  syscall unpin(slot_id :: SlotId) -> Result[Void, Error] {|
+    let slot = slot_pool[slot_id]
+    if slot.state != :Pinned {|
+      return Err(:NotPinned)
+    |}
+    slot_pool[slot_id] = slot with {| state :: :Allocated |}
+    return Ok(())
+  |}
+
+  -- Access a slot (refreshes activation)
+  service access(slot_id :: SlotId) -> Result[SymbolSlot, Error] {|
+    let slot = slot_pool[slot_id]
+    if slot.state == :Free or slot.state == :Garbage {|
+      return Err(:InvalidSlot)
+    |}
+
+    -- Boost activation on access
+    let new_activation = clamp(slot.activation + 0.3, 0.0, 1.0)
+    slot_pool[slot_id] = slot with {|
+      activation :: new_activation
+      last_access :: now()
+    |}
+
+    return Ok(slot_pool[slot_id])
+  |}
+
+  -- Link two slots (create graph edge)
+  service link_slots(from :: SlotId, to :: SlotId) -> Result[Void, Error] {|
+    let from_slot = slot_pool[from]
+    let to_slot = slot_pool[to]
+
+    if from_slot.state == :Free or to_slot.state == :Free {|
+      return Err(:InvalidSlot)
+    |}
+
+    slot_pool[from] = from_slot with {| links :: List.append(from_slot.links, to) |}
+    invoke increment_ref(to)
+    return Ok(())
+  |}
+
+  -- Young generation GC: fast, frequent
+  service gc_young() -> Void {|
+    gc_running = true
+    let collected = 0
+
+    for slot in slot_pool where slot.generation == 0 {|
+      if slot.state == :Garbage or
+         (slot.state == :Allocated and slot.ref_count == 0) or
+         (slot.state == :Decaying and slot.activation < MemoryConfig.activation_floor) {|
+        invoke free(slot.id)
+        collected = collected + 1
+      |} else if slot.state == :Allocated and elapsed_since(slot.created_at) > 5s {|
+        -- Promote to mid generation
+        slot_pool[slot.id] = slot with {| generation :: 1 |}
+        generation_counts[0] = generation_counts[0] - 1
+        generation_counts[1] = generation_counts[1] + 1
+      |}
+    |}
+
+    last_gc = now()
+    gc_running = false
+    emit :GCComplete with {| type :: :young, collected :: collected |}
+  |}
+
+  -- Full GC: all generations
+  service gc_full() -> Void {|
+    gc_running = true
+    let collected = 0
+
+    -- Mark phase: trace from roots (pinned + running process slots)
+    let roots = Set.empty()
+    for slot in slot_pool where slot.state == :Pinned {|
+      roots = Set.insert(roots, slot.id)
+      for linked in slot.links {|
+        roots = trace_reachable(roots, linked)
+      |}
+    |}
+
+    -- Sweep phase: free unreachable slots
+    for slot in slot_pool where slot.state != :Free and slot.state != :Pinned {|
+      if not Set.contains(roots, slot.id) and slot.ref_count == 0 {|
+        invoke free(slot.id)
+        collected = collected + 1
+      |} else if slot.generation == 1 and elapsed_since(slot.created_at) > 30s {|
+        -- Promote to old generation
+        slot_pool[slot.id] = slot with {| generation :: 2 |}
+        generation_counts[1] = generation_counts[1] - 1
+        generation_counts[2] = generation_counts[2] + 1
+      |}
+    |}
+
+    -- Compact/defrag if needed
+    invoke calculate_fragmentation()
+    if fragmentation_ratio > MemoryConfig.defrag_threshold {|
+      invoke defragment()
+    |}
+
+    last_gc = now()
+    gc_running = false
+    emit :GCComplete with {| type :: :full, collected :: collected |}
+  |}
+
+  -- Trace reachable slots from a root
+  service trace_reachable(visited :: Set[SlotId], slot_id :: SlotId) -> Set[SlotId] {|
+    if Set.contains(visited, slot_id) {|
+      return visited
+    |}
+
+    let slot = slot_pool[slot_id]
+    if slot.state == :Free {|
+      return visited
+    |}
+
+    let updated = Set.insert(visited, slot_id)
+    for linked in slot.links {|
+      updated = trace_reachable(updated, linked)
+    |}
+    return updated
+  |}
+
+  -- Activation decay tick: called periodically
+  on :DecayTick {|
+    for slot in slot_pool where slot.state == :Allocated or slot.state == :Decaying {|
+      let new_activation = slot.activation - MemoryConfig.activation_decay_rate
+      if new_activation < MemoryConfig.activation_floor {|
+        slot_pool[slot.id] = slot with {| state :: :Decaying, activation :: new_activation |}
+      |} else {|
+        slot_pool[slot.id] = slot with {| activation :: new_activation |}
+      |}
+    |}
+  |}
+
+  -- Calculate fragmentation ratio
+  service calculate_fragmentation() -> Void {|
+    let gaps = 0
+    let prev_free = false
+    for slot in slot_pool {|
+      if slot.state == :Free and not prev_free {|
+        gaps = gaps + 1
+      |}
+      prev_free = (slot.state == :Free)
+    |}
+    fragmentation_ratio = gaps as Float64 / allocated_count as Float64
+  |}
+
+  -- Defragment: compact allocated slots
+  service defragment() -> Void {|
+    emit :DefragStarted
+    let write_idx = 0
+    for read_idx in List.range(0, MemoryConfig.total_slots) {|
+      let slot = slot_pool[read_idx]
+      if slot.state != :Free {|
+        if read_idx != write_idx {|
+          slot_pool[write_idx] = slot with {| id :: write_idx |}
+          slot_pool[read_idx] = empty_slot with {| id :: read_idx |}
+          -- Update all references pointing to old location
+          invoke update_references(read_idx, write_idx)
+        |}
+        write_idx = write_idx + 1
+      |}
+    |}
+
+    -- Rebuild free list
+    free_list = List.range(write_idx, MemoryConfig.total_slots)
+    fragmentation_ratio = 0.0
+    emit :DefragComplete
+  |}
+
+|}

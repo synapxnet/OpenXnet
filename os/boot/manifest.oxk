@@ -1,0 +1,182 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- System Manifest: declares all loadable modules, paths, and dependencies
+-- Version: 0.1.0-alpha
+
+module SystemManifest {|
+
+  version :: "0.1.0"
+  platform :: :openxnet_desktop
+
+  -- Kernel core modules
+  config KernelModules {|
+    base_path :: "/os/kernel"
+
+    module scheduler {|
+      path :: "/os/kernel/scheduler.oxk"
+      priority :: 0
+      requires :: [:memory, :signals]
+      version :: "0.1.0"
+      critical :: true
+    |}
+
+    module memory {|
+      path :: "/os/kernel/memory.oxk"
+      priority :: 0
+      requires :: []
+      version :: "0.1.0"
+      critical :: true
+    |}
+
+    module ipc {|
+      path :: "/os/kernel/ipc.oxk"
+      priority :: 1
+      requires :: [:memory, :scheduler]
+      version :: "0.1.0"
+      critical :: true
+    |}
+
+    module syscall {|
+      path :: "/os/kernel/syscall.oxk"
+      priority :: 1
+      requires :: [:scheduler, :memory, :ipc, :signals]
+      version :: "0.1.0"
+      critical :: true
+    |}
+
+    module policy {|
+      path :: "/os/kernel/policy.oxk"
+      priority :: 2
+      requires :: [:syscall, :memory]
+      version :: "0.1.0"
+      critical :: true
+    |}
+
+    module signals {|
+      path :: "/os/kernel/signals.oxk"
+      priority :: 0
+      requires :: [:memory]
+      version :: "0.1.0"
+      critical :: true
+    |}
+
+    module devices {|
+      path :: "/os/kernel/devices.oxk"
+      priority :: 2
+      requires :: [:ipc, :policy, :signals]
+      version :: "0.1.0"
+      critical :: false
+    |}
+
+    module watchdog {|
+      path :: "/os/kernel/watchdog.oxk"
+      priority :: 3
+      requires :: [:scheduler, :signals, :ipc]
+      version :: "0.1.0"
+      critical :: true
+    |}
+  |}
+
+  -- Standard library modules
+  config StdlibModules {|
+    base_path :: "/os/stdlib"
+
+    module io {|
+      path :: "/os/stdlib/io.oxk"
+      priority :: 4
+      requires :: [:syscall, :memory]
+      version :: "0.1.0"
+      critical :: false
+    |}
+
+    module net {|
+      path :: "/os/stdlib/net.oxk"
+      priority :: 5
+      requires :: [:io, :ipc, :devices]
+      version :: "0.1.0"
+      critical :: false
+    |}
+
+    module crypto {|
+      path :: "/os/stdlib/crypto.oxk"
+      priority :: 5
+      requires :: [:memory]
+      version :: "0.1.0"
+      critical :: false
+    |}
+  |}
+
+  -- Symbol graph mounts
+  config SymbolGraphs {|
+    graph kernel_symbols {|
+      path :: "/os/graphs/kernel.symgraph"
+      mount_point :: :kernel
+      preload :: true
+    |}
+
+    graph process_symbols {|
+      path :: "/os/graphs/process.symgraph"
+      mount_point :: :process
+      preload :: true
+    |}
+
+    graph device_symbols {|
+      path :: "/os/graphs/device.symgraph"
+      mount_point :: :device
+      preload :: false
+    |}
+
+    graph user_symbols {|
+      path :: "/os/graphs/user.symgraph"
+      mount_point :: :user
+      preload :: false
+    |}
+
+    graph net_symbols {|
+      path :: "/os/graphs/net.symgraph"
+      mount_point :: :net
+      preload :: false
+    |}
+  |}
+
+  -- Boot-time daemon definitions
+  config Daemons {|
+    daemon scheduler_daemon {|
+      module :: :scheduler
+      entry :: "schedule"
+      restart_policy :: :always
+      max_restarts :: 5
+      restart_delay :: 500ms
+    |}
+
+    daemon watchdog_daemon {|
+      module :: :watchdog
+      entry :: "monitor"
+      restart_policy :: :always
+      max_restarts :: 3
+      restart_delay :: 1s
+    |}
+
+    daemon device_manager {|
+      module :: :devices
+      entry :: "device_loop"
+      restart_policy :: :on_failure
+      max_restarts :: 10
+      restart_delay :: 2s
+    |}
+
+    daemon ipc_broker {|
+      module :: :ipc
+      entry :: "broker_loop"
+      restart_policy :: :always
+      max_restarts :: 5
+      restart_delay :: 500ms
+    |}
+  |}
+
+  -- Load order constraints
+  [| KernelModules loaded_before StdlibModules |]
+  [| SymbolGraphs where preload == true mounted_before Daemons |]
+  [| for mod in KernelModules where mod.critical == true:
+       mod must_load or emit :PANIC |]
+
+|}

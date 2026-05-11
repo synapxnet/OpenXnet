@@ -1,0 +1,223 @@
+-- OpenXnet Neuro-Symbolic OS
+-- Memory GC Daemon: periodic mark-sweep-compact on symbol store
+-- Scans for unreferenced symbols and reclaims memory in phases
+
+process MemoryGC :: :daemon {|
+
+  requires :: [:scheduler, :signals, :memory, :syscall]
+  version :: "0.1.0"
+
+  enum GCPhase {|
+    :Idle
+    :Mark
+    :Sweep
+    :Compact
+  |}
+
+  enum CollectionScope {|
+    :Young
+    :Mid
+    :Full
+  |}
+
+  struct GCStats {|
+    cycle_id :: UInt64
+    scope :: CollectionScope
+    slots_scanned :: UInt64
+    slots_collected :: UInt64
+    bytes_reclaimed :: UInt64
+    fragmentation_before :: Float64
+    fragmentation_after :: Float64
+    duration :: Duration
+  |}
+
+  config GCConfig {|
+    young_interval :: 1s
+    mid_interval :: 10s
+    full_interval :: 60s
+    pressure_trigger :: 0.85
+    critical_pressure :: 0.95
+    incremental_steps :: 256
+    compact_threshold :: 0.3
+    decay_floor :: 0.01
+    stats_history_size :: 100
+  |}
+
+  state current_phase :: GCPhase = :Idle
+  state current_scope :: CollectionScope = :Young
+  state cycle_count :: UInt64 = 0
+  state last_young_gc :: Timestamp = epoch()
+  state last_mid_gc :: Timestamp = epoch()
+  state last_full_gc :: Timestamp = epoch()
+  state mark_set :: Set[SlotId] = Set.empty()
+  state incremental_cursor :: UInt64 = 0
+  state total_reclaimed :: UInt64 = 0
+  state current_stats :: GCStats = GCStats.default()
+
+  channels {|
+    channel gc_trigger :: Recv<GCTriggerMessage>
+    channel stats_out :: Send<GCStats>
+  |}
+
+  lifecycle {|
+    on init {|
+      current_phase = :Idle
+      last_young_gc = now()
+      last_mid_gc = now()
+      last_full_gc = now()
+      emit :GCDaemonReady with {| config :: GCConfig |}
+    |}
+
+    on suspend {|
+      if current_phase != :Idle {|
+        emit :GCSuspendedMidCycle with {| phase :: current_phase |}
+      |}
+      current_phase = :Idle
+    |}
+
+    on resume {|
+      last_young_gc = now()
+      last_mid_gc = now()
+    |}
+
+    on terminate {|
+      emit :GCDaemonTerminated with {| cycles :: cycle_count, reclaimed :: total_reclaimed |}
+    |}
+  |}
+
+  behavior {|
+    on recv(trigger) from gc_trigger {|
+      match trigger.scope {|
+        :Young -> invoke begin_collection(:Young)
+        :Mid -> invoke begin_collection(:Mid)
+        :Full -> invoke begin_collection(:Full)
+        :Emergency -> invoke emergency_collect()
+      |}
+    |}
+
+    on signal(:TICK) {|
+      if current_phase != :Idle {|
+        invoke incremental_step()
+        return
+      |}
+      let usage = invoke Memory.get_usage_ratio()
+      if usage >= GCConfig.critical_pressure {|
+        invoke emergency_collect()
+      |} else if usage >= GCConfig.pressure_trigger {|
+        invoke begin_collection(:Full)
+      |} else if elapsed_since(last_full_gc) >= GCConfig.full_interval {|
+        invoke begin_collection(:Full)
+      |} else if elapsed_since(last_mid_gc) >= GCConfig.mid_interval {|
+        invoke begin_collection(:Mid)
+      |} else if elapsed_since(last_young_gc) >= GCConfig.young_interval {|
+        invoke begin_collection(:Young)
+      |}
+    |}
+
+    on signal(:SIGMEM) {|
+      if current_phase == :Idle {| invoke begin_collection(:Full) |}
+    |}
+  |}
+
+  service begin_collection(scope :: CollectionScope) -> Void {|
+    cycle_count = cycle_count + 1
+    current_scope = scope
+    current_stats = GCStats {|
+      cycle_id :: cycle_count, scope :: scope,
+      slots_scanned :: 0, slots_collected :: 0, bytes_reclaimed :: 0,
+      fragmentation_before :: invoke Memory.get_fragmentation(),
+      fragmentation_after :: 0.0, duration :: 0ms
+    |}
+    emit :GCCycleStarted with {| cycle :: cycle_count, scope :: scope |}
+    invoke enter_mark_phase()
+  |}
+
+  service enter_mark_phase() -> Void {|
+    current_phase = :Mark
+    mark_set = Set.empty()
+    incremental_cursor = 0
+    let roots = invoke Memory.get_pinned_slots()
+    let proc_roots = invoke Scheduler.get_active_memory_slots()
+    for root in List.concat(roots, proc_roots) {|
+      mark_set = Set.insert(mark_set, root)
+    |}
+  |}
+
+  service incremental_step() -> Void {|
+    let pool_size = invoke Memory.get_pool_size()
+    let gen_limit = match current_scope {| :Young -> 0, :Mid -> 1, :Full -> 2 |}
+
+    match current_phase {|
+      :Mark -> {|
+        let steps = 0
+        while steps < GCConfig.incremental_steps and incremental_cursor < pool_size {|
+          let slot = invoke Memory.inspect_slot(incremental_cursor)
+          if slot.state != :Free and Set.contains(mark_set, slot.id) {|
+            for linked in slot.links {| mark_set = Set.insert(mark_set, linked) |}
+          |}
+          incremental_cursor = incremental_cursor + 1
+          steps = steps + 1
+        |}
+        if incremental_cursor >= pool_size {|
+          current_phase = :Sweep
+          incremental_cursor = 0
+        |}
+      |}
+
+      :Sweep -> {|
+        let steps = 0
+        while steps < GCConfig.incremental_steps and incremental_cursor < pool_size {|
+          let slot = invoke Memory.inspect_slot(incremental_cursor)
+          if slot.state != :Free and slot.state != :Pinned
+             and slot.generation <= gen_limit
+             and not Set.contains(mark_set, slot.id)
+             and (slot.ref_count == 0 or slot.activation < GCConfig.decay_floor) {|
+            invoke Memory.free(slot.id)
+            current_stats = current_stats with {|
+              slots_collected :: current_stats.slots_collected + 1
+              bytes_reclaimed :: current_stats.bytes_reclaimed + slot.size_bytes
+            |}
+          |}
+          incremental_cursor = incremental_cursor + 1
+          steps = steps + 1
+        |}
+        if incremental_cursor >= pool_size {|
+          if current_scope == :Full {| current_phase = :Compact |}
+          else {| invoke finalize_collection() |}
+        |}
+      |}
+
+      :Compact -> {|
+        if invoke Memory.get_fragmentation() > GCConfig.compact_threshold {|
+          invoke Memory.defragment()
+        |}
+        invoke finalize_collection()
+      |}
+      _ -> ()
+    |}
+  |}
+
+  service finalize_collection() -> Void {|
+    current_stats = current_stats with {|
+      fragmentation_after :: invoke Memory.get_fragmentation()
+    |}
+    match current_scope {|
+      :Young -> last_young_gc = now()
+      :Mid -> {| last_young_gc = now(); last_mid_gc = now() |}
+      :Full -> {| last_young_gc = now(); last_mid_gc = now(); last_full_gc = now() |}
+    |}
+    total_reclaimed = total_reclaimed + current_stats.bytes_reclaimed
+    emit stats_out <- current_stats
+    emit :GCCycleComplete with {| collected :: current_stats.slots_collected |}
+    current_phase = :Idle
+  |}
+
+  service emergency_collect() -> Void {|
+    emit :GCEmergency with {| timestamp :: now() |}
+    signal :SIGSTOP to :all_children
+    invoke begin_collection(:Full)
+    while current_phase != :Idle {| invoke incremental_step() |}
+    signal :SIGCONT to :all_children
+  |}
+
+|}

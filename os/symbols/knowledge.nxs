@@ -1,0 +1,360 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Seed Knowledge Graph
+-- Initial facts, default configurations, system constraints, and capacity limits
+
+{-- This file populates the working memory of the inference engine at boot.
+    It contains known devices, default process configurations, system-level
+    constraints, and capacity envelopes. The watchdog and scheduler reference
+    these facts for baseline behavior before runtime learning takes over. --}
+
+-- ==================================================================
+-- System identity and boot facts
+-- ==================================================================
+
+ontology SystemFacts {|
+
+  assert :kernel -> has_state -> :Initializing
+  assert :kernel_version :: "0.1.0"
+  assert :boot_epoch :: now()
+  assert :architecture :: :neurosymbolic_v1
+
+  -- Boot phase ordering (referenced by os/boot/)
+  assert :boot_phases :: [:phase_hardware, :phase_memory, :phase_scheduler,
+                          :phase_signals, :phase_ipc, :phase_devices,
+                          :phase_watchdog, :phase_agents, :phase_userspace]
+
+  -- System identity
+  concept SystemKernel :: {|
+    name :: "OpenXnet"
+    variant :: "desktop"
+    version :: "0.1.0"
+    build :: "neurosymbolic"
+    max_boot_time :: 10s
+  |}
+
+|}
+
+-- ==================================================================
+-- Known devices (initial hardware manifest)
+-- ==================================================================
+
+ontology KnownDevices {|
+
+  assert Device {|
+    identity :: :dev_cpu_primary
+    device_class :: :CPU
+    driver :: :native_cpu_driver
+    state :: :Online
+    capabilities :: [:compute, :interrupt, :timer]
+    latency :: 0ms
+  |}
+
+  assert Device {|
+    identity :: :dev_memory_main
+    device_class :: :RAM
+    driver :: :native_memory_driver
+    state :: :Online
+    capabilities :: [:read, :write, :map, :dma]
+    latency :: 1ms
+  |}
+
+  assert Device {|
+    identity :: :dev_storage_primary
+    device_class :: :Storage
+    driver :: :block_device_driver
+    state :: :Online
+    capabilities :: [:read, :write, :seek, :flush]
+    latency :: 5ms
+  |}
+
+  assert Device {|
+    identity :: :dev_network_eth0
+    device_class :: :Network
+    driver :: :network_stack_driver
+    state :: :Online
+    capabilities :: [:send, :recv, :multicast, :broadcast]
+    latency :: 10ms
+  |}
+
+  assert Device {|
+    identity :: :dev_gpu_primary
+    device_class :: :GPU
+    driver :: :gpu_compute_driver
+    state :: :Online
+    capabilities :: [:compute, :render, :tensor_ops]
+    latency :: 2ms
+  |}
+
+  assert Device {|
+    identity :: :dev_display_main
+    device_class :: :Display
+    driver :: :framebuffer_driver
+    state :: :Online
+    capabilities :: [:render, :vsync, :resolution_switch]
+    latency :: 16ms
+  |}
+
+  assert Device {|
+    identity :: :dev_input_keyboard
+    device_class :: :Input
+    driver :: :hid_input_driver
+    state :: :Online
+    capabilities :: [:keypress, :keyrelease, :repeat]
+    latency :: 1ms
+  |}
+
+  assert Device {|
+    identity :: :dev_input_pointer
+    device_class :: :Input
+    driver :: :hid_input_driver
+    state :: :Online
+    capabilities :: [:move, :click, :scroll, :gesture]
+    latency :: 1ms
+  |}
+
+|}
+
+-- ==================================================================
+-- Default process configurations
+-- ==================================================================
+
+ontology DefaultProcessConfig {|
+
+  -- Kernel daemon defaults
+  assert Process {|
+    identity :: :proc_init
+    pid :: 1
+    state :: :Running
+    priority :: :Realtime
+    neural_weight :: 1.0
+    memory_slots :: []
+    channels :: [:chan_system_bus]
+  |}
+
+  assert Process {|
+    identity :: :proc_scheduler
+    pid :: 2
+    state :: :Running
+    priority :: :Realtime
+    neural_weight :: 1.0
+    memory_slots :: []
+    channels :: [:chan_scheduler_ctrl]
+  |}
+
+  assert Process {|
+    identity :: :proc_watchdog
+    pid :: 3
+    state :: :Running
+    priority :: :Realtime
+    neural_weight :: 1.0
+    memory_slots :: []
+    channels :: [:chan_watchdog_heartbeat]
+  |}
+
+  assert Process {|
+    identity :: :proc_memory_manager
+    pid :: 4
+    state :: :Running
+    priority :: :High
+    neural_weight :: 0.9
+    memory_slots :: []
+    channels :: [:chan_memory_ctrl]
+  |}
+
+  assert Process {|
+    identity :: :proc_signal_dispatcher
+    pid :: 5
+    state :: :Running
+    priority :: :High
+    neural_weight :: 0.9
+    memory_slots :: []
+    channels :: [:chan_signal_bus]
+  |}
+
+  assert Process {|
+    identity :: :proc_device_manager
+    pid :: 6
+    state :: :Running
+    priority :: :High
+    neural_weight :: 0.85
+    memory_slots :: []
+    channels :: [:chan_device_ctrl, :chan_system_bus]
+  |}
+
+  assert Process {|
+    identity :: :proc_ipc_broker
+    pid :: 7
+    state :: :Running
+    priority :: :High
+    neural_weight :: 0.85
+    memory_slots :: []
+    channels :: [:chan_ipc_registry]
+  |}
+
+|}
+
+-- ==================================================================
+-- System resource capacity limits
+-- ==================================================================
+
+ontology SystemConstraints {|
+
+  -- CPU resource envelope
+  assert Resource {|
+    identity :: :res_cpu
+    resource_type :: :CPU
+    capacity :: 1.0
+    available :: 1.0
+    contention :: 0.0
+    holders :: []
+  |}
+
+  -- Memory resource envelope
+  assert Resource {|
+    identity :: :res_memory
+    resource_type :: :Memory
+    capacity :: 65536.0
+    available :: 65536.0
+    contention :: 0.0
+    holders :: []
+  |}
+
+  -- Disk I/O resource envelope
+  assert Resource {|
+    identity :: :res_disk_io
+    resource_type :: :Disk
+    capacity :: 1000.0
+    available :: 1000.0
+    contention :: 0.0
+    holders :: []
+  |}
+
+  -- Network bandwidth resource
+  assert Resource {|
+    identity :: :res_network
+    resource_type :: :Network
+    capacity :: 1000.0
+    available :: 1000.0
+    contention :: 0.0
+    holders :: []
+  |}
+
+  -- GPU compute resource
+  assert Resource {|
+    identity :: :res_gpu
+    resource_type :: :GPU
+    capacity :: 1.0
+    available :: 1.0
+    contention :: 0.0
+    holders :: []
+  |}
+
+  -- Hard limits (constraint blocks)
+  [| max_processes :: 4096 |]
+  [| max_channels :: 8192 |]
+  [| max_signals_per_second :: 10000 |]
+  [| max_memory_slots :: 65536 |]
+  [| max_open_devices :: 256 |]
+  [| max_tasks_per_process :: 512 |]
+  [| watchdog_timeout :: 30s |]
+  [| scheduler_epoch :: 1s |]
+  [| gc_young_interval :: 1s |]
+  [| gc_full_interval :: 5s |]
+
+|}
+
+-- ==================================================================
+-- Default IPC channels (pre-created at boot)
+-- ==================================================================
+
+ontology SystemChannels {|
+
+  assert Channel {|
+    identity :: :chan_system_bus
+    sender :: :proc_init
+    receiver :: :broadcast
+    buffer_size :: 256
+    protocol :: :pub_sub
+  |}
+
+  assert Channel {|
+    identity :: :chan_scheduler_ctrl
+    sender :: :proc_scheduler
+    receiver :: :proc_init
+    buffer_size :: 64
+    protocol :: :request_reply
+  |}
+
+  assert Channel {|
+    identity :: :chan_watchdog_heartbeat
+    sender :: :broadcast
+    receiver :: :proc_watchdog
+    buffer_size :: 128
+    protocol :: :pub_sub
+  |}
+
+  assert Channel {|
+    identity :: :chan_memory_ctrl
+    sender :: :proc_memory_manager
+    receiver :: :proc_init
+    buffer_size :: 64
+    protocol :: :request_reply
+  |}
+
+  assert Channel {|
+    identity :: :chan_signal_bus
+    sender :: :proc_signal_dispatcher
+    receiver :: :broadcast
+    buffer_size :: 512
+    protocol :: :pub_sub
+  |}
+
+  assert Channel {|
+    identity :: :chan_device_ctrl
+    sender :: :proc_device_manager
+    receiver :: :proc_init
+    buffer_size :: 64
+    protocol :: :request_reply
+  |}
+
+  assert Channel {|
+    identity :: :chan_ipc_registry
+    sender :: :proc_ipc_broker
+    receiver :: :broadcast
+    buffer_size :: 128
+    protocol :: :request_reply
+  |}
+
+|}
+
+-- ==================================================================
+-- Watchdog monitoring configuration
+-- ==================================================================
+
+ontology WatchdogConfig {|
+
+  -- Processes the watchdog monitors (critical daemons)
+  assert :watchdog_monitored :: [:proc_init, :proc_scheduler,
+                                  :proc_memory_manager, :proc_signal_dispatcher,
+                                  :proc_device_manager, :proc_ipc_broker]
+
+  -- Heartbeat expectations
+  [| heartbeat_interval :: 5s |]
+  [| heartbeat_tolerance :: 3 |]
+  [| escalation_chain :: [:restart_process, :isolate_process, :kernel_panic] |]
+
+  -- Automatic recovery policies
+  assert :recovery_policy_restart :: {|
+    max_restarts :: 3
+    restart_window :: 60s
+    backoff_base :: 2s
+    backoff_multiplier :: 2.0
+  |}
+
+  assert :recovery_policy_isolate :: {|
+    suspend_duration :: 30s
+    notify :: [:proc_init, :proc_watchdog]
+    dump_state :: true
+  |}
+
+|}

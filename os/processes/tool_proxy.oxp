@@ -1,0 +1,227 @@
+-- OpenXnet Neuro-Symbolic OS
+-- Tool Proxy: bridges OS to external tools (MCP servers, APIs)
+-- Handles timeouts, retries, and circuit breaking
+
+process ToolProxy :: :worker {|
+
+  requires :: [:scheduler, :signals, :ipc, :memory, :syscall, :devices]
+  version :: "0.1.0"
+
+  enum CircuitState {|
+    :Closed
+    :Open
+    :HalfOpen
+  |}
+
+  struct ToolEndpoint {|
+    id :: Symbol
+    name :: String
+    protocol :: Symbol        -- :mcp, :http, :grpc, :stdio
+    address :: String
+    circuit :: CircuitState
+    failure_count :: UInt32
+    last_failure :: Timestamp
+    avg_latency :: Duration
+  |}
+
+  struct ToolRequest {|
+    id :: UInt64
+    tool_id :: Symbol
+    method :: String
+    params :: Map[String, Any]
+    timeout :: Duration
+    retry_count :: UInt32
+    max_retries :: UInt32
+    requester_pid :: UInt32
+    created_at :: Timestamp
+  |}
+
+  struct ToolResponse {|
+    request_id :: UInt64
+    tool_id :: Symbol
+    status :: Symbol
+    payload :: Option[Any]
+    error :: Option[String]
+    latency :: Duration
+  |}
+
+  config ProxyConfig {|
+    max_concurrent :: 32
+    default_timeout :: 30s
+    default_retries :: 3
+    retry_backoff_base :: 500ms
+    retry_backoff_max :: 10s
+    circuit_failure_threshold :: 5
+    circuit_reset_timeout :: 30s
+    request_queue_max :: 256
+  |}
+
+  state endpoints :: Map[Symbol, ToolEndpoint] = Map.empty()
+  state request_queue :: Queue[ToolRequest] = Queue.empty()
+  state in_flight :: Map[UInt64, ToolRequest] = Map.empty()
+  state request_counter :: UInt64 = 0
+  state total_failures :: UInt64 = 0
+
+  channels {|
+    channel request_in :: Recv<ToolRequest>
+    channel response_out :: Send<ToolResponse>
+    channel device_events :: Recv<DeviceEvent>
+  |}
+
+  lifecycle {|
+    on init {|
+      invoke discover_endpoints()
+      emit :ToolProxyReady with {| endpoints :: Map.size(endpoints) |}
+    |}
+
+    on suspend {|
+      for req_id, req in in_flight {| invoke cancel_request(req_id, :suspended) |}
+    |}
+
+    on resume {|
+      invoke discover_endpoints()
+      for id, ep in endpoints where ep.circuit == :Open {|
+        endpoints = Map.insert(endpoints, id, ep with {| circuit :: :HalfOpen |})
+      |}
+    |}
+
+    on terminate {|
+      for req_id, _ in in_flight {| invoke cancel_request(req_id, :shutdown) |}
+      emit :ToolProxyTerminated with {| total_failures :: total_failures |}
+    |}
+  |}
+
+  behavior {|
+    on recv(req) from request_in {|
+      request_counter = request_counter + 1
+      let enriched = req with {| id :: request_counter, created_at :: now() |}
+
+      match Map.get(endpoints, req.tool_id) {|
+        Some(ep) where ep.circuit == :Open -> {|
+          emit response_out <- ToolResponse {|
+            request_id :: enriched.id, tool_id :: req.tool_id,
+            status :: :circuit_open, payload :: None,
+            error :: Some("Circuit open for: " ++ ep.name), latency :: 0ms
+          |}
+          return
+        |}
+        None -> {|
+          emit response_out <- ToolResponse {|
+            request_id :: enriched.id, tool_id :: req.tool_id,
+            status :: :failed, payload :: None,
+            error :: Some("Unknown endpoint"), latency :: 0ms
+          |}
+          return
+        |}
+        _ -> ()
+      |}
+
+      if Map.size(in_flight) >= ProxyConfig.max_concurrent {|
+        request_queue = Queue.enqueue(request_queue, enriched)
+      |} else {|
+        invoke dispatch_request(enriched)
+      |}
+    |}
+
+    on recv(event) from device_events {|
+      match event.type {|
+        :tool_connected -> invoke register_endpoint(event.tool_id, event.metadata)
+        :tool_disconnected -> endpoints = Map.remove(endpoints, event.tool_id)
+        :tool_error -> invoke record_failure(event.tool_id)
+      |}
+    |}
+
+    on signal(:TICK) {|
+      -- Check timeouts
+      for req_id, req in in_flight {|
+        if elapsed_since(req.created_at) >= (req.timeout or ProxyConfig.default_timeout) {|
+          invoke handle_failure(req, "Request timed out")
+        |}
+      |}
+      -- Drain queue
+      while Map.size(in_flight) < ProxyConfig.max_concurrent and not Queue.is_empty(request_queue) {|
+        match Queue.dequeue(request_queue) {|
+          Some(req) -> invoke dispatch_request(req)
+          None -> ()
+        |}
+      |}
+      -- Circuit breaker recovery
+      for id, ep in endpoints where ep.circuit == :Open {|
+        if elapsed_since(ep.last_failure) >= ProxyConfig.circuit_reset_timeout {|
+          endpoints = Map.insert(endpoints, id, ep with {| circuit :: :HalfOpen |})
+        |}
+      |}
+    |}
+  |}
+
+  service dispatch_request(req :: ToolRequest) -> Void {|
+    in_flight = Map.insert(in_flight, req.id, req)
+    invoke execute_tool_call(Map.get(endpoints, req.tool_id), req) {|
+      on :success with result -> invoke handle_success(req, result)
+      on :failure with err -> invoke handle_failure(req, err)
+    |}
+  |}
+
+  service handle_success(req :: ToolRequest, result :: Any) -> Void {|
+    in_flight = Map.remove(in_flight, req.id)
+    match Map.get(endpoints, req.tool_id) {|
+      Some(ep) -> endpoints = Map.insert(endpoints, req.tool_id, ep with {|
+        failure_count :: 0, circuit :: :Closed,
+        avg_latency :: (ep.avg_latency * 0.9) + (elapsed_since(req.created_at) * 0.1)
+      |})
+      None -> ()
+    |}
+    emit response_out <- ToolResponse {|
+      request_id :: req.id, tool_id :: req.tool_id, status :: :completed,
+      payload :: Some(result), error :: None, latency :: elapsed_since(req.created_at)
+    |}
+  |}
+
+  service handle_failure(req :: ToolRequest, err :: String) -> Void {|
+    let can_retry = req.retry_count < (req.max_retries or ProxyConfig.default_retries)
+    if can_retry {|
+      let backoff = min(ProxyConfig.retry_backoff_base * (2 ^ req.retry_count), ProxyConfig.retry_backoff_max)
+      in_flight = Map.remove(in_flight, req.id)
+      invoke Scheduler.sleep(backoff)
+      invoke dispatch_request(req with {| retry_count :: req.retry_count + 1, created_at :: now() |})
+    |} else {|
+      in_flight = Map.remove(in_flight, req.id)
+      total_failures = total_failures + 1
+      invoke record_failure(req.tool_id)
+      emit response_out <- ToolResponse {|
+        request_id :: req.id, tool_id :: req.tool_id, status :: :failed,
+        payload :: None, error :: Some(err), latency :: elapsed_since(req.created_at)
+      |}
+    |}
+  |}
+
+  service record_failure(tool_id :: Symbol) -> Void {|
+    match Map.get(endpoints, tool_id) {|
+      Some(ep) -> {|
+        let count = ep.failure_count + 1
+        let circuit = if count >= ProxyConfig.circuit_failure_threshold {| :Open |} else {| ep.circuit |}
+        endpoints = Map.insert(endpoints, tool_id, ep with {|
+          failure_count :: count, last_failure :: now(), circuit :: circuit
+        |})
+        if circuit == :Open {| emit :CircuitOpened with {| tool :: tool_id |} |}
+      |}
+      None -> ()
+    |}
+  |}
+
+  service discover_endpoints() -> Void {|
+    let devices = invoke Devices.list_by_type(:tool)
+    for device in devices {| invoke register_endpoint(device.id, device.metadata) |}
+  |}
+
+  service register_endpoint(tool_id :: Symbol, meta :: Map[String, Any]) -> Void {|
+    endpoints = Map.insert(endpoints, tool_id, ToolEndpoint {|
+      id :: tool_id, name :: Map.get(meta, "name") or "",
+      protocol :: Map.get(meta, "protocol") or :http,
+      address :: Map.get(meta, "address") or "",
+      circuit :: :Closed, failure_count :: 0,
+      last_failure :: epoch(), avg_latency :: 0ms
+    |})
+  |}
+
+|}

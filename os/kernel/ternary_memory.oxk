@@ -1,0 +1,274 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Balanced Ternary Memory Manager
+-- Manages trit-valued entries with activation decay, consolidation, and search
+
+module TernaryMemory :microkernel {|
+
+  requires :: [:memory]
+  version :: "0.1.0"
+
+  -- Balanced ternary truth values: -1, 0, +1
+  enum TritValue {|
+    :Neg       -- -1  negated / inhibited
+    :Unk       --  0  unknown / neutral
+    :Pos       -- +1  affirmed / excited
+  |}
+
+  -- Lifecycle of a trit entry through consolidation
+  enum ConsolidationState {|
+    :Raw             -- freshly stored, not yet evaluated
+    :Consolidating   -- being promoted to symbol graph
+    :Consolidated    -- persisted in long-term knowledge
+    :Archived        -- decayed past usefulness, retained read-only
+  |}
+
+  -- A single entry in the ternary memory store
+  struct TritEntry {|
+    id :: String
+    key :: String
+    vector_addr :: UInt64          -- pointer into trit vector pool
+    dimension :: UInt32            -- trit vector width
+    activation :: Float64          -- 0.0 to 1.0, decays over time
+    truth_value :: TritValue       -- balanced ternary truth
+    consolidation :: ConsolidationState
+    access_count :: UInt32
+    created_at :: Timestamp
+    last_access :: Timestamp
+    metadata :: Map[String, Any]
+  |}
+
+  -- Pool configuration
+  config TernaryConfig {|
+    default_dimension :: 256
+    max_entries :: 4096
+    activation_decay_rate :: 0.02
+    trit_decay_probability :: 0.01
+    consolidation_threshold :: 0.7
+    consolidation_access_min :: 3
+    eviction_floor :: 0.01
+    decay_tick_interval :: 10
+    consolidation_tick_interval :: 50
+    similarity_threshold :: 0.3
+  |}
+
+  -- Module state
+  state entry_store :: Map[String, TritEntry] = Map.empty()
+  state entry_count :: Int = 0
+  state next_entry_id :: UInt64 = 1
+  state decay_tick_counter :: UInt32 = 0
+  state consolidation_tick_counter :: UInt32 = 0
+
+  -- ==================================================================
+  -- Syscalls
+  -- ==================================================================
+
+  -- Store a new trit entry
+  syscall trit_store(key :: String, dimension :: UInt32,
+                     truth :: TritValue,
+                     meta :: Map[String, Any]) -> Result[String, Error] {|
+    if entry_count >= TernaryConfig.max_entries {|
+      -- Attempt eviction of lowest-activation entry
+      invoke evict_lowest()
+      if entry_count >= TernaryConfig.max_entries {|
+        return Err(:TritStoreFull)
+      |}
+    |}
+
+    let dim = if dimension == 0 {| TernaryConfig.default_dimension |} else {| dimension |}
+
+    let id = "trit_" ++ to_string(next_entry_id)
+    next_entry_id = next_entry_id + 1
+
+    let entry = TritEntry {|
+      id :: id
+      key :: key
+      vector_addr :: invoke allocate_vector(dim)
+      dimension :: dim
+      activation :: 1.0
+      truth_value :: truth
+      consolidation :: :Raw
+      access_count :: 1
+      created_at :: now()
+      last_access :: now()
+      metadata :: meta
+    |}
+
+    entry_store = Map.insert(entry_store, id, entry)
+    entry_count = entry_count + 1
+
+    emit :TritStored with {| id :: id, key :: key, truth :: truth |}
+    return Ok(id)
+  |}
+
+  -- Search entries by key prefix, return sorted by activation descending
+  syscall trit_search(query :: String,
+                      limit :: UInt32) -> Result[List[TritEntry], Error] {|
+    let matches = []
+
+    for id, entry in entry_store {|
+      if String.starts_with(entry.key, query) and
+         entry.activation >= TernaryConfig.eviction_floor {|
+        -- Boost activation on access
+        let refreshed = entry with {|
+          activation :: clamp(entry.activation + 0.15, 0.0, 1.0)
+          access_count :: entry.access_count + 1
+          last_access :: now()
+        |}
+        entry_store = Map.insert(entry_store, id, refreshed)
+        matches = List.append(matches, refreshed)
+      |}
+    |}
+
+    -- Sort by activation descending and truncate
+    let sorted = List.sort_by(matches, e -> 0.0 - e.activation)
+    let result = List.take(sorted, limit)
+    return Ok(result)
+  |}
+
+  -- Negate an existing entry (flip truth value)
+  syscall trit_negate(entry_id :: String) -> Result[TritValue, Error] {|
+    match Map.get(entry_store, entry_id) {|
+      Some(entry) -> {|
+        let new_truth = match entry.truth_value {|
+          :Pos -> :Neg
+          :Neg -> :Pos
+          :Unk -> :Unk   -- negating unknown stays unknown
+        |}
+        let updated = entry with {|
+          truth_value :: new_truth
+          last_access :: now()
+          access_count :: entry.access_count + 1
+        |}
+        entry_store = Map.insert(entry_store, entry_id, updated)
+        emit :TritNegated with {| id :: entry_id, old :: entry.truth_value, new :: new_truth |}
+        return Ok(new_truth)
+      |}
+      None -> return Err(:EntryNotFound)
+    |}
+  |}
+
+  -- Manually trigger decay on a specific entry
+  syscall trit_decay(entry_id :: String,
+                     amount :: Float64) -> Result[Float64, Error] {|
+    match Map.get(entry_store, entry_id) {|
+      Some(entry) -> {|
+        let new_activation = clamp(entry.activation - amount, 0.0, 1.0)
+        let updated = entry with {| activation :: new_activation |}
+        entry_store = Map.insert(entry_store, entry_id, updated)
+        return Ok(new_activation)
+      |}
+      None -> return Err(:EntryNotFound)
+    |}
+  |}
+
+  -- ==================================================================
+  -- Services
+  -- ==================================================================
+
+  -- Consolidate a high-activation entry into the persistent symbol graph
+  service consolidate(entry_id :: String) -> Result[Void, Error] {|
+    match Map.get(entry_store, entry_id) {|
+      Some(entry) where entry.consolidation == :Raw or
+                         entry.consolidation == :Consolidating -> {|
+        let updated = entry with {| consolidation :: :Consolidated |}
+        entry_store = Map.insert(entry_store, entry_id, updated)
+        emit :TritConsolidated with {| id :: entry_id, key :: entry.key |}
+        return Ok(())
+      |}
+      Some(_) -> return Err(:AlreadyConsolidated)
+      None -> return Err(:EntryNotFound)
+    |}
+  |}
+
+  -- Move a consolidated entry to archived state
+  service archive(entry_id :: String) -> Result[Void, Error] {|
+    match Map.get(entry_store, entry_id) {|
+      Some(entry) where entry.consolidation == :Consolidated -> {|
+        let updated = entry with {| consolidation :: :Archived |}
+        entry_store = Map.insert(entry_store, entry_id, updated)
+        emit :TritArchived with {| id :: entry_id, key :: entry.key |}
+        return Ok(())
+      |}
+      Some(_) -> return Err(:InvalidConsolidationState)
+      None -> return Err(:EntryNotFound)
+    |}
+  |}
+
+  -- Evict the entry with the lowest activation to free space
+  service evict_lowest() -> Void {|
+    let min_id = None
+    let min_activation = 2.0  -- above maximum possible
+
+    for id, entry in entry_store {|
+      if entry.activation < min_activation and entry.consolidation != :Pinned {|
+        min_activation = entry.activation
+        min_id = Some(id)
+      |}
+    |}
+
+    match min_id {|
+      Some(id) -> {|
+        entry_store = Map.remove(entry_store, id)
+        entry_count = entry_count - 1
+        emit :TritEvicted with {| id :: id, activation :: min_activation |}
+      |}
+      None -> ()
+    |}
+  |}
+
+  -- Allocate a trit vector in the underlying memory pool
+  service allocate_vector(dim :: UInt32) -> UInt64 {|
+    let size = dim as UInt64   -- one trit per element (packed later)
+    let slot = invoke Memory.allocate(0, :trit_vector, size)
+    match slot {|
+      Ok(addr) -> return addr as UInt64
+      Err(_)   -> return 0
+    |}
+  |}
+
+  -- ==================================================================
+  -- Signal handlers (periodic ticks)
+  -- ==================================================================
+
+  -- Decay tick: reduce activation of all entries
+  on :DecayTick {|
+    decay_tick_counter = decay_tick_counter + 1
+    if decay_tick_counter < TernaryConfig.decay_tick_interval {| return |}
+    decay_tick_counter = 0
+
+    let evicted = 0
+    for id, entry in entry_store {|
+      let new_activation = entry.activation - TernaryConfig.activation_decay_rate
+
+      if new_activation < TernaryConfig.eviction_floor {|
+        -- Entry has decayed below floor, remove it
+        entry_store = Map.remove(entry_store, id)
+        entry_count = entry_count - 1
+        evicted = evicted + 1
+      |} else {|
+        entry_store = Map.insert(entry_store, id,
+                                 entry with {| activation :: new_activation |})
+      |}
+    |}
+
+    if evicted > 0 {|
+      emit :TritDecayComplete with {| evicted :: evicted, remaining :: entry_count |}
+    |}
+  |}
+
+  -- Consolidation tick: promote qualifying entries
+  on :ConsolidationTick {|
+    consolidation_tick_counter = consolidation_tick_counter + 1
+    if consolidation_tick_counter < TernaryConfig.consolidation_tick_interval {| return |}
+    consolidation_tick_counter = 0
+
+    for id, entry in entry_store {|
+      if entry.consolidation == :Raw and
+         entry.activation >= TernaryConfig.consolidation_threshold and
+         entry.access_count >= TernaryConfig.consolidation_access_min {|
+        invoke consolidate(id)
+      |}
+    |}
+  |}
+
+|}

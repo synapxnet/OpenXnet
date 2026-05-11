@@ -1,0 +1,166 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Ternary Logic Ontology and Inference Rules
+-- Three-valued truth system for balanced ternary memory reasoning
+
+{-- This ontology extends the core Memory concept with a balanced ternary
+    truth model. Facts in the knowledge graph carry a TernaryTruth value
+    (+1 Affirmed, 0 Unknown, -1 Negated) instead of a binary boolean.
+    The inference rules detect contradictions, consolidate high-activation
+    memories into the persistent symbol graph, and propagate inhibition
+    through connected processes. --}
+
+-- ==================================================================
+-- Ternary logic ontology
+-- ==================================================================
+
+ontology TernaryLogic {|
+
+  -- A memory region backed by balanced ternary vectors
+  concept TritMemory <: Memory @weight(0.9) {|
+    description :: "Ternary-valued memory with activation-weighted entries"
+    dimension :: UInt32
+    entry_count :: UInt32
+    avg_activation :: Float64
+    sparsity :: Float64
+  |}
+
+  -- Conversation memory: short-lived trit store for dialog turns
+  concept ConversationMemory <: TritMemory @weight(0.85) {|
+    description :: "Speaker-scoped dialog memory with consolidation tracking"
+    speaker :: Symbol
+    topic :: Symbol
+    turn_count :: UInt32
+    consolidated :: Bool
+  |}
+
+  -- Ternary truth value enumeration
+  concept TernaryTruth :: {|
+    values :: [:Affirmed, :Unknown, :Negated]
+  |}
+
+  -- ==================================================================
+  -- Ternary relation triad
+  -- ==================================================================
+
+  relation affirms :: (Entity, Entity) {|
+    description :: "Subject positively asserts the object (truth = +1)"
+    cardinality :: :many_to_many
+    @weight(1.0)
+  |}
+
+  relation negates :: (Entity, Entity) {|
+    description :: "Subject explicitly denies the object (truth = -1)"
+    cardinality :: :many_to_many
+    @weight(1.0)
+  |}
+
+  relation uncertain :: (Entity, Entity) {|
+    description :: "Subject's stance on the object is unknown (truth = 0)"
+    cardinality :: :many_to_many
+    @weight(0.5)
+  |}
+
+  -- ==================================================================
+  -- Consolidation state tracking
+  -- ==================================================================
+
+  concept ConsolidationState :: {|
+    values :: [:Raw, :Consolidating, :Consolidated, :Archived]
+  |}
+
+  -- ==================================================================
+  -- Subtype lattice constraints
+  -- ==================================================================
+
+  [| TritMemory <: Memory <: Entity |]
+  [| ConversationMemory <: TritMemory <: Memory |]
+
+|}
+
+-- ==================================================================
+-- Ternary inference rules
+-- ==================================================================
+
+ruleset TernaryInference {|
+
+  -- Detect contradictory assertions on the same subject-predicate-object
+  rule contradiction_detection :: @weight(1.0)
+    when {|
+      Entity S -> affirms -> Entity O
+      and S -> negates -> O
+    |}
+    then {|
+      -- Neutralise both assertions to unknown
+      retract S -> affirms -> O
+      retract S -> negates -> O
+      assert S -> uncertain -> O
+      emit signal :SIGCONTRADICTION to :kernel with {|
+        subject :: S.identity
+        object :: O.identity
+        resolution :: :set_unknown
+      |}
+      inhibit S by 0.3
+    |}
+
+  -- Promote high-activation trit memories to the symbol graph
+  rule consolidation_promotion :: @weight(0.85)
+    when {|
+      TritMemory M has state :Allocated
+      and M.avg_activation >= 0.7
+      and M.entry_count >= 3
+      and not M -> has_state -> :Consolidating
+    |}
+    then {|
+      assert M -> has_state -> :Consolidating
+      invoke TernaryMemory.consolidate(M.identity)
+      emit Event {| event_type :: :ConsolidationStarted, source :: M |}
+      boost M.activation by 0.1
+    |}
+
+  -- Archive consolidated memories whose activation has decayed
+  rule memory_decay_ternary :: @weight(0.7)
+    when {|
+      TritMemory M has state :Consolidated
+      and M.avg_activation < 0.05
+      and elapsed_since(M.created_at) > 60s
+    |}
+    then {|
+      assert M -> has_state -> :Archived
+      invoke TernaryMemory.archive(M.identity)
+      emit Event {| event_type :: :MemoryArchived, source :: M |}
+    |}
+
+  -- Spread inhibition from a strongly negated process
+  rule inhibition_cascade :: @weight(0.8)
+    when {|
+      process P has activation_level below 0.15
+      and P -> communicates_with -> process Q
+      and Q has state :Running
+    |}
+    then {|
+      decay Q.neural_weight by 0.15
+      decay Q.activation_level by 0.1
+      emit signal :SIGMEM to Q with {|
+        reason :: :inhibition_cascade
+        source_pid :: P.pid
+        inhibition_strength :: 0.15
+      |}
+    |}
+
+  -- Resolve two uncertain facts about the same entity via transitivity
+  rule ternary_resolution :: @weight(0.65)
+    when {|
+      Entity A -> uncertain -> Entity B
+      and Entity A -> uncertain -> Entity C
+      and Entity B -> affirms -> Entity C
+    |}
+    then {|
+      -- Transitive evidence: if B affirms C and A is uncertain about both,
+      -- promote A->C to affirmed at reduced weight
+      retract A -> uncertain -> C
+      assert A -> affirms -> C @weight(0.6)
+      emit Event {| event_type :: :TernaryResolved, source :: A |}
+      boost A.activation by 0.05
+    |}
+
+|}

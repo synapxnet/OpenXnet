@@ -1,0 +1,195 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Standard Library: Cryptographic Primitives
+-- Hashing, HMAC, token generation, and signature verification
+
+module stdlib::crypto :library {|
+
+  version :: "0.1.0"
+  requires :: []
+
+  -- Hash algorithm selection
+  enum HashAlgorithm {|
+    SHA256
+    SHA384
+    SHA512
+    BLAKE2b
+    BLAKE2s
+  |}
+
+  -- HMAC algorithm
+  enum HmacAlgorithm {|
+    HMAC_SHA256
+    HMAC_SHA384
+    HMAC_SHA512
+  |}
+
+  -- Signature algorithm
+  enum SignatureAlgorithm {|
+    ED25519
+    ECDSA_P256
+    RSA_PSS_2048
+  |}
+
+  -- Hash result
+  struct HashDigest {|
+    algorithm :: HashAlgorithm
+    bytes :: Bytes
+    hex :: String
+    length :: Int
+  |}
+
+  -- HMAC result
+  struct HmacDigest {|
+    algorithm :: HmacAlgorithm
+    bytes :: Bytes
+    hex :: String
+  |}
+
+  -- Key pair for signing
+  struct KeyPair {|
+    algorithm :: SignatureAlgorithm
+    public_key :: Bytes
+    private_key :: Bytes
+    created_at :: Int
+  |}
+
+  -- Digital signature
+  struct Signature {|
+    algorithm :: SignatureAlgorithm
+    bytes :: Bytes
+    signer_public_key :: Bytes
+  |}
+
+  -- Token structure
+  struct Token {|
+    value :: String
+    issued_at :: Int
+    expires_at :: Int
+    scope :: List<String>
+    claims :: Map<String, String>
+  |}
+
+  -- Configuration
+  config CryptoDefaults {|
+    default_hash :: :SHA256
+    default_hmac :: :HMAC_SHA256
+    default_sig :: :ED25519
+    token_length :: 32
+    token_charset :: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+    max_key_age_ms :: 86400000
+  |}
+
+  -- Crypto syscalls
+  syscall hash(data :: Bytes, algorithm :: HashAlgorithm) :: HashDigest {|
+    let digest = invoke :crypto_engine.compute_hash(data, algorithm)
+    return HashDigest {
+      algorithm: algorithm,
+      bytes: digest,
+      hex: invoke :crypto_engine.to_hex(digest),
+      length: len(digest)
+    }
+  |}
+
+  syscall hash_string(input :: String, algorithm :: HashAlgorithm) :: HashDigest {|
+    let data = invoke :crypto_engine.encode_utf8(input)
+    return invoke hash(data, algorithm)
+  |}
+
+  syscall hmac(data :: Bytes, key :: Bytes, algorithm :: HmacAlgorithm) :: HmacDigest {|
+    [| len(key) >= 16 |]
+    let digest = invoke :crypto_engine.compute_hmac(data, key, algorithm)
+    return HmacDigest {
+      algorithm: algorithm,
+      bytes: digest,
+      hex: invoke :crypto_engine.to_hex(digest)
+    }
+  |}
+
+  syscall hmac_verify(data :: Bytes, key :: Bytes, expected :: HmacDigest) :: Bool {|
+    let computed = invoke hmac(data, key, expected.algorithm)
+    return invoke :crypto_engine.constant_time_eq(computed.bytes, expected.bytes)
+  |}
+
+  syscall generate_keypair(algorithm :: SignatureAlgorithm) :: KeyPair {|
+    let pair = invoke :crypto_engine.keygen(algorithm)
+    return KeyPair {
+      algorithm: algorithm,
+      public_key: pair.public,
+      private_key: pair.private,
+      created_at: invoke :time.now_ms()
+    }
+  |}
+
+  syscall sign(data :: Bytes, private_key :: Bytes, algorithm :: SignatureAlgorithm) :: Signature {|
+    [| len(private_key) > 0 |]
+    let sig_bytes = invoke :crypto_engine.sign(data, private_key, algorithm)
+    let pub_key = invoke :crypto_engine.derive_public(private_key, algorithm)
+    return Signature {
+      algorithm: algorithm,
+      bytes: sig_bytes,
+      signer_public_key: pub_key
+    }
+  |}
+
+  syscall verify(data :: Bytes, signature :: Signature, public_key :: Bytes) :: Bool {|
+    return invoke :crypto_engine.verify(
+      data, signature.bytes, public_key, signature.algorithm
+    )
+  |}
+
+  syscall generate_token(scope :: List<String>, ttl_ms :: Int) :: Token {|
+    [| ttl_ms > 0 |]
+    [| len(scope) > 0 |]
+    let now = invoke :time.now_ms()
+    let value = invoke :crypto_engine.random_string(
+      CryptoDefaults.token_length,
+      CryptoDefaults.token_charset
+    )
+    return Token {
+      value: value,
+      issued_at: now,
+      expires_at: now + ttl_ms,
+      scope: scope,
+      claims: {}
+    }
+  |}
+
+  syscall validate_token(token :: Token) :: Bool {|
+    let now = invoke :time.now_ms()
+    if now > token.expires_at {|
+      return false
+    |}
+    if len(token.value) != CryptoDefaults.token_length {|
+      return false
+    |}
+    return true
+  |}
+
+  -- Secure random bytes
+  syscall random_bytes(length :: Int) :: Bytes {|
+    [| length > 0 |]
+    [| length <= 65536 |]
+    return invoke :crypto_engine.secure_random(length)
+  |}
+
+  -- Service for key management
+  service KeyManager {|
+    state {|
+      active_keys :: Map<String, KeyPair>
+      rotated_keys :: List<KeyPair>
+    |}
+
+    on :key_rotation_due {|
+      for name, key in active_keys {|
+        let age = invoke :time.now_ms() - key.created_at
+        if age > CryptoDefaults.max_key_age_ms {|
+          let new_key = invoke generate_keypair(key.algorithm)
+          rotated_keys.push(key)
+          active_keys[name] = new_key
+          emit signal :KEY_ROTATED {name, new_key.public_key}
+        |}
+      |}
+    |}
+  |}
+
+|}

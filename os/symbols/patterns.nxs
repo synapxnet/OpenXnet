@@ -1,0 +1,295 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Pattern Matching Templates for the Inference Engine
+-- Reusable structural patterns for process lifecycle, resource allocation,
+-- failure cascades, and load balancing heuristics
+
+{-- Patterns are parameterized templates that the inference engine
+    matches against working memory. They factor out common structural
+    motifs so that rules in inference.nxs can reference them by name
+    rather than repeating complex match conditions. --}
+
+-- ==================================================================
+-- Process lifecycle patterns
+-- ==================================================================
+
+ontology ProcessLifecyclePatterns {|
+
+  pattern ProcessSpawning :: {|
+    description :: "A new process entering the ready queue"
+    match {|
+      process P has state :Ready
+      and P.created_at == P.last_scheduled
+      and P.neural_weight == 0.5
+    |}
+    @weight(0.9)
+  |}
+
+  pattern ProcessPreemption :: {|
+    description :: "A running process whose time quantum has expired"
+    match {|
+      process P has state :Running
+      and P.time_used >= P.time_quantum
+    |}
+    @weight(0.95)
+  |}
+
+  pattern ProcessStarvation :: {|
+    description :: "A ready process that has not been scheduled for too long"
+    match {|
+      process P has state :Ready
+      and elapsed_since(P.last_scheduled) > 10s
+      and P.priority != :Idle
+      and P.neural_weight < 0.3
+    |}
+    @weight(0.8)
+  |}
+
+  pattern ProcessTerminationCleanup :: {|
+    description :: "A terminated process with unreleased resources"
+    match {|
+      process P has state :Terminated
+      and (P.memory_slots != [] or P.channels != [])
+    |}
+    @weight(0.85)
+  |}
+
+  pattern ProcessBlocked :: {|
+    description :: "A process waiting on a resource or channel"
+    match {|
+      process P has state :Blocked
+      and P -> requires -> Resource R
+      and R.available == 0.0
+    |}
+    @weight(0.7)
+  |}
+
+  pattern AgentGoalCompleted :: {|
+    description :: "An agent that has achieved all its current goals"
+    match {|
+      Agent A has state :Running
+      and for_all goal in A.goals {|
+        goal has state :Completed
+      |}
+    |}
+    @weight(0.6)
+  |}
+
+  pattern ZombieProcess :: {|
+    description :: "A terminated process not yet reaped by its parent"
+    match {|
+      process P has state :Terminated
+      and process Parent where Parent.pid == P.parent_pid
+      and Parent has state :Running
+      and elapsed_since(P.created_at) > 30s
+    |}
+    @weight(0.7)
+  |}
+
+|}
+
+-- ==================================================================
+-- Resource allocation patterns
+-- ==================================================================
+
+ontology ResourceAllocationPatterns {|
+
+  pattern ResourceContention :: {|
+    description :: "Multiple processes competing for a scarce resource"
+    match {|
+      Resource R where R.available / R.capacity < 0.2
+      and R.contention > 0.7
+      and count(R.holders) >= 3
+    |}
+    @weight(0.85)
+  |}
+
+  pattern ResourceExhaustion :: {|
+    description :: "A resource that has reached zero availability"
+    match {|
+      Resource R where R.available == 0.0
+      and R.capacity > 0.0
+    |}
+    @weight(1.0)
+  |}
+
+  pattern MemoryPressurePattern :: {|
+    description :: "System approaching memory capacity limits"
+    match {|
+      Memory M where M.allocated / M.capacity >= 0.85
+      and M.fragmentation >= 0.2
+    |}
+    @weight(0.9)
+  |}
+
+  pattern SlotActivationDecay :: {|
+    description :: "Memory slots whose activation has fallen near floor"
+    match {|
+      Memory M has state :Allocated
+      and M.generation == 0
+      and elapsed_since(M.created_at) > 3s
+    |}
+    @weight(0.5)
+  |}
+
+  pattern ResourceDeadlock :: {|
+    description :: "Circular wait condition on resources"
+    match {|
+      process P has state :Blocked
+      and P -> requires -> Resource R1
+      and R1 -> owns -> process Q
+      and Q has state :Blocked
+      and Q -> requires -> Resource R2
+      and R2 -> owns -> P
+    |}
+    @weight(0.95)
+  |}
+
+  pattern ResourceLeakSuspicion :: {|
+    description :: "A process holding resources far beyond expected duration"
+    match {|
+      process P -> owns -> Resource R
+      and P has state :Running
+      and elapsed_since(R.created_at) > 120s
+      and R.resource_type != :Lock
+    |}
+    @weight(0.6)
+  |}
+
+|}
+
+-- ==================================================================
+-- Failure cascade patterns
+-- ==================================================================
+
+ontology FailureCascadePatterns {|
+
+  pattern SingleDeviceFailure :: {|
+    description :: "One device goes offline, processes still stable"
+    match {|
+      Device D has state :Offline
+      and count(process P where P -> requires -> D) <= 2
+    |}
+    @weight(0.7)
+  |}
+
+  pattern MultiDeviceFailure :: {|
+    description :: "Multiple devices failing simultaneously (hardware fault)"
+    match {|
+      Device D1 has state :Unreachable
+      and Device D2 has state :Unreachable
+      and D1.device_class == D2.device_class
+      and elapsed_since(D1.created_at) - elapsed_since(D2.created_at) < 5s
+    |}
+    @weight(0.95)
+  |}
+
+  pattern CascadingSuspension :: {|
+    description :: "A wave of process suspensions triggered by dependency failure"
+    match {|
+      count(process P where P has state :Suspended) >= 5
+      and exists Device D where D has state :Unreachable
+      and for_all P in suspended_processes {|
+        P -> requires -> D
+      |}
+    |}
+    @weight(0.9)
+  |}
+
+  pattern TaskChainFailure :: {|
+    description :: "A failed task causing downstream task failures"
+    match {|
+      Task T has state :Failed
+      and count(Task U where U -> requires -> T and U has state :Failed) >= 2
+    |}
+    @weight(0.85)
+  |}
+
+  pattern SignalStorm :: {|
+    description :: "Excessive signal delivery rate indicating system instability"
+    match {|
+      count(Signal S where elapsed_since(S.created_at) < 1s) >= 50
+    |}
+    @weight(0.95)
+  |}
+
+  pattern WatchdogEscalation :: {|
+    description :: "Watchdog detecting unresponsive critical process"
+    match {|
+      process P has priority :Realtime
+      and P has state :Running
+      and elapsed_since(P.last_scheduled) > 5s
+    |}
+    @weight(1.0)
+  |}
+
+|}
+
+-- ==================================================================
+-- Load balancing heuristic patterns
+-- ==================================================================
+
+ontology LoadBalancingPatterns {|
+
+  pattern HighPriorityStarvation :: {|
+    description :: "High-priority processes not getting enough quantum"
+    match {|
+      process P has priority :High
+      and P has state :Ready
+      and elapsed_since(P.last_scheduled) > 2s
+      and exists process Q where Q has priority :Normal and Q has state :Running
+    |}
+    @weight(0.85)
+  |}
+
+  pattern QueueImbalance :: {|
+    description :: "Significant imbalance between priority queue depths"
+    match {|
+      count(process P where P.priority == :Normal and P has state :Ready) >= 20
+      and count(process Q where Q.priority == :Low and Q has state :Ready) < 3
+    |}
+    @weight(0.6)
+  |}
+
+  pattern NeuralWeightConvergence :: {|
+    description :: "Too many processes with similar neural weights (poor differentiation)"
+    match {|
+      process P has state :Ready
+      and process Q has state :Ready
+      and P.pid != Q.pid
+      and abs(P.neural_weight - Q.neural_weight) < 0.05
+      and P.priority == Q.priority
+    |}
+    @weight(0.5)
+  |}
+
+  pattern BurstArrival :: {|
+    description :: "Many processes spawned in a short window"
+    match {|
+      count(process P where elapsed_since(P.created_at) < 2s
+            and P has state :Ready) >= 10
+    |}
+    @weight(0.75)
+  |}
+
+  pattern IdleCoreOpportunity :: {|
+    description :: "System resources available but no processes ready"
+    match {|
+      Resource R has resource_type :CPU
+      and R.available / R.capacity > 0.5
+      and count(process P where P has state :Ready) == 0
+      and count(process Q where Q has state :Sleeping) >= 1
+    |}
+    @weight(0.4)
+  |}
+
+  pattern ThermalThrottleRequired :: {|
+    description :: "Sustained high CPU usage requiring thermal protection"
+    match {|
+      Resource R has resource_type :CPU
+      and R.available / R.capacity < 0.1
+      and elapsed_since(R.created_at) > 30s
+    |}
+    @weight(0.9)
+  |}
+
+|}
