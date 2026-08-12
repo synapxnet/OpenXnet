@@ -1,0 +1,1277 @@
+/* =========================================================
+   kernel-prototype.css
+   ---------------------------------------------------------
+   1:1 实现 D:/OpenXnet/UIPlan/pages/kernel.html 的视觉。
+   全部选择器以 body.openxnet-ui-redesign-body 作为前缀以
+   提升优先级，避免被既有内核样式（.openxnet-kernel-console）
+   或全局 page padding 覆盖。
+   ========================================================= */
+
+body.openxnet-ui-redesign-body .ox-kernel-prototype-page {
+  background: var(--ox-bg-base, #f3f5f9) !important;
+  padding: 24px 28px !important;
+  overflow-y: auto !important;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-prototype {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-prototype__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-prototype__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+  line-height: 1.2;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-prototype__subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ox-text-muted, #94a3b8);
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  letter-spacing: 0.02em;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-prototype__updated {
+  font-size: 12px;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-prototype__error {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.32);
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+/* ─── Tabs (pill style) ─── */
+body.openxnet-ui-redesign-body .ox-kernel-prototype__tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  align-self: flex-start;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ox-text-secondary, #475569);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-tab i {
+  font-size: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-tab:hover {
+  background: var(--ox-bg-surface-hover, #f1f3f9);
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-tab.active {
+  background: var(--ox-accent, #5BA3C5);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(91, 163, 197, 0.28);
+}
+
+/* ─── Generic tab panel ─── */
+body.openxnet-ui-redesign-body .ox-kernel-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ════════ Console tab ════════ */
+body.openxnet-ui-redesign-body .ox-kernel-status-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 22px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-status-card__indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.12);
+  flex-shrink: 0;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-status-card__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.18);
+  animation: ox-kernel-pulse 1.8s ease-in-out infinite;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-status-card__dot.is-degraded {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.22);
+}
+
+@keyframes ox-kernel-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-status-card__info {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-status-card__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-status-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-status-card__meta i {
+  margin-right: 4px;
+  color: var(--ox-accent, #5BA3C5);
+}
+
+/* ─── Metrics ─── */
+body.openxnet-ui-redesign-body .ox-kernel-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-metric__label {
+  font-size: 12px;
+  color: var(--ox-text-muted, #94a3b8);
+  letter-spacing: 0.01em;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-metric__value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ox-accent, #5BA3C5);
+  line-height: 1.1;
+}
+
+/* ─── Real-time log ─── */
+body.openxnet-ui-redesign-body .ox-kernel-log {
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  max-height: 260px;
+  overflow-y: auto;
+  color: #cbd5e1;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-log__empty {
+  color: #64748b;
+  font-style: italic;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-log__line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-log__time {
+  color: #64748b;
+  margin-right: 8px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-log__badge {
+  display: inline-block;
+  min-width: 50px;
+  text-align: center;
+  padding: 1px 6px;
+  margin-right: 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-log__badge--info { background: rgba(91, 163, 197, 0.16); color: #5BA3C5; }
+body.openxnet-ui-redesign-body .ox-kernel-log__badge--debug { background: rgba(148, 163, 184, 0.16); color: #94a3b8; }
+body.openxnet-ui-redesign-body .ox-kernel-log__badge--warn { background: rgba(245, 158, 11, 0.16); color: #f59e0b; }
+body.openxnet-ui-redesign-body .ox-kernel-log__badge--error { background: rgba(239, 68, 68, 0.16); color: #ef4444; }
+
+body.openxnet-ui-redesign-body .ox-kernel-log__text { color: #e2e8f0; }
+
+body.openxnet-ui-redesign-body .ox-kernel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ════════ Audit tab ════════ */
+body.openxnet-ui-redesign-body .ox-kernel-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-table-card {
+  border-radius: 12px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-table thead th {
+  text-align: left;
+  padding: 12px 16px;
+  background: var(--ox-bg-surface-hover, #f1f3f9);
+  color: var(--ox-text-secondary, #475569);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-table tbody td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--ox-border, rgba(15, 23, 42, 0.06));
+  color: var(--ox-text-secondary, #475569);
+  vertical-align: middle;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-table tbody tr:hover {
+  background: var(--ox-bg-surface-hover, #f1f3f9);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-table__mono {
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--ox-text-secondary, #475569);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-table__strong {
+  font-weight: 500;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-table__empty {
+  text-align: center;
+  padding: 28px 16px !important;
+  color: var(--ox-text-muted, #94a3b8);
+  font-size: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-result-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-result-badge--success { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+body.openxnet-ui-redesign-body .ox-kernel-result-badge--warn { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+body.openxnet-ui-redesign-body .ox-kernel-result-badge--fail { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
+body.openxnet-ui-redesign-body .ox-kernel-result-badge--timeout { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+body.openxnet-ui-redesign-body .ox-kernel-result-badge--running { background: rgba(91, 163, 197, 0.14); color: #2563eb; }
+
+/* ════════ Traces tab ════════ */
+body.openxnet-ui-redesign-body .ox-kernel-trace-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-pill {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ox-text-secondary, #475569);
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-pill:hover {
+  border-color: var(--ox-border-hover, rgba(15, 23, 42, 0.14));
+  background: var(--ox-bg-surface-hover, #f1f3f9);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-pill.active {
+  background: var(--ox-accent, #5BA3C5);
+  border-color: var(--ox-accent, #5BA3C5);
+  color: #fff;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-card:hover {
+  border-color: var(--ox-border-hover, rgba(15, 23, 42, 0.14));
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__id {
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ox-accent, #5BA3C5);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__status.is-success { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18); }
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__status.is-fail { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); }
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__status.is-timeout { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18); }
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__status.is-running { background: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18); }
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__meta {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__meta i {
+  margin-right: 4px;
+  font-size: 11px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__timeline {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ox-border, rgba(15, 23, 42, 0.06));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 0;
+  position: relative;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 22px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--ox-border, rgba(15, 23, 42, 0.08));
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-step__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--ox-accent, #5BA3C5);
+  background: #fff;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+body.openxnet-ui-redesign-body .ox-kernel-trace-step__dot.is-done { background: var(--ox-accent, #5BA3C5); }
+body.openxnet-ui-redesign-body .ox-kernel-trace-step__dot.is-fail { border-color: #ef4444; background: #ef4444; }
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-step__info {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-step__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-step__duration {
+  font-size: 11px;
+  color: var(--ox-text-muted, #94a3b8);
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-card__actions {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ox-border, rgba(15, 23, 42, 0.06));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-trace-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 32px;
+  color: var(--ox-text-muted, #94a3b8);
+  font-size: 13px;
+}
+
+/* ════════ World tab ════════ */
+body.openxnet-ui-redesign-body .ox-kernel-world-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-world-stat {
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  text-align: center;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-world-stat__value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--ox-accent, #5BA3C5);
+  line-height: 1.1;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-world-stat__label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-type-badge--concept { background: rgba(91, 163, 197, 0.10); color: #5BA3C5; }
+body.openxnet-ui-redesign-body .ox-kernel-type-badge--object { background: rgba(16, 185, 129, 0.10); color: #10B981; }
+body.openxnet-ui-redesign-body .ox-kernel-type-badge--event { background: rgba(245, 158, 11, 0.10); color: #F59E0B; }
+body.openxnet-ui-redesign-body .ox-kernel-type-badge--property { background: rgba(139, 92, 246, 0.10); color: #8B5CF6; }
+
+/* Knowledge Graph placeholder */
+body.openxnet-ui-redesign-body .ox-kernel-kg-placeholder {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  padding: 32px;
+  border-radius: 12px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  overflow: hidden;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-kg-placeholder__title {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-kg-placeholder__title i {
+  color: var(--ox-accent, #5BA3C5);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-kg-node {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid var(--ox-accent, #5BA3C5);
+  background: var(--ox-accent-softer, rgba(91, 163, 197, 0.06));
+  z-index: 1;
+}
+body.openxnet-ui-redesign-body .ox-kernel-kg-node--1 { top: 25%; left: 20%; width: 40px; height: 40px; }
+body.openxnet-ui-redesign-body .ox-kernel-kg-node--2 { top: 60%; left: 35%; width: 28px; height: 28px; }
+body.openxnet-ui-redesign-body .ox-kernel-kg-node--3 { top: 30%; left: 55%; width: 36px; height: 36px; }
+body.openxnet-ui-redesign-body .ox-kernel-kg-node--4 { top: 65%; left: 65%; width: 32px; height: 32px; }
+body.openxnet-ui-redesign-body .ox-kernel-kg-node--5 { top: 40%; left: 80%; width: 44px; height: 44px; }
+
+body.openxnet-ui-redesign-body .ox-kernel-kg-line {
+  position: absolute;
+  height: 2px;
+  background: rgba(91, 163, 197, 0.25);
+  transform-origin: left center;
+  z-index: 0;
+}
+body.openxnet-ui-redesign-body .ox-kernel-kg-line--1 { top: 35%; left: 24%; width: 120px; transform: rotate(5deg); }
+body.openxnet-ui-redesign-body .ox-kernel-kg-line--2 { top: 55%; left: 38%; width: 100px; transform: rotate(-20deg); }
+body.openxnet-ui-redesign-body .ox-kernel-kg-line--3 { top: 42%; left: 58%; width: 90px; transform: rotate(15deg); }
+body.openxnet-ui-redesign-body .ox-kernel-kg-line--4 { top: 68%; left: 42%; width: 130px; transform: rotate(-5deg); }
+
+/* ════════ Plan tab ════════ */
+body.openxnet-ui-redesign-body .ox-kernel-plan-current {
+  padding: 22px 24px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-current__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-current__head h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-current__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(91, 163, 197, 0.14);
+  color: #2563eb;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-current__status.is-done {
+  background: rgba(34, 197, 94, 0.14);
+  color: #16a34a;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-progress {
+  margin-bottom: 16px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-progress__bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ox-bg-surface-hover, #f1f3f9);
+  overflow: hidden;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-progress__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #5BA3C5, #7BB8D4);
+  transition: width 480ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-progress__text {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-step__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 11px;
+  flex-shrink: 0;
+  background: var(--ox-bg-surface-hover, #f1f3f9);
+  color: var(--ox-text-muted, #94a3b8);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-step.is-done .ox-kernel-plan-step__icon {
+  background: var(--ox-accent, #5BA3C5);
+  border-color: var(--ox-accent, #5BA3C5);
+  color: #fff;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-step.is-current .ox-kernel-plan-step__icon {
+  background: rgba(91, 163, 197, 0.16);
+  border-color: var(--ox-accent, #5BA3C5);
+  color: var(--ox-accent, #5BA3C5);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-step__text {
+  font-size: 13px;
+  color: var(--ox-text-secondary, #475569);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-step.is-done .ox-kernel-plan-step__text,
+body.openxnet-ui-redesign-body .ox-kernel-plan-step.is-current .ox-kernel-plan-step__text {
+  color: var(--ox-text-primary, #1e293b);
+  font-weight: 500;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-history-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-panel {
+  padding: 18px 20px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-panel__head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-panel__head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-panel__rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-panel__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ox-bg-surface-hover, #f7f8fb);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.06));
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-panel__row span {
+  font-size: 11px;
+  color: var(--ox-text-muted, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-panel__row strong {
+  font-size: 13px;
+  color: var(--ox-text-primary, #1e293b);
+  word-break: break-word;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-panel__actions {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-run-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-run-item {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ox-bg-surface-hover, #f7f8fb);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.06));
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-run-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--ox-text-secondary, #475569);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-run-item small {
+  font-size: 11px;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--ox-bg-surface-hover, #f7f8fb);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.06));
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__summary-item span,
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__field label {
+  font-size: 11px;
+  color: var(--ox-text-muted, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__summary-item strong {
+  font-size: 13px;
+  color: var(--ox-text-primary, #1e293b);
+  word-break: break-word;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__mono {
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__note {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(91, 163, 197, 0.08);
+  border: 1px solid rgba(91, 163, 197, 0.18);
+  color: var(--ox-text-secondary, #475569);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 16px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__form,
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__textarea textarea,
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__meta-box {
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__meta-box {
+  min-height: 420px;
+  max-height: 520px;
+  overflow: auto;
+  padding: 14px;
+  border-radius: 14px;
+  background: #0f172a;
+  color: #dbeafe;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-action-dialog__meta-box pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-row {
+  cursor: pointer;
+}
+
+body.openxnet-ui-redesign-body .ox-kernel-plan-row.active {
+  background: rgba(91, 163, 197, 0.08);
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 960px) {
+  body.openxnet-ui-redesign-body .ox-kernel-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  body.openxnet-ui-redesign-body .ox-kernel-trace-grid {
+    grid-template-columns: 1fr;
+  }
+  body.openxnet-ui-redesign-body .ox-kernel-world-stats {
+    grid-template-columns: 1fr;
+  }
+  body.openxnet-ui-redesign-body .ox-kernel-plan-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body.openxnet-ui-redesign-body .ox-kernel-plan-panel__rows {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body.openxnet-ui-redesign-body .ox-kernel-plan-run-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body.openxnet-ui-redesign-body .ox-kernel-action-dialog__summary,
+  body.openxnet-ui-redesign-body .ox-kernel-action-dialog__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body.openxnet-ui-redesign-body .ox-kernel-action-dialog__meta-box {
+    min-height: 260px;
+  }
+}
+
+/* ─── Dark theme ─── */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-prototype-page,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-prototype-page,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-kernel-prototype-page,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-kernel-prototype-page {
+  background: #0f172a !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-prototype__title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-prototype__title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-status-card__title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-status-card__title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-table__strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-table__strong,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-trace-step__name,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-trace-step__name,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-plan-current__head h3,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-plan-current__head h3,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-plan-history-head h3,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-plan-history-head h3 {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-status-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-status-card,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-metric,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-metric,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-table-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-table-card,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-trace-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-trace-card,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-world-stat,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-world-stat,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-kg-placeholder,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-kg-placeholder,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-plan-current,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-plan-current,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-prototype__tabs,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-prototype__tabs {
+  background: rgba(30, 41, 59, 0.72) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-table thead th,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-table thead th {
+  background: rgba(15, 23, 42, 0.6) !important;
+  color: #cbd5e1 !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-table tbody td,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-table tbody td {
+  color: #cbd5e1 !important;
+  border-color: rgba(148, 163, 184, 0.1) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-table tbody tr:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-table tbody tr:hover {
+  background: rgba(51, 65, 85, 0.4) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-tab,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-tab {
+  color: #94a3b8 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-tab:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-tab:hover {
+  background: rgba(148, 163, 184, 0.12) !important;
+  color: #e2e8f0 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kernel-tab.active,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kernel-tab.active {
+  color: #fff !important;
+}
+
+/* =========================================================
+   左侧旧 .ox-prototype-subnav（仅在 activeMenu='kernel' 时
+   渲染）的视觉重塑——卡片风格与右侧 kernel-prototype 一致：
+   白色 surface、12px 圆角、1px 浅边、品牌蓝 active 态、
+   8 个导航项用 pill 按钮样式。
+   提升优先级用 body.openxnet-ui-redesign-body 双前缀。
+   ========================================================= */
+body.openxnet-ui-redesign-body .openxnet-redesign-app .ox-prototype-subnav,
+.openxnet-redesign-app body.openxnet-ui-redesign-body .ox-prototype-subnav {
+  background: var(--ox-bg-base, #f3f5f9) !important;
+  border-right: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08)) !important;
+  padding: 18px 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 14px !important;
+  width: 240px !important;
+  min-width: 240px !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 14px 16px !important;
+  border-radius: 12px !important;
+  background: var(--ox-bg-surface, #fff) !important;
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08)) !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03) !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-title {
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-hero {
+  position: relative !important;
+  padding: 14px 16px !important;
+  border-radius: 14px !important;
+  background:
+    radial-gradient(circle at top right, rgba(91, 163, 197, 0.12), transparent 60%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.92)) !important;
+  border: 1px solid rgba(91, 163, 197, 0.22) !important;
+  box-shadow: 0 4px 12px rgba(91, 163, 197, 0.06) !important;
+  overflow: hidden !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-hero::before,
+body.openxnet-ui-redesign-body .ox-prototype-subnav-hero::after {
+  display: none !important; /* 旧装饰层关闭，避免与新渐变重叠 */
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-hero-kicker {
+  display: inline-flex !important;
+  align-items: center !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  color: var(--ox-accent, #5BA3C5) !important;
+  margin-bottom: 4px !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-hero-title {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+  line-height: 1.25 !important;
+  margin: 0 0 6px !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-hero-copy {
+  margin: 0 !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+  color: var(--ox-text-secondary, #475569) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-breadcrumb {
+  font-size: 11px !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+  letter-spacing: 0.04em !important;
+  padding: 0 4px !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-section {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-section + .ox-prototype-subnav-section {
+  margin-top: 6px !important;
+  padding-top: 6px !important;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-section-label {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+  padding: 4px 4px 2px !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 9px 12px !important;
+  border-radius: 10px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: var(--ox-text-secondary, #475569) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  text-align: left !important;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 160ms ease !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-item i {
+  width: 18px !important;
+  text-align: center !important;
+  font-size: 13px !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+  flex-shrink: 0 !important;
+  transition: color 160ms ease !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-item:hover {
+  background: var(--ox-bg-surface, #fff) !important;
+  border-color: var(--ox-border, rgba(15, 23, 42, 0.08)) !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+  transform: translateX(2px) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-item:hover i {
+  color: var(--ox-accent, #5BA3C5) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-item.active {
+  background: var(--ox-accent, #5BA3C5) !important;
+  border-color: var(--ox-accent, #5BA3C5) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 10px rgba(91, 163, 197, 0.28) !important;
+  font-weight: 600 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-item.active i {
+  color: #fff !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-subnav-empty {
+  padding: 14px 12px !important;
+  font-size: 12px !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+  text-align: center !important;
+}
+
+/* ───── Dark theme ───── */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-subnav,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-subnav,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-subnav,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-subnav {
+  background: #0f172a !important;
+  border-right-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-subnav-header,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-subnav-header {
+  background: rgba(30, 41, 59, 0.78) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-subnav-title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-subnav-title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-subnav-hero-title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-subnav-hero-title {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-subnav-hero,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-subnav-hero {
+  background:
+    radial-gradient(circle at top right, rgba(91, 163, 197, 0.22), transparent 60%),
+    linear-gradient(135deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.88)) !important;
+  border-color: rgba(91, 163, 197, 0.32) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-subnav-hero-copy,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-subnav-hero-copy {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item:hover {
+  background: rgba(30, 41, 59, 0.78) !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  color: #f1f5f9 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item.active,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item.active {
+  background: var(--ox-accent, #5BA3C5) !important;
+  border-color: var(--ox-accent, #5BA3C5) !important;
+  color: #fff !important;
+}

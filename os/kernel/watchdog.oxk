@@ -1,0 +1,445 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Watchdog: Health Monitoring, Crash Detection, Auto-Recovery
+-- Monitors all processes and system health
+
+module Watchdog {|
+
+  requires :: [:scheduler, :signals, :ipc]
+  version :: "0.1.0"
+
+  -- System health states
+  enum SystemHealth {|
+    :Nominal      -- all systems operational
+    :Warning      -- some degradation detected
+    :Degraded     -- reduced functionality
+    :Critical     -- imminent failure
+    :Recovering   -- auto-recovery in progress
+  |}
+
+  -- Process health status
+  enum ProcessHealth {|
+    :Alive        -- responding to heartbeats
+    :Slow         -- responding but above latency threshold
+    :Unresponsive -- missed heartbeats
+    :Crashed      -- terminated unexpectedly
+    :Restarting   -- being recovered
+  |}
+
+  -- Recovery action
+  enum RecoveryAction {|
+    :Restart           -- kill and respawn
+    :Escalate          -- notify parent / admin
+    :Isolate           -- sandbox the process
+    :GracefulShutdown  -- ask to terminate
+    :ForceKill         -- SIGKILL
+    :SystemReboot      -- full restart
+    :DegradedMode      -- continue without the component
+  |}
+
+  -- Monitored process entry
+  struct MonitoredProcess {|
+    pid :: UInt32
+    name :: String
+    health :: ProcessHealth
+    last_heartbeat :: Timestamp
+    heartbeat_count :: UInt64
+    missed_heartbeats :: UInt32
+    crash_count :: UInt32
+    last_crash :: Option[Timestamp]
+    restart_count :: UInt32
+    max_restarts :: UInt32
+    restart_delay :: Duration
+    recovery_action :: RecoveryAction
+    critical :: Bool               -- system cannot function without this
+    monitoring_since :: Timestamp
+  |}
+
+  -- Health check result
+  struct HealthCheckResult {|
+    pid :: UInt32
+    timestamp :: Timestamp
+    latency :: Duration
+    memory_usage :: Float64        -- percentage of allocated slots
+    cpu_usage :: Float64           -- percentage of time quantum used
+    channel_backpressure :: Bool
+    status :: ProcessHealth
+  |}
+
+  -- Configuration
+  config WatchdogConfig {|
+    heartbeat_interval :: 2s
+    heartbeat_timeout :: 6s
+    slow_threshold :: 3s
+    max_missed_heartbeats :: 3
+    health_check_interval :: 5s
+    recovery_cooldown :: 10s
+    max_restart_attempts :: 5
+    restart_backoff_multiplier :: 2.0
+    crash_window :: 60s            -- time window for crash counting
+    rapid_crash_threshold :: 3     -- crashes in window -> escalate
+    system_health_eval_interval :: 10s
+    degraded_mode_timeout :: 300s  -- max time in degraded mode
+    memory_warning_threshold :: 0.75
+    memory_critical_threshold :: 0.90
+  |}
+
+  -- State
+  state monitored :: Map[UInt32, MonitoredProcess] = Map.empty()
+  state system_health :: SystemHealth = :Nominal
+  state health_history :: Queue[HealthCheckResult] = Queue.empty()
+  state recovery_in_progress :: Set[UInt32] = Set.empty()
+  state degraded_since :: Option[Timestamp] = None
+  state total_recoveries :: UInt64 = 0
+
+  -- Register a process for monitoring
+  service register_monitor(pid :: UInt32, name :: String, critical :: Bool,
+                           max_restarts :: UInt32,
+                           restart_delay :: Duration) -> Void {|
+    let entry = MonitoredProcess {|
+      pid :: pid
+      name :: name
+      health :: :Alive
+      last_heartbeat :: now()
+      heartbeat_count :: 0
+      missed_heartbeats :: 0
+      crash_count :: 0
+      last_crash :: None
+      restart_count :: 0
+      max_restarts :: max_restarts
+      restart_delay :: restart_delay
+      recovery_action :: if critical then :Restart else :DegradedMode
+      critical :: critical
+      monitoring_since :: now()
+    |}
+
+    monitored = Map.insert(monitored, pid, entry)
+    emit :ProcessMonitored with {| pid :: pid, name :: name, critical :: critical |}
+  |}
+
+  -- Receive heartbeat from a process
+  service heartbeat(pid :: UInt32) -> Void {|
+    match Map.get(monitored, pid) {|
+      Some(entry) -> {|
+        let updated = entry with {|
+          last_heartbeat :: now()
+          heartbeat_count :: entry.heartbeat_count + 1
+          missed_heartbeats :: 0
+          health :: :Alive
+        |}
+        monitored = Map.insert(monitored, pid, updated)
+      |}
+      None -> ()  -- not monitored, ignore
+    |}
+  |}
+
+  -- Main monitoring loop
+  service monitor() -> Void {|
+    on :WatchdogTick {|
+      invoke check_heartbeats()
+      invoke evaluate_system_health()
+      invoke check_degraded_timeout()
+    |}
+
+    -- Listen for process crash signals
+    on :ProcessTerminated with {| pid, reason |} {|
+      invoke handle_crash(pid, reason)
+    |}
+
+    on :ProcessSpawned with {| pid, name |} {|
+      -- Auto-monitor newly spawned system processes
+      -- (user processes must explicitly register)
+    |}
+  |}
+
+  -- Check heartbeats for all monitored processes
+  service check_heartbeats() -> Void {|
+    for pid, entry in monitored where entry.health != :Crashed
+                                  and entry.health != :Restarting {|
+      let elapsed = elapsed_since(entry.last_heartbeat)
+
+      if elapsed > WatchdogConfig.heartbeat_timeout {|
+        let new_missed = entry.missed_heartbeats + 1
+        let new_health = if new_missed >= WatchdogConfig.max_missed_heartbeats
+                         then :Unresponsive
+                         else :Slow
+
+        let updated = entry with {|
+          missed_heartbeats :: new_missed
+          health :: new_health
+        |}
+        monitored = Map.insert(monitored, pid, updated)
+
+        if new_health == :Unresponsive {|
+          emit :ProcessUnresponsive with {|
+            pid :: pid, name :: entry.name, missed :: new_missed
+          |}
+          invoke initiate_recovery(pid)
+        |} else if new_health == :Slow {|
+          emit :ProcessSlow with {|
+            pid :: pid, name :: entry.name, latency :: elapsed
+          |}
+        |}
+      |} else if elapsed > WatchdogConfig.slow_threshold {|
+        let updated = entry with {| health :: :Slow |}
+        monitored = Map.insert(monitored, pid, updated)
+      |}
+    |}
+  |}
+
+  -- Handle a process crash
+  service handle_crash(pid :: UInt32, reason :: Symbol) -> Void {|
+    match Map.get(monitored, pid) {|
+      Some(entry) -> {|
+        let updated = entry with {|
+          health :: :Crashed
+          crash_count :: entry.crash_count + 1
+          last_crash :: Some(now())
+        |}
+        monitored = Map.insert(monitored, pid, updated)
+
+        emit :ProcessCrashed with {|
+          pid :: pid, name :: entry.name, reason :: reason,
+          crash_count :: updated.crash_count
+        |}
+
+        -- Check for rapid crash pattern
+        if is_rapid_crashing(updated) {|
+          invoke handle_rapid_crash(pid, updated)
+        |} else {|
+          invoke initiate_recovery(pid)
+        |}
+      |}
+      None -> ()  -- not monitored
+    |}
+  |}
+
+  -- Check if a process is crashing rapidly
+  service is_rapid_crashing(entry :: MonitoredProcess) -> Bool {|
+    match entry.last_crash {|
+      Some(last) -> {|
+        let in_window = elapsed_since(last) < WatchdogConfig.crash_window
+        return in_window and entry.crash_count >= WatchdogConfig.rapid_crash_threshold
+      |}
+      None -> return false
+    |}
+  |}
+
+  -- Handle rapidly crashing process
+  service handle_rapid_crash(pid :: UInt32, entry :: MonitoredProcess) -> Void {|
+    emit :RapidCrashDetected with {|
+      pid :: pid, name :: entry.name, crashes :: entry.crash_count
+    |}
+
+    if entry.critical {|
+      -- Critical process crashing rapidly -> system degraded
+      system_health = :Critical
+      emit :SystemCritical with {|
+        reason :: "critical process in crash loop",
+        process :: entry.name
+      |}
+      -- Try one more restart with longer delay
+      invoke attempt_restart(pid, entry.restart_delay * 5)
+    |} else {|
+      -- Non-critical: enter degraded mode
+      let updated = entry with {|
+        recovery_action :: :DegradedMode
+        health :: :Crashed
+      |}
+      monitored = Map.insert(monitored, pid, updated)
+      invoke enter_degraded_mode(entry.name)
+    |}
+  |}
+
+  -- Initiate recovery for a failed process
+  service initiate_recovery(pid :: UInt32) -> Void {|
+    if Set.contains(recovery_in_progress, pid) {|
+      return  -- already recovering
+    |}
+
+    match Map.get(monitored, pid) {|
+      Some(entry) -> {|
+        if entry.restart_count >= entry.max_restarts {|
+          -- Exhausted restart attempts
+          emit :RecoveryExhausted with {| pid :: pid, name :: entry.name |}
+          if entry.critical {|
+            invoke escalate_failure(pid, entry)
+          |} else {|
+            invoke enter_degraded_mode(entry.name)
+          |}
+          return
+        |}
+
+        recovery_in_progress = Set.insert(recovery_in_progress, pid)
+
+        let action = entry.recovery_action
+        match action {|
+          :Restart -> {|
+            let delay = entry.restart_delay *
+                        (WatchdogConfig.restart_backoff_multiplier ^ entry.restart_count)
+            invoke attempt_restart(pid, delay)
+          |}
+          :GracefulShutdown -> {|
+            signal :SIGTERM to pid
+            -- Wait for graceful exit, then restart
+            invoke schedule_restart_after(pid, 5s)
+          |}
+          :ForceKill -> {|
+            signal :SIGKILL to pid
+            invoke attempt_restart(pid, entry.restart_delay)
+          |}
+          :Isolate -> {|
+            invoke Policy.revoke_capability(pid, :net_connect)
+            invoke Policy.revoke_capability(pid, :device_use)
+            emit :ProcessIsolated with {| pid :: pid |}
+          |}
+          :DegradedMode -> {|
+            invoke enter_degraded_mode(entry.name)
+          |}
+          :Escalate -> {|
+            invoke escalate_failure(pid, entry)
+          |}
+          :SystemReboot -> {|
+            emit :SystemRebootRequested with {| reason :: "unrecoverable failure" |}
+            signal :SIGTERM to 0  -- broadcast term to all
+          |}
+        |}
+      |}
+      None -> ()
+    |}
+  |}
+
+  -- Attempt to restart a crashed process
+  service attempt_restart(pid :: UInt32, delay :: Duration) -> Void {|
+    match Map.get(monitored, pid) {|
+      Some(entry) -> {|
+        let updated = entry with {|
+          health :: :Restarting
+          restart_count :: entry.restart_count + 1
+        |}
+        monitored = Map.insert(monitored, pid, updated)
+
+        emit :ProcessRestarting with {|
+          pid :: pid, name :: entry.name,
+          attempt :: updated.restart_count, delay :: delay
+        |}
+
+        -- Schedule restart after delay
+        invoke sleep(delay)
+
+        -- Spawn replacement process
+        let result = invoke Scheduler.spawn(entry.name, resolve_entry(entry.name),
+                                            :High, get_default_caps(entry.name))
+        match result {|
+          Ok(new_pid) -> {|
+            -- Transfer monitoring to new PID
+            let new_entry = updated with {|
+              pid :: new_pid
+              health :: :Alive
+              last_heartbeat :: now()
+              missed_heartbeats :: 0
+            |}
+            monitored = Map.remove(monitored, pid)
+            monitored = Map.insert(monitored, new_pid, new_entry)
+            recovery_in_progress = Set.remove(recovery_in_progress, pid)
+
+            total_recoveries = total_recoveries + 1
+            emit :ProcessRecovered with {|
+              old_pid :: pid, new_pid :: new_pid, name :: entry.name
+            |}
+          |}
+          Err(e) -> {|
+            emit :RestartFailed with {| pid :: pid, error :: e |}
+            recovery_in_progress = Set.remove(recovery_in_progress, pid)
+            if entry.critical {|
+              invoke escalate_failure(pid, entry)
+            |}
+          |}
+        |}
+      |}
+      None -> ()
+    |}
+  |}
+
+  -- Evaluate overall system health
+  service evaluate_system_health() -> Void {|
+    let critical_count = 0
+    let degraded_count = 0
+    let total_monitored = Map.size(monitored)
+
+    for pid, entry in monitored {|
+      match entry.health {|
+        :Crashed -> if entry.critical then critical_count = critical_count + 1
+        :Unresponsive -> if entry.critical then critical_count = critical_count + 1
+        :Slow -> degraded_count = degraded_count + 1
+        _ -> ()
+      |}
+    |}
+
+    let new_health = if critical_count > 0 then :Critical
+                     else if degraded_count > total_monitored / 3 then :Degraded
+                     else if degraded_count > 0 then :Warning
+                     else :Nominal
+
+    if new_health != system_health {|
+      let old = system_health
+      system_health = new_health
+      emit :SystemHealthChanged with {| from :: old, to :: new_health |}
+
+      if new_health == :Critical {|
+        signal :SIGPANIC to 0 with {| reason :: "system health critical" |}
+      |}
+    |}
+  |}
+
+  -- Enter degraded mode
+  service enter_degraded_mode(component :: String) -> Void {|
+    if system_health != :Degraded and system_health != :Critical {|
+      system_health = :Degraded
+      degraded_since = Some(now())
+    |}
+    emit :DegradedModeEntered with {| component :: component, timestamp :: now() |}
+  |}
+
+  -- Check if degraded mode has timed out
+  service check_degraded_timeout() -> Void {|
+    match degraded_since {|
+      Some(since) where elapsed_since(since) > WatchdogConfig.degraded_mode_timeout -> {|
+        emit :DegradedModeTimeout with {| duration :: elapsed_since(since) |}
+        -- Attempt full system recovery
+        system_health = :Recovering
+        invoke full_system_recovery()
+      |}
+      _ -> ()
+    |}
+  |}
+
+  -- Full system recovery: restart all failed components
+  service full_system_recovery() -> Void {|
+    emit :FullRecoveryStarted
+
+    for pid, entry in monitored where entry.health == :Crashed {|
+      let reset_entry = entry with {| restart_count :: 0 |}
+      monitored = Map.insert(monitored, pid, reset_entry)
+      invoke initiate_recovery(pid)
+    |}
+
+    degraded_since = None
+  |}
+
+  -- Escalate to system administrator
+  service escalate_failure(pid :: UInt32, entry :: MonitoredProcess) -> Void {|
+    emit :FailureEscalated with {|
+      pid :: pid, name :: entry.name,
+      crash_count :: entry.crash_count,
+      severity :: if entry.critical then :critical else :warning
+    |}
+    -- Broadcast on admin channel
+    invoke IPC.broadcast(:admin_channel, 0, {|
+      type :: :escalation,
+      process :: entry.name,
+      pid :: pid,
+      message :: "process recovery exhausted, manual intervention required"
+    |})
+  |}
+
+|}

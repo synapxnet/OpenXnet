@@ -1,0 +1,29 @@
+version: '3'
+
+services:
+  # 后端服务 (保持不变，不对外暴露端口，只暴露给 gateway)
+  backend:
+    image: ailm32442/super-agent-party:latest
+    container_name: sap-backend
+    restart: unless-stopped
+    volumes:
+      - ./super-agent-data:/app/data
+    # 去掉了 ports 映射，因为我们要通过 gateway 访问
+
+  # 前端网关服务
+  gateway:
+    image: ailm32442/nginx-for-sap:latest
+    container_name: sap-gateway
+    restart: unless-stopped
+    ports:
+      - "3456:3456"  # 对外暴露的端口
+    environment:
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET before starting OpenXnet}
+      - INIT_USER=root
+      - INIT_PASS=${INIT_PASS:?Set INIT_PASS before starting OpenXnet}
+      # 如果忘记密码，将下面设置为 true 重启容器即可按当前 INIT_USER/INIT_PASS 重置，重置完记得改回 false 或删除
+      - FORCE_RESET=false 
+    volumes:
+      - ./gateway-data:/data # 持久化保存密码修改后的状态
+    depends_on:
+      - backend

@@ -1,0 +1,288 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Forward-Chain Inference Rules
+-- Reactive rule engine for kernel state transitions and autonomous behavior
+
+{-- These rulesets define the forward-chaining logic that the kernel's
+    inference engine evaluates each tick. Rules fire when their antecedent
+    patterns match working memory, producing effects (signals, state
+    changes, task promotions) in the consequent. --}
+
+-- ==================================================================
+-- Memory management rules
+-- ==================================================================
+
+ruleset MemoryInference {|
+
+  rule memory_pressure_warning :: @weight(0.95)
+    when {|
+      process P has state :Running
+      and P -> owns -> Memory M
+      and M.allocated / M.capacity >= 0.85
+      and M.allocated / M.capacity < 0.95
+    |}
+    then {|
+      emit signal :SIGMEM to P with {|
+        severity :: :warning
+        usage_ratio :: M.allocated / M.capacity
+        recommendation :: :reduce_allocation
+      |}
+      assert P -> has_state -> :MemoryPressure
+    |}
+
+  rule memory_limit_exceeded :: @weight(1.0)
+    when {|
+      process P has state :Running
+      and P -> owns -> Memory M
+      and M.allocated / M.capacity >= 0.95
+    |}
+    then {|
+      emit signal :SIGMEM to P with {|
+        severity :: :critical
+        usage_ratio :: M.allocated / M.capacity
+        action :: :force_gc
+      |}
+      invoke Memory.gc_young()
+      assert P -> has_state -> :MemoryCritical
+    |}
+
+  rule gc_promotion_trigger :: @weight(0.7)
+    when {|
+      Memory M has generation 0
+      and M.fragmentation >= 0.3
+      and elapsed_since(M.created_at) > 5s
+    |}
+    then {|
+      invoke Memory.gc_full()
+      emit Event {| event_type :: :GCTriggered, source :: M |}
+    |}
+
+  rule decay_below_floor :: @weight(0.6)
+    when {|
+      Memory M has state :Decaying
+      and M.allocated == 0
+    |}
+    then {|
+      invoke Memory.free(M.identity)
+      emit Event {| event_type :: :SlotReclaimed, source :: M |}
+    |}
+
+|}
+
+-- ==================================================================
+-- Device and hardware rules
+-- ==================================================================
+
+ruleset DeviceInference {|
+
+  rule device_unreachable_suspend :: @weight(0.9)
+    when {|
+      Device D has state :Unreachable
+      and process P -> requires -> D
+      and P has state :Running
+    |}
+    then {|
+      emit signal :SIGDEV to P with {|
+        device :: D.identity
+        reason :: :device_unreachable
+      |}
+      invoke Scheduler.suspend(P.pid)
+      assert P -> has_state -> :Suspended
+      assert D -> produces -> Event {| event_type :: :DeviceLost |}
+    |}
+
+  rule device_degraded_throttle :: @weight(0.75)
+    when {|
+      Device D has state :Degraded
+      and process P -> requires -> D
+      and P.priority != :Realtime
+    |}
+    then {|
+      emit signal :SIGDEV to P with {|
+        device :: D.identity
+        reason :: :device_degraded
+        action :: :throttle
+      |}
+      decay P.neural_weight by 0.2
+    |}
+
+  rule device_recovered_resume :: @weight(0.85)
+    when {|
+      Device D has state :Online
+      and process P has state :Suspended
+      and P -> requires -> D
+    |}
+    then {|
+      invoke Scheduler.resume(P.pid)
+      assert P -> has_state -> :Ready
+      boost P.neural_weight by 0.1
+      emit Event {| event_type :: :DeviceRecovered, source :: D |}
+    |}
+
+  rule device_timeout_escalate :: @weight(0.8)
+    when {|
+      Device D has state :Offline
+      and elapsed_since(D.created_at) > 30s
+    |}
+    then {|
+      assert D -> has_state -> :Unreachable
+      emit signal :SIGWATCH to :watchdog with {|
+        device :: D.identity
+        duration :: elapsed_since(D.created_at)
+        action :: :escalate
+      |}
+    |}
+
+|}
+
+-- ==================================================================
+-- Task scheduling and dependency rules
+-- ==================================================================
+
+ruleset TaskInference {|
+
+  rule all_dependencies_satisfied :: @weight(0.95)
+    when {|
+      Task T has state :Pending
+      and for_all dep in T.dependencies {|
+        dep has state :Completed
+      |}
+    |}
+    then {|
+      assert T -> has_state -> :Ready
+      invoke Scheduler.enqueue_task(T)
+      boost T.owner.neural_weight by 0.15
+      emit Event {| event_type :: :TaskPromoted, source :: T |}
+    |}
+
+  rule dependency_failed_cascade :: @weight(0.9)
+    when {|
+      Task T has state :Failed
+      and Task U has state :Pending
+      and U -> requires -> T
+    |}
+    then {|
+      assert U -> has_state -> :Failed
+      emit signal :SIGTERM to U.owner with {|
+        reason :: :dependency_failed
+        failed_dep :: T.identity
+      |}
+      emit Event {| event_type :: :TaskCascadeFailure, source :: U |}
+    |}
+
+  rule task_timeout_watchdog :: @weight(0.85)
+    when {|
+      Task T has state :Running
+      and T.expires_at != None
+      and now() > T.expires_at
+    |}
+    then {|
+      assert T -> has_state -> :Failed
+      emit signal :SIGWATCH to :watchdog with {|
+        task :: T.identity
+        reason :: :timeout
+        elapsed :: elapsed_since(T.created_at)
+      |}
+      decay T.owner.neural_weight by 0.1
+    |}
+
+  rule idle_task_reclaim :: @weight(0.5)
+    when {|
+      Task T has state :Pending
+      and elapsed_since(T.created_at) > 60s
+      and T.owner has state :Terminated
+    |}
+    then {|
+      assert T -> has_state -> :Cancelled
+      emit Event {| event_type :: :TaskOrphaned, source :: T |}
+    |}
+
+|}
+
+-- ==================================================================
+-- IPC and channel rules
+-- ==================================================================
+
+ruleset ChannelInference {|
+
+  rule channel_deadlock_detection :: @weight(0.9)
+    when {|
+      process P has state :Blocked
+      and P -> communicates_with -> process Q
+      and Q has state :Blocked
+      and Q -> communicates_with -> P
+    |}
+    then {|
+      emit signal :SIGIPC to P with {|
+        reason :: :deadlock_detected
+        peer :: Q.pid
+      |}
+      emit signal :SIGIPC to Q with {|
+        reason :: :deadlock_detected
+        peer :: P.pid
+      |}
+      emit Event {| event_type :: :DeadlockDetected, source :: P |}
+    |}
+
+  rule channel_buffer_overflow :: @weight(0.8)
+    when {|
+      Channel C has buffer_usage >= C.buffer_size
+      and process P -> communicates_with -> C.receiver
+    |}
+    then {|
+      emit signal :SIGIPC to P with {|
+        channel :: C.identity
+        reason :: :buffer_full
+        action :: :backpressure
+      |}
+      decay P.neural_weight by 0.05
+    |}
+
+  rule orphan_channel_cleanup :: @weight(0.6)
+    when {|
+      Channel C
+      and (C.sender has state :Terminated or C.receiver has state :Terminated)
+    |}
+    then {|
+      invoke IPC.close_channel(C.identity)
+      emit Event {| event_type :: :ChannelClosed, source :: C |}
+    |}
+
+|}
+
+-- ==================================================================
+-- Watchdog and system health rules
+-- ==================================================================
+
+ruleset WatchdogInference {|
+
+  rule system_overload :: @weight(1.0)
+    when {|
+      Resource R has resource_type :CPU
+      and R.available / R.capacity < 0.05
+      and elapsed_since(R.created_at) > 10s
+    |}
+    then {|
+      emit signal :SIGWATCH to :watchdog with {|
+        resource :: :CPU
+        available :: R.available
+        action :: :shed_load
+      |}
+      -- Suspend lowest priority non-realtime processes
+      for process P where P.priority == :Low or P.priority == :Idle {|
+        invoke Scheduler.suspend(P.pid)
+      |}
+    |}
+
+  rule process_starvation :: @weight(0.8)
+    when {|
+      process P has state :Ready
+      and elapsed_since(P.last_scheduled) > 10s
+      and P.priority != :Idle
+    |}
+    then {|
+      boost P.neural_weight by 0.3
+      boost P.activation_level by 0.2
+      emit Event {| event_type :: :StarvationDetected, source :: P |}
+    |}
+
+|}

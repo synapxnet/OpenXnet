@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenXnet Conversation Studio</title>
+  <style>
+    :root {
+      --text-main: #0f172a;
+      --text-soft: #516179;
+      --panel: rgba(255, 255, 255, 0.86);
+      --line-soft: rgba(58, 82, 120, 0.12);
+      --accent: #1fb6ff;
+      --accent-2: #6f7cff;
+      --accent-3: #2ad0a0;
+      --shadow-soft: 0 20px 70px rgba(22, 34, 56, 0.12);
+      --font-ui: "Segoe UI Variable Display", "SF Pro Display", "HarmonyOS Sans SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      min-height: 100%;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at top left, rgba(31, 182, 255, 0.16), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(42, 208, 160, 0.12), transparent 26%),
+        linear-gradient(180deg, #eef4ff 0%, #f7f9fc 48%, #eef3fb 100%);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(9, 20, 42, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(9, 20, 42, 0.04) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.86), transparent 88%);
+    }
+
+    .page-shell {
+      position: relative;
+      min-height: 100vh;
+      padding: 28px;
+      display: grid;
+      gap: 20px;
+      align-content: center;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      width: min(1180px, 100%);
+      margin: 0 auto;
+    }
+
+    .brand-lockup {
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand-mark {
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: rgba(255, 255, 255, 0.74);
+      border: 1px solid rgba(88, 111, 160, 0.12);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .brand-mark img {
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+    }
+
+    .brand-copy {
+      display: grid;
+      gap: 4px;
+    }
+
+    .brand-copy strong {
+      font-size: 22px;
+      letter-spacing: -0.03em;
+    }
+
+    .brand-copy span {
+      color: var(--text-soft);
+      font-size: 13px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .header-chip {
+      padding: 12px 16px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.76);
+      border: 1px solid rgba(88, 111, 160, 0.12);
+      color: var(--text-soft);
+      box-shadow: var(--shadow-soft);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .content-grid {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(360px, 470px);
+      gap: 22px;
+    }
+
+    .hero-panel,
+    .preview-panel {
+      position: relative;
+      overflow: hidden;
+      border-radius: 30px;
+      border: 1px solid var(--line-soft);
+      background: var(--panel);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(24px) saturate(135%);
+      -webkit-backdrop-filter: blur(24px) saturate(135%);
+    }
+
+    .hero-panel {
+      padding: 38px;
+      display: grid;
+      gap: 24px;
+      align-content: center;
+      min-height: 560px;
+    }
+
+    .hero-panel::before,
+    .preview-panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(135deg, rgba(31, 182, 255, 0.08), transparent 28%),
+        linear-gradient(330deg, rgba(42, 208, 160, 0.06), transparent 36%);
+      pointer-events: none;
+    }
+
+    .hero-kicker {
+      display: inline-flex;
+      width: fit-content;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.05);
+      border: 1px solid rgba(93, 118, 172, 0.12);
+      color: var(--text-soft);
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .hero-kicker::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-3));
+      box-shadow: 0 0 16px rgba(31, 182, 255, 0.32);
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: 16px;
+      max-width: 620px;
+    }
+
+    .hero-copy h1 {
+      margin: 0;
+      font-size: clamp(42px, 5vw, 72px);
+      letter-spacing: -0.06em;
+      line-height: 0.96;
+    }
+
+    .hero-copy p {
+      margin: 0;
+      color: var(--text-soft);
+      font-size: 17px;
+      line-height: 1.8;
+    }
+
+    .hero-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    .hero-metric {
+      min-width: 170px;
+      padding: 16px 18px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(88, 111, 160, 0.12);
+    }
+
+    .hero-metric span {
+      display: block;
+      color: var(--text-soft);
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .hero-metric strong {
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .primary-btn,
+    .secondary-btn {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      font-family: inherit;
+    }
+
+    .primary-btn {
+      padding: 14px 20px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: white;
+      box-shadow: 0 16px 36px rgba(61, 132, 255, 0.28);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .secondary-btn {
+      padding: 14px 18px;
+      border-radius: 18px;
+      background: rgba(15, 23, 42, 0.06);
+      border: 1px solid rgba(88, 111, 160, 0.12);
+      color: var(--text-main);
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .primary-btn:hover,
+    .secondary-btn:hover {
+      transform: translateY(-2px);
+    }
+
+    .hero-note {
+      color: var(--text-soft);
+      font-size: 13px;
+    }
+
+    .preview-panel {
+      padding: 24px;
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+
+    .preview-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .preview-topbar strong {
+      font-size: 18px;
+      letter-spacing: -0.03em;
+    }
+
+    .countdown-chip {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.07);
+      border: 1px solid rgba(88, 111, 160, 0.12);
+      color: var(--text-soft);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+    }
+
+    .preview-stream {
+      display: grid;
+      gap: 12px;
+      padding: 18px;
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(10, 18, 32, 0.92));
+      color: #f4f7ff;
+      min-height: 280px;
+    }
+
+    .stream-row {
+      display: grid;
+      gap: 8px;
+    }
+
+    .stream-label {
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: rgba(228, 235, 255, 0.58);
+    }
+
+    .stream-bubble {
+      width: fit-content;
+      max-width: 100%;
+      padding: 14px 16px;
+      border-radius: 20px;
+      line-height: 1.7;
+      font-size: 14px;
+    }
+
+    .stream-bubble.user {
+      background: linear-gradient(135deg, rgba(31, 182, 255, 0.22), rgba(111, 124, 255, 0.22));
+    }
+
+    .stream-bubble.assistant {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .feature-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .feature-item {
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr);
+      gap: 14px;
+      padding: 14px 0;
+      border-top: 1px solid rgba(88, 111, 160, 0.12);
+    }
+
+    .feature-item:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .feature-index {
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: rgba(15, 23, 42, 0.06);
+      border: 1px solid rgba(88, 111, 160, 0.12);
+      color: var(--text-soft);
+      font-family: var(--font-mono);
+      letter-spacing: 0.14em;
+      font-size: 12px;
+    }
+
+    .feature-copy {
+      display: grid;
+      gap: 6px;
+    }
+
+    .feature-copy strong {
+      font-size: 15px;
+    }
+
+    .feature-copy span {
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1080px) {
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-panel {
+        min-height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <div class="brand-lockup">
+        <div class="brand-mark">
+          <img src="source/logo.png" alt="OpenXnet">
+        </div>
+        <div class="brand-copy">
+          <strong>OpenXnet</strong>
+          <span id="brand-subtitle">Conversation Studio</span>
+        </div>
+      </div>
+      <div class="header-chip" id="header-chip">Legacy route upgraded</div>
+    </header>
+
+    <section class="content-grid">
+      <article class="hero-panel">
+        <div class="hero-kicker" id="hero-kicker">Unified workspace entry</div>
+        <div class="hero-copy">
+          <h1 id="hero-title">Conversation now lives inside the main OpenXnet workspace.</h1>
+          <p id="hero-description">The old standalone chat route has been retired in favor of a cleaner, unified product surface. Open the workspace to continue with models, memory, tools, subscriptions, and digital life from one place.</p>
+        </div>
+
+        <div class="hero-metrics">
+          <div class="hero-metric">
+            <span id="metric-1-label">Surface</span>
+            <strong id="metric-1-value">Unified chat and tools</strong>
+          </div>
+          <div class="hero-metric">
+            <span id="metric-2-label">Routing</span>
+            <strong id="metric-2-value">Main workspace first</strong>
+          </div>
+          <div class="hero-metric">
+            <span id="metric-3-label">Benefit</span>
+            <strong id="metric-3-value">Cleaner and more native UI</strong>
+          </div>
+        </div>
+
+        <div class="hero-actions">
+          <button class="primary-btn" id="open-workspace-btn">Open OpenXnet Workspace</button>
+          <button class="secondary-btn" id="stay-btn">Stay on this page</button>
+        </div>
+
+        <div class="hero-note" id="hero-note">If you do nothing, this route will redirect into the main workspace automatically.</div>
+      </article>
+
+      <aside class="preview-panel">
+        <div class="preview-topbar">
+          <strong id="preview-title">Conversation Studio Preview</strong>
+          <div class="countdown-chip" id="countdown-chip">Auto open in 6s</div>
+        </div>
+
+        <div class="preview-stream">
+          <div class="stream-row">
+            <div class="stream-label" id="stream-user-label">User prompt</div>
+            <div class="stream-bubble user" id="stream-user">Open my workspace, provider settings, and digital life tools in one place.</div>
+          </div>
+          <div class="stream-row">
+            <div class="stream-label" id="stream-assistant-label">OpenXnet</div>
+            <div class="stream-bubble assistant" id="stream-assistant">The standalone chat route has been merged into the primary workspace. Redirecting you into the full OpenXnet environment now.</div>
+          </div>
+        </div>
+
+        <div class="feature-list">
+          <div class="feature-item">
+            <div class="feature-index">01</div>
+            <div class="feature-copy">
+              <strong id="feature-1-title">One conversation surface</strong>
+              <span id="feature-1-copy">Chat, workspace context, tools, and premium controls now share one consistent interface.</span>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-index">02</div>
+            <div class="feature-copy">
+              <strong id="feature-2-title">Lower maintenance risk</strong>
+              <span id="feature-2-copy">A single entry flow makes future UI upgrades easier and avoids legacy duplicated shells.</span>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-index">03</div>
+            <div class="feature-copy">
+              <strong id="feature-3-title">Better product identity</strong>
+              <span id="feature-3-copy">OpenXnet now presents conversation inside its own native product language instead of a detached static route.</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const locale = navigator.language && navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+    const copy = {
+      zh: {
+        brandSubtitle: '会话工作台',
+        headerChip: '遗留入口已升级',
+        heroKicker: '统一工作区入口',
+        heroTitle: '聊天能力已经并入 OpenXnet 主工作区。',
+        heroDescription: '旧的独立聊天路由已退役，取而代之的是更统一、更原生的 OpenXnet 界面。进入主工作区后，你可以在同一处继续使用模型、记忆、工具、订阅与数字生命能力。',
+        metric1Label: '界面表面',
+        metric1Value: '统一聊天与工具',
+        metric2Label: '入口策略',
+        metric2Value: '主工作区优先',
+        metric3Label: '升级收益',
+        metric3Value: '更清爽的原生 UI',
+        openBtn: '打开 OpenXnet 工作区',
+        stayBtn: '停留在此页',
+        heroNote: '如果你不进行任何操作，本页面会自动跳转到主工作区。',
+        previewTitle: '会话工作台预览',
+        countdownLabel: '自动打开于 {seconds}s',
+        userLabel: '用户指令',
+        userBubble: '把我的工作区、模型配置和数字生命工具放进同一个界面。',
+        assistantLabel: 'OpenXnet',
+        assistantBubble: '独立聊天路由已合并进主工作区，正在带你进入完整的 OpenXnet 环境。',
+        feature1Title: '统一会话表面',
+        feature1Copy: '聊天、工作区上下文、工具和高级能力现在共用一套一致界面。',
+        feature2Title: '降低维护风险',
+        feature2Copy: '单一入口让后续 UI 升级更稳定，也避免遗留重复壳层继续扩散。',
+        feature3Title: '强化产品识别',
+        feature3Copy: 'OpenXnet 现在用自己的产品语言承载会话，而不是依赖一个分离的静态聊天页。'
+      },
+      en: {
+        brandSubtitle: 'Conversation Studio',
+        headerChip: 'Legacy route upgraded',
+        heroKicker: 'Unified workspace entry',
+        heroTitle: 'Conversation now lives inside the main OpenXnet workspace.',
+        heroDescription: 'The old standalone chat route has been retired in favor of a cleaner, unified product surface. Open the workspace to continue with models, memory, tools, subscriptions, and digital life from one place.',
+        metric1Label: 'Surface',
+        metric1Value: 'Unified chat and tools',
+        metric2Label: 'Routing',
+        metric2Value: 'Main workspace first',
+        metric3Label: 'Benefit',
+        metric3Value: 'Cleaner and more native UI',
+        openBtn: 'Open OpenXnet Workspace',
+        stayBtn: 'Stay on this page',
+        heroNote: 'If you do nothing, this route will redirect into the main workspace automatically.',
+        previewTitle: 'Conversation Studio Preview',
+        countdownLabel: 'Auto open in {seconds}s',
+        userLabel: 'User prompt',
+        userBubble: 'Open my workspace, provider settings, and digital life tools in one place.',
+        assistantLabel: 'OpenXnet',
+        assistantBubble: 'The standalone chat route has been merged into the primary workspace. Redirecting you into the full OpenXnet environment now.',
+        feature1Title: 'One conversation surface',
+        feature1Copy: 'Chat, workspace context, tools, and premium controls now share one consistent interface.',
+        feature2Title: 'Lower maintenance risk',
+        feature2Copy: 'A single entry flow makes future UI upgrades easier and avoids legacy duplicated shells.',
+        feature3Title: 'Better product identity',
+        feature3Copy: 'OpenXnet now presents conversation inside its own native product language instead of a detached static route.'
+      }
+    }[locale];
+
+    const countdownEl = document.getElementById('countdown-chip');
+    const openBtn = document.getElementById('open-workspace-btn');
+    const stayBtn = document.getElementById('stay-btn');
+    let countdown = 6;
+    let autoRedirect = true;
+    let countdownTimer = null;
+
+    function applyCopy() {
+      document.getElementById('brand-subtitle').textContent = copy.brandSubtitle;
+      document.getElementById('header-chip').textContent = copy.headerChip;
+      document.getElementById('hero-kicker').textContent = copy.heroKicker;
+      document.getElementById('hero-title').textContent = copy.heroTitle;
+      document.getElementById('hero-description').textContent = copy.heroDescription;
+      document.getElementById('metric-1-label').textContent = copy.metric1Label;
+      document.getElementById('metric-1-value').textContent = copy.metric1Value;
+      document.getElementById('metric-2-label').textContent = copy.metric2Label;
+      document.getElementById('metric-2-value').textContent = copy.metric2Value;
+      document.getElementById('metric-3-label').textContent = copy.metric3Label;
+      document.getElementById('metric-3-value').textContent = copy.metric3Value;
+      document.getElementById('hero-note').textContent = copy.heroNote;
+      document.getElementById('preview-title').textContent = copy.previewTitle;
+      document.getElementById('stream-user-label').textContent = copy.userLabel;
+      document.getElementById('stream-user').textContent = copy.userBubble;
+      document.getElementById('stream-assistant-label').textContent = copy.assistantLabel;
+      document.getElementById('stream-assistant').textContent = copy.assistantBubble;
+      document.getElementById('feature-1-title').textContent = copy.feature1Title;
+      document.getElementById('feature-1-copy').textContent = copy.feature1Copy;
+      document.getElementById('feature-2-title').textContent = copy.feature2Title;
+      document.getElementById('feature-2-copy').textContent = copy.feature2Copy;
+      document.getElementById('feature-3-title').textContent = copy.feature3Title;
+      document.getElementById('feature-3-copy').textContent = copy.feature3Copy;
+      openBtn.textContent = copy.openBtn;
+      stayBtn.textContent = copy.stayBtn;
+      updateCountdownLabel();
+    }
+
+    function updateCountdownLabel() {
+      countdownEl.textContent = copy.countdownLabel.replace('{seconds}', countdown);
+    }
+
+    async function openWorkspace() {
+      if (window.electron?.openMainApp) {
+        try {
+          await window.electron.openMainApp();
+          return;
+        } catch (error) {
+          console.error('Failed to open OpenXnet workspace:', error);
+        }
+      }
+
+      window.location.replace('./');
+    }
+
+    function stopAutoRedirect() {
+      autoRedirect = false;
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+      countdownEl.textContent = locale === 'zh' ? '已暂停自动跳转' : 'Auto open paused';
+    }
+
+    applyCopy();
+
+    openBtn.addEventListener('click', () => {
+      stopAutoRedirect();
+      openWorkspace();
+    });
+
+    stayBtn.addEventListener('click', stopAutoRedirect);
+
+    countdownTimer = setInterval(() => {
+      if (!autoRedirect) {
+        return;
+      }
+
+      countdown -= 1;
+      if (countdown <= 0) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+        openWorkspace();
+        return;
+      }
+      updateCountdownLabel();
+    }, 1000);
+  </script>
+</body>
+</html>

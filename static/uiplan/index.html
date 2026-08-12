@@ -1,0 +1,2122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenXnet</title>
+  <link rel="stylesheet" href="../fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="../css/uiplan-tokens.css">
+  <link rel="stylesheet" href="./styles.css?v=20260505-ui-rewrite-19">
+</head>
+<body>
+  <div id="app" class="ox-app" v-cloak>
+    <header class="ox-topbar">
+      <button class="ox-topbar__toggle ox-tooltip" data-tooltip="侧栏" @click="sidebarCollapsed = !sidebarCollapsed">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <div class="ox-topbar__brand" @click="navigate('chat')">
+        <div class="ox-topbar__brand-icon">OX</div>
+        <span>OpenXnet</span>
+      </div>
+      <div class="ox-topbar__search">
+        <div class="ox-search">
+          <i class="fa-solid fa-magnifying-glass ox-search__icon"></i>
+          <input class="ox-input ox-input--pill" v-model="globalSearch" placeholder="搜索对话、技能、模型...">
+          <span class="ox-search__shortcut">Ctrl K</span>
+        </div>
+      </div>
+      <div class="ox-topbar__actions">
+        <button class="ox-topbar__action-btn ox-tooltip" data-tooltip="通知">
+          <i class="fa-solid fa-bell"></i>
+          <span class="ox-notification-dot"></span>
+        </button>
+        <button class="ox-topbar__action-btn ox-tooltip" data-tooltip="刷新数据" @click="refreshAll">
+          <i class="fa-solid fa-rotate-right"></i>
+        </button>
+        <button class="ox-topbar__action-btn ox-tooltip" data-tooltip="切换主题">
+          <i class="fa-solid fa-sun"></i>
+        </button>
+        <div class="ox-topbar__account">
+          <button class="ox-topbar__avatar ox-tooltip" :data-tooltip="accountTooltip" @click="!isAuthenticated && navigate('login')">{{ accountAvatarInitial }}</button>
+          <div class="ox-account-menu">
+            <div class="ox-account-menu__summary">
+              <strong>{{ accountDisplayName }}</strong>
+              <span>{{ isAuthenticated ? (authEntitlement?.active_plan_name || '未订阅') : '点击登录同步权益' }}</span>
+            </div>
+            <button v-for="item in accountMenuItems" :key="item.label" class="ox-account-menu__item" :class="{ 'ox-account-menu__item--danger': item.danger }" @click="handleAccountAction(item)">
+              <i :class="item.icon"></i>{{ item.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="ox-body">
+      <aside class="ox-sidebar" :class="{ 'ox-sidebar--collapsed': sidebarCollapsed }">
+        <nav class="ox-sidebar__nav">
+          <template v-for="section in navSections" :key="section.label">
+            <span class="ox-sidebar__section-label">{{ section.label }}</span>
+            <button
+              v-for="item in section.items"
+              :key="item.id"
+              class="ox-nav-item ox-tooltip"
+              :class="{ 'ox-nav-item--active': currentRoute === item.id }"
+              :data-tooltip="sidebarCollapsed ? item.label : ''"
+              @click="navigate(item.id)"
+            >
+              <span class="ox-nav-item__icon"><i :class="item.icon"></i></span>
+              <span class="ox-nav-item__label">{{ item.label }}</span>
+            </button>
+            <div class="ox-sidebar__divider"></div>
+          </template>
+        </nav>
+        <div class="ox-sidebar__footer">
+          <button class="ox-nav-item ox-tooltip" :class="{ 'ox-nav-item--active': currentRoute === 'about' }" :data-tooltip="sidebarCollapsed ? '关于' : ''" @click="navigate('about')">
+            <span class="ox-nav-item__icon"><i class="fa-solid fa-circle-info"></i></span>
+            <span class="ox-nav-item__label">关于</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="ox-main ox-main--column">
+        <template v-if="currentRoute === 'startup'">
+          <div class="ox-content">
+            <section class="startup-page">
+              <div class="startup-page__mark">OX</div>
+              <span class="uip-status-pill uip-status-pill--green">神经符号 OS 就绪</span>
+              <h1>OpenXnet 启动页</h1>
+              <p>正在准备 AI 内核、模型路由、工具桥接与桌面工作台。</p>
+              <div class="startup-grid">
+                <article v-for="module in startupModules" :key="module.label" class="startup-card">
+                  <span class="uip-card__icon" :class="'uip-tone--' + module.tone"><i :class="module.icon"></i></span>
+                  <strong>{{ module.label }}</strong>
+                  <small>{{ module.desc }}</small>
+                </article>
+              </div>
+              <div class="startup-actions">
+                <button class="ox-btn ox-btn--primary" @click="navigate('home')"><i class="fa-solid fa-house"></i>首页</button>
+                <button class="ox-btn ox-btn--secondary" @click="navigate('chat')"><i class="fa-solid fa-comments"></i>实时对话</button>
+                <button class="ox-btn ox-btn--secondary" @click="navigate('shell')"><i class="fa-solid fa-layer-group"></i>返回导航</button>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'login'">
+          <div class="ox-content">
+            <section class="login-page">
+              <div class="login-panel">
+                <div class="login-panel__brand">OX</div>
+                <h1>登录 OpenXnet</h1>
+                <div class="ox-tabs ox-tabs--pill login-tabs">
+                  <button v-for="provider in loginProviders" :key="provider.id" class="ox-tab" :class="{ 'ox-tab--active': provider.id === loginMode }" @click="setLoginMode(provider.id)">
+                    <i :class="provider.icon"></i>{{ provider.label }}
+                  </button>
+                </div>
+                <label v-if="loginMode === 'password'" class="ox-input-group">
+                  <span class="ox-input-label">账号</span>
+                  <input class="ox-input" v-model.trim="loginIdentity" placeholder="手机号 / 邮箱 / 用户名" autocomplete="username" @keyup.enter="loginSubmit">
+                </label>
+                <template v-else>
+                  <label class="ox-input-group">
+                    <span class="ox-input-label">手机号</span>
+                    <input class="ox-input" v-model.trim="loginPhone" placeholder="请输入手机号" autocomplete="tel" @keyup.enter="loginSubmit">
+                  </label>
+                  <div class="login-code-row">
+                    <input class="ox-input" v-model.trim="loginCode" placeholder="验证码" @keyup.enter="loginSubmit">
+                    <button class="ox-btn ox-btn--secondary" :disabled="loginSmsCooldown > 0" @click="sendLoginSms">
+                      {{ loginSmsCooldown > 0 ? loginSmsCooldown + 's' : '发送验证码' }}
+                    </button>
+                  </div>
+                </template>
+                <label v-if="loginMode !== 'sms'" class="ox-input-group">
+                  <span class="ox-input-label">密码</span>
+                  <input class="ox-input" v-model="loginPassword" type="password" placeholder="请输入密码" autocomplete="current-password" @keyup.enter="loginSubmit">
+                </label>
+                <template v-if="loginMode === 'register'">
+                  <label class="ox-input-group"><span class="ox-input-label">昵称</span><input class="ox-input" v-model.trim="loginNickname" placeholder="4-50 位昵称"></label>
+                  <label class="ox-input-group"><span class="ox-input-label">邮箱</span><input class="ox-input" v-model.trim="loginEmail" placeholder="可选"></label>
+                </template>
+                <p v-if="authError" class="uip-inline-alert uip-inline-alert--error">{{ authError }}</p>
+                <p v-else-if="authNotice" class="uip-inline-alert">{{ authNotice }}</p>
+                <button class="ox-btn ox-btn--primary ox-btn--block" :disabled="authLoading" @click="loginSubmit">
+                  {{ authLoading ? '处理中...' : (loginMode === 'register' ? '注册并登录' : '登 录') }}
+                </button>
+                <div class="login-panel__links">
+                  <button @click="showForgotPasswordNotice">忘记密码?</button>
+                  <button @click="setLoginMode(loginMode === 'register' ? 'password' : 'register')">{{ loginMode === 'register' ? '已有账号登录' : '立即注册' }}</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'shell'">
+          <div class="ox-content">
+            <section class="shell-home">
+              <div class="shell-home__status">
+                <span class="uip-status-pill uip-status-pill--green">Runtime Ready</span>
+                <span class="uip-status-pill">{{ currentModelLabel }}</span>
+              </div>
+              <h1>神经符号 OS 就绪</h1>
+              <p>统一导航壳层已载入，可以进入首页、实时对话、开发者工作台或返回导航。</p>
+              <div class="shell-action-grid">
+                <button v-for="action in shellActions" :key="action.label" class="action-card" @click="navigate(action.route)">
+                  <i :class="action.icon"></i>
+                  <span>{{ action.label }}</span>
+                  <small>打开 {{ action.label }} 工作区</small>
+                </button>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'chat'">
+          <div class="chat-header">
+            <div class="chat-header__left">
+              <div class="chat-header__title">{{ activeAgentName }}</div>
+              <span class="chat-header__model">
+                <i class="fa-solid fa-microchip"></i>
+                {{ currentModelLabel }}
+              </span>
+              <span class="ox-status-dot" :class="wsConnected ? 'ox-status-dot--online' : 'ox-status-dot--warning'"></span>
+            </div>
+              <div class="chat-header__right">
+              <button class="ox-btn--icon ox-tooltip" data-tooltip="导出对话" @click="exportConversation">
+                <i class="fa-solid fa-file-export"></i>
+              </button>
+              <button class="ox-btn--icon ox-tooltip" data-tooltip="清空上下文" @click="clearConversationContext">
+                <i class="fa-solid fa-eraser"></i>
+              </button>
+              <button class="ox-btn--icon ox-tooltip" data-tooltip="新对话" @click="newConversation">
+                <i class="fa-solid fa-plus"></i>
+              </button>
+              <button class="ox-btn--icon ox-tooltip" data-tooltip="对话历史" @click="historyOpen = !historyOpen">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+              </button>
+              <button class="ox-btn--icon ox-tooltip" data-tooltip="设置" @click="settingsOpen = !settingsOpen">
+                <i class="fa-solid fa-sliders"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="chat-main">
+            <aside class="chat-history" v-if="historyOpen">
+              <div class="chat-history__header">
+                <span>对话历史</span>
+                <button class="ox-btn--icon" @click="historyOpen = false"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+              <button
+                v-for="conv in filteredConversations"
+                :key="conv.id"
+                class="conversation-item"
+                :class="{ 'conversation-item--active': conv.id === conversationId }"
+                @click="loadConversation(conv.id)"
+              >
+                <span class="conversation-item__title">{{ conv.title || '未命名对话' }}</span>
+                <span class="conversation-item__meta">{{ formatDate(conv.timestamp) }}</span>
+              </button>
+            </aside>
+
+            <div class="chat-messages" ref="messagesScroller">
+              <div class="chat-messages__inner">
+                <div v-for="(message, index) in visibleMessages" :key="message.id || index" class="message" :class="messageClass(message, index)">
+                  <div v-if="message.role !== 'user'" class="message__avatar">AI</div>
+                  <div class="message__content">
+                    <div class="message__bubble" v-html="formatMessage(message.content)"></div>
+                    <div class="message__time">{{ message.time || formatTime(message.timestamp) }}</div>
+                  </div>
+                </div>
+
+                <div v-if="isSending && !assistantHasContent" class="message message--ai message--typing">
+                  <div class="message__avatar">AI</div>
+                  <div class="message__content">
+                    <div class="message__bubble">
+                      <div class="typing-dots"><span></span><span></span><span></span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="chat-input-wrapper">
+              <div class="chat-input-card">
+                <div class="chat-quick-tools">
+                  <button v-for="tool in chatQuickTools" :key="tool.id" class="chat-quick-tool" @click="runQuickTool(tool)">
+                    <i :class="tool.icon"></i>{{ tool.label }}
+                  </button>
+                </div>
+                <textarea
+                  ref="composer"
+                  rows="1"
+                  v-model="userInput"
+                  placeholder="输入消息..."
+                  @keydown.enter.exact.prevent="sendMessage"
+                  @input="resizeComposer"
+                ></textarea>
+                <div class="chat-input-toolbar">
+                  <div class="chat-input-toolbar__left">
+                    <button class="toolbar-btn ox-tooltip" data-tooltip="上传文件"><i class="fa-solid fa-paperclip"></i></button>
+                    <button class="toolbar-btn ox-tooltip" data-tooltip="代码块" @click="insertSnippet('```\\n\\n```')"><i class="fa-solid fa-code"></i></button>
+                    <button class="toolbar-btn ox-tooltip" data-tooltip="上传图片"><i class="fa-solid fa-image"></i></button>
+                    <button class="toolbar-btn ox-tooltip" data-tooltip="语音输入"><i class="fa-solid fa-microphone"></i></button>
+                  </div>
+                  <div class="chat-input-toolbar__right">
+                    <span class="char-count">{{ userInput.length }}/4000</span>
+                    <button v-if="isSending" class="send-btn send-btn--stop ox-tooltip" data-tooltip="停止" @click="stopGenerate">
+                      <i class="fa-solid fa-square"></i>
+                    </button>
+                    <button v-else class="send-btn ox-tooltip" data-tooltip="发送" :disabled="!userInput.trim()" @click="sendMessage">
+                      <i class="fa-solid fa-arrow-up"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button class="settings-toggle" @click="settingsOpen = true">
+              <i class="fa-solid fa-chevron-left"></i>
+            </button>
+            <aside class="settings-panel" :class="{ open: settingsOpen }">
+              <div class="settings-panel__header">
+                <span class="settings-panel__title">对话设置</span>
+                <button class="settings-panel__close" @click="settingsOpen = false"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+              <div class="settings-panel__body">
+                <div class="setting-group">
+                  <label class="setting-group__label">模型选择</label>
+                  <select v-model="mainAgent" @change="persistSettings">
+                    <option v-for="model in modelOptions" :key="model.id" :value="model.id">{{ model.label }}</option>
+                  </select>
+                </div>
+                <div class="setting-group">
+                  <label class="setting-group__label">温度 (Temperature)</label>
+                  <div class="slider-row">
+                    <input type="range" min="0" max="2" step="0.1" v-model.number="temperature" @change="persistSettings">
+                    <span class="slider-value">{{ temperature.toFixed(1) }}</span>
+                  </div>
+                  <span class="ox-small">较低值更精确，较高值更有创意</span>
+                </div>
+                <div class="setting-group">
+                  <label class="setting-group__label">最大输出长度</label>
+                  <select v-model.number="maxTokens" @change="persistSettings">
+                    <option :value="1024">1024 tokens</option>
+                    <option :value="2048">2048 tokens</option>
+                    <option :value="4096">4096 tokens</option>
+                    <option :value="8192">8192 tokens</option>
+                  </select>
+                </div>
+                <div class="setting-group">
+                  <label class="setting-row">
+                    <span>联网搜索</span>
+                    <span class="ox-toggle">
+                      <input type="checkbox" v-model="webSearchEnabled" @change="persistSettings">
+                      <span class="ox-toggle__track"></span>
+                      <span class="ox-toggle__thumb"></span>
+                    </span>
+                  </label>
+                  <label class="setting-row">
+                    <span>深度研究</span>
+                    <span class="ox-toggle">
+                      <input type="checkbox" v-model="deepResearchEnabled" @change="persistSettings">
+                      <span class="ox-toggle__track"></span>
+                      <span class="ox-toggle__thumb"></span>
+                    </span>
+                  </label>
+                  <label class="setting-row">
+                    <span>推理模式</span>
+                    <span class="ox-toggle">
+                      <input type="checkbox" v-model="thinkingEnabled" @change="persistSettings">
+                      <span class="ox-toggle__track"></span>
+                      <span class="ox-toggle__thumb"></span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'model-config'">
+          <div class="ox-content">
+            <div class="ox-page-header">
+              <div>
+                <h1 class="ox-page-header__title">模型配置</h1>
+                <p class="ox-page-header__subtitle">管理 AI 模型提供商和 API 密钥</p>
+              </div>
+              <div class="ox-page-header__actions">
+                <button class="ox-btn ox-btn--secondary" @click="fetchModels(); importProviderModels()"><i class="fa-solid fa-rotate-right"></i>刷新模型</button>
+                <button class="ox-btn ox-btn--secondary" :disabled="!!providerActionLoading" @click="importProviderModels"><i class="fa-solid fa-download"></i>导入模型</button>
+                <button class="ox-btn ox-btn--primary" @click="addProviderDraft"><i class="fa-solid fa-plus"></i>添加提供商</button>
+              </div>
+            </div>
+
+            <div class="mc-tabs-wrap">
+              <div class="ox-tabs ox-tabs--pill">
+                <button v-for="tab in modelTabs" :key="tab.id" class="ox-tab" :class="{ 'ox-tab--active': modelTab === tab.id }" @click="modelTab = tab.id">{{ tab.label }}</button>
+              </div>
+            </div>
+
+            <div v-if="modelTab === 'service'" class="mc-tab-panel mc-tab-panel--active">
+              <div class="mc-providers-grid ox-stagger">
+                <button
+                  v-for="provider in providerCards"
+                  :key="provider.id"
+                  class="mc-provider-card"
+                  :class="{ 'mc-provider-card--active': provider.id === selectedProviderId }"
+                  @click="selectedProviderId = provider.id"
+                >
+                  <div class="mc-provider-card__header">
+                    <div class="mc-provider-card__icon" :style="{ background: provider.color }">{{ provider.initial }}</div>
+                    <div class="mc-provider-card__info">
+                      <div class="mc-provider-card__name">{{ provider.name }}</div>
+                      <div class="mc-provider-card__status">
+                        <span class="ox-status-dot" :class="provider.connected ? 'ox-status-dot--online' : 'ox-status-dot--offline'"></span>
+                        {{ provider.connected ? '已连接' : '未配置' }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mc-provider-card__models"><i class="fa-solid fa-cube"></i>{{ provider.models.length || 4 }} 个模型已配置</div>
+                </button>
+              </div>
+
+              <section class="mc-expanded-section">
+                <div class="mc-expanded-header">
+                  <div class="mc-expanded-header__title">
+                    <div class="mc-expanded-header__title-icon" :style="{ background: selectedProvider.color }">{{ selectedProvider.initial }}</div>
+                    {{ selectedProvider.name }} 模型列表
+                  </div>
+                <div class="mc-api-key-row">
+                  <span class="ox-small">API Key</span>
+                  <div class="mc-api-key-field">
+                    <input :type="showApiKey ? 'text' : 'password'" class="ox-input" v-model="selectedProvider.apiKey" @change="persistProvider">
+                    <button class="mc-api-key-field__toggle" @click="showApiKey = !showApiKey"><i :class="showApiKey ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i></button>
+                  </div>
+                  <span class="ox-small">Base URL</span>
+                  <input class="ox-input mc-base-url-input" v-model="selectedProvider.url" placeholder="https://api.openai.com/v1" @change="persistProvider">
+                  <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="copyText(selectedProvider.apiKey, 'API Key')"><i class="fa-solid fa-copy"></i>复制</button>
+                  <button class="ox-btn ox-btn--secondary ox-btn--sm" :disabled="!!providerActionLoading" @click="validateProvider"><i class="fa-solid fa-check-circle"></i>{{ providerActionLoading.startsWith('validate:') ? '验证中' : '验证' }}</button>
+                  <button class="ox-btn ox-btn--primary ox-btn--sm" :disabled="!!providerActionLoading" @click="applyProviderProfile"><i class="fa-solid fa-floppy-disk"></i>应用</button>
+                </div>
+                </div>
+                <p class="uip-inline-alert mc-provider-alert" :class="providerActionClass">{{ providerActionText }}</p>
+                <div class="mc-model-table-wrap">
+                  <table class="mc-model-table">
+                    <thead>
+                      <tr><th>模型名称</th><th>能力</th><th>上下文长度</th><th>状态</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="model in selectedProvider.models" :key="model.name">
+                        <td><span class="mc-model-name">{{ model.name }}</span></td>
+                        <td>
+                          <div class="mc-tags">
+                            <span v-for="cap in model.caps" :key="cap" class="mc-tag" :class="'mc-tag--' + capClass(cap)">{{ cap }}</span>
+                          </div>
+                        </td>
+                        <td><span class="mc-model-context">{{ model.context }}</span></td>
+                        <td>
+                          <label class="ox-toggle">
+                            <input type="checkbox" v-model="model.enabled" @change="persistProvider">
+                            <span class="ox-toggle__track"></span>
+                            <span class="ox-toggle__thumb"></span>
+                          </label>
+                          <button class="uip-icon-btn" @click="testProviderModel(model)"><i class="fa-solid fa-play"></i></button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            <div v-else class="mc-tab-panel mc-tab-panel--active">
+              <div class="mc-section-header">
+                <div class="mc-section-header__title"><i :class="activeModelTab.icon"></i>{{ activeModelTab.label }}</div>
+                <div class="mc-section-header__desc">{{ activeModelTab.desc }}</div>
+              </div>
+              <div class="mc-current-model">
+                <div class="mc-current-model__info">
+                  <div class="mc-current-model__icon"><i :class="activeModelTab.icon"></i></div>
+                  <div>
+                    <div class="mc-current-model__name">{{ modelSettingName(modelTab) }}</div>
+                    <div class="mc-current-model__provider">{{ selectedProvider.name }} / {{ selectedProvider.models[0]?.context || '128K' }} context</div>
+                  </div>
+                </div>
+                <div class="mc-current-model__badge"><i class="fa-solid fa-check-circle"></i>已选择</div>
+              </div>
+              <div class="mc-model-select-label">可用模型</div>
+              <div class="mc-model-select-list">
+                <button
+                  v-for="model in modelOptions"
+                  :key="model.id + modelTab"
+                  class="mc-model-option"
+                  :class="{ 'mc-model-option--selected': model.id === modelSettingName(modelTab) }"
+                  @click="setModelForTab(modelTab, model.id)"
+                >
+                  <div class="mc-model-option__radio"></div>
+                  <div class="mc-model-option__body">
+                    <div class="mc-model-option__top">
+                      <span class="mc-model-option__name">{{ model.label }}</span>
+                      <span class="mc-model-option__provider-tag">{{ model.provider }}</span>
+                      <span class="mc-model-option__context">{{ model.context }}</span>
+                    </div>
+                    <div class="mc-model-option__desc">{{ model.desc }}</div>
+                  </div>
+                </button>
+              </div>
+              <section class="mc-config-section">
+                <div class="mc-config-section__title"><i class="fa-solid fa-sliders"></i>模型参数</div>
+                <div class="mc-config-grid">
+                  <label class="mc-config-item">
+                    <span class="mc-config-label">Temperature <span class="mc-config-label__value">{{ temperature.toFixed(1) }}</span></span>
+                    <input class="mc-range" type="range" min="0" max="2" step="0.1" v-model.number="temperature" @change="persistSettings">
+                  </label>
+                  <label class="mc-config-item">
+                    <span class="mc-config-label">Max Tokens <span class="mc-config-label__value">{{ maxTokens }}</span></span>
+                    <input class="mc-config-input" type="number" v-model.number="maxTokens" @change="persistSettings">
+                  </label>
+                  <label class="mc-config-item">
+                    <span class="mc-config-label">Top P <span class="mc-config-label__value">{{ settings.top_p ?? 1 }}</span></span>
+                    <input class="mc-range" type="range" min="0" max="1" step="0.05" v-model.number="settings.top_p" @change="persistSettings">
+                  </label>
+                  <label class="mc-config-item">
+                    <span class="mc-config-label">Reasoning <span class="mc-config-label__value">{{ thinkingEnabled ? 'on' : 'off' }}</span></span>
+                    <select class="mc-config-input" v-model="thinkingEnabled" @change="persistSettings">
+                      <option :value="false">off</option>
+                      <option :value="true">on</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+              <section class="mc-config-section">
+                <div class="mc-config-section__title"><i class="fa-solid fa-flask"></i>高级参数</div>
+                <div class="advanced-param-grid">
+                  <div v-for="row in modelAdvancedRows" :key="row.label" class="advanced-param-row">
+                    <span>{{ row.label }}</span>
+                    <strong>{{ row.value }}</strong>
+                    <small>{{ row.hint }}</small>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'skills'">
+          <div class="ox-content">
+            <div class="skills-header">
+              <div class="skills-header__info">
+                <h1 class="skills-header__title">技能中心</h1>
+                <p class="skills-header__subtitle">发现和管理 AI 技能插件</p>
+              </div>
+              <button class="ox-btn ox-btn--primary"><i class="fa-solid fa-arrow-up-from-bracket"></i>上传技能</button>
+            </div>
+
+            <div class="skills-main-tabs">
+              <div class="ox-tabs ox-tabs--pill">
+                <button v-for="tab in skillTabs" :key="tab.id" class="ox-tab" :class="{ 'ox-tab--active': skillTab === tab.id }" @click="skillTab = tab.id">
+                  <i :class="tab.icon"></i>{{ tab.label }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="skillTab === 'library'" class="skills-tab-panel skills-tab-panel--active">
+              <div class="skills-filter-bar">
+                <div class="ox-tabs ox-tabs--pill">
+                  <button v-for="filter in skillFilters" :key="filter" class="ox-tab" :class="{ 'ox-tab--active': skillFilter === filter }" @click="skillFilter = filter">{{ filter }}</button>
+                </div>
+                <div class="skills-search">
+                  <i class="fa-solid fa-magnifying-glass skills-search__icon"></i>
+                  <input class="skills-search__input" v-model="skillSearch" placeholder="搜索技能...">
+                </div>
+              </div>
+
+              <div class="skills-grid">
+                <div v-for="skill in filteredSkills" :key="skill.id" class="skill-card">
+                  <div class="skill-card__icon" :class="skill.iconClass"><i :class="skill.icon"></i></div>
+                  <div class="skill-card__title-row">
+                    <h3 class="skill-card__name">{{ skill.name }}</h3>
+                    <div class="skill-card__rating">
+                      <i v-for="star in 5" :key="star" class="fa-solid fa-star" :class="{ 'is-empty': star > skill.rating }"></i>
+                    </div>
+                  </div>
+                  <p class="skill-card__desc">{{ skill.description }}</p>
+                  <div class="skill-card__tags">
+                    <span v-for="tag in skill.tags" :key="tag" class="skill-card__tag">{{ tag }}</span>
+                  </div>
+                  <div class="skill-card__footer">
+                    <span class="skill-card__status" :class="skill.installed ? 'skill-card__status--installed' : 'skill-card__status--not-installed'">
+                      <i v-if="skill.installed" class="fa-solid fa-circle-check"></i>
+                      {{ skill.installed ? '已安装' : '未安装' }}
+                    </span>
+                    <label v-if="skill.installed" class="ox-toggle">
+                      <input type="checkbox" v-model="skill.enabled">
+                      <span class="ox-toggle__track"></span>
+                      <span class="ox-toggle__thumb"></span>
+                    </label>
+                    <button v-else class="skill-card__install-btn" @click="installSkill(skill)"><i class="fa-solid fa-download"></i>安装</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else-if="skillTab === 'transform'" class="skills-tab-panel skills-tab-panel--active">
+              <div class="transform-section-header">
+                <h2>技能转化</h2>
+                <p>将 Prompt、对话记录或工作流转化为可复用技能</p>
+              </div>
+              <div class="transform-source-cards">
+                <button v-for="source in transformSources" :key="source.id" class="transform-source-card" :class="{ 'transform-source-card--active': transformSource === source.id }" @click="transformSource = source.id">
+                  <div class="transform-source-card__radio"></div>
+                  <div class="transform-source-card__icon"><i :class="source.icon"></i></div>
+                  <div class="transform-source-card__title">{{ source.label }}</div>
+                </button>
+              </div>
+
+              <div class="transform-form">
+                <label class="transform-form-group">
+                  <span>选择来源</span>
+                  <select v-model="transformSource">
+                    <option value="conversation">代码优化讨论 (2026-05-01)</option>
+                    <option value="prompt">API设计方案 (2026-04-28)</option>
+                    <option value="workflow">Bug排查流程 (2026-04-25)</option>
+                  </select>
+                </label>
+                <label class="transform-form-group">
+                  <span>技能名称</span>
+                  <input type="text" v-model="transformSkillName" placeholder="输入技能名称...">
+                </label>
+                <label class="transform-form-group">
+                  <span>技能描述</span>
+                  <textarea v-model="transformSkillDesc" placeholder="描述此技能的功能和适用场景..."></textarea>
+                </label>
+                <label class="transform-form-group">
+                  <span>源内容</span>
+                  <textarea v-model="transformText" placeholder="粘贴要转化为技能的 Prompt、对话记录或工作流..."></textarea>
+                </label>
+                <div class="transform-form-group">
+                  <span>参数定义</span>
+                  <table class="param-table">
+                    <thead>
+                      <tr><th>参数名</th><th>类型</th><th>默认值</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(param, index) in transformParams" :key="index">
+                        <td><input type="text" v-model="param.name"></td>
+                        <td><input type="text" v-model="param.type"></td>
+                        <td><input type="text" v-model="param.defaultValue"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <button class="ox-btn ox-btn--ghost ox-btn--sm transform-param-add" @click="addTransformParam">
+                    <i class="fa-solid fa-plus"></i>添加参数
+                  </button>
+                </div>
+                <div class="transform-actions">
+                  <button class="ox-btn ox-btn--secondary"><i class="fa-solid fa-play"></i>测试运行</button>
+                  <button class="ox-btn ox-btn--primary" @click="crystallizeSkill"><i class="fa-solid fa-floppy-disk"></i>保存技能</button>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="skills-tab-panel skills-tab-panel--active">
+              <div class="crystal-section-header">
+                <h2>技能结晶</h2>
+                <p>将多个技能组合为复合高阶技能</p>
+              </div>
+              <div class="crystal-layout">
+                <div class="crystal-skill-list">
+                  <div class="crystal-skill-list__title">可用技能列表</div>
+                  <div v-for="skill in crystalSkills" :key="skill.id" class="crystal-skill-item">
+                    <i class="fa-solid fa-grip-vertical"></i>{{ skill.name }}
+                  </div>
+                </div>
+                <div class="crystal-canvas">
+                  <div class="crystal-pipeline">
+                    <template v-for="(skill, index) in crystalPipeline" :key="skill.id">
+                      <div class="crystal-block">
+                        <div class="crystal-block__icon"><i :class="skill.icon"></i></div>
+                        <div class="crystal-block__name">{{ skill.name }}</div>
+                      </div>
+                      <div v-if="index < crystalPipeline.length - 1" class="crystal-arrow">
+                        <i class="fa-solid fa-arrow-right"></i>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+              <div class="crystal-config">
+                <label class="crystal-config-group">
+                  <span>结晶名称</span>
+                  <input type="text" v-model="crystalName">
+                </label>
+                <label class="crystal-config-group">
+                  <span>执行顺序</span>
+                  <select v-model="crystalMode">
+                    <option>串行</option>
+                    <option>并行</option>
+                  </select>
+                </label>
+                <label class="crystal-config-group">
+                  <span>条件分支</span>
+                  <span class="ox-toggle">
+                    <input type="checkbox" v-model="crystalConditional">
+                    <span class="ox-toggle__track"></span>
+                    <span class="ox-toggle__thumb"></span>
+                  </span>
+                </label>
+                <div class="crystal-config-group">
+                  <span>&nbsp;</span>
+                  <button class="ox-btn ox-btn--primary" @click="crystallizeSkill">
+                    <i class="fa-solid fa-gem"></i>保存结晶
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'toolkit'">
+          <div class="toolkit-layout">
+            <aside class="toolkit-categories">
+              <div class="toolkit-categories__title">工具分类</div>
+              <div v-for="section in toolkitSections" :key="section.id" class="toolkit-section" :class="{ 'toolkit-section--collapsed': !toolkitSectionOpen[section.id] }">
+                <button class="toolkit-section__header" @click="toggleToolkitSection(section.id)">
+                  <i class="fa-solid fa-chevron-down"></i>{{ section.label }}
+                </button>
+                <div class="toolkit-section__body">
+                  <button
+                    v-for="tool in section.tools"
+                    :key="tool.id"
+                    class="toolkit-cat-item"
+                    :class="{ 'toolkit-cat-item--active': tool.id === selectedToolId }"
+                    @click="selectedToolId = tool.id"
+                  >
+                    <span class="toolkit-cat-item__icon"><i :class="tool.icon"></i></span>
+                    <span>{{ tool.name }}</span>
+                    <span v-if="tool.enabled" class="toolkit-cat-item__badge toolkit-cat-item__badge--running"></span>
+                  </button>
+                </div>
+              </div>
+            </aside>
+            <section class="toolkit-list">
+              <div class="toolkit-list__header">
+                <h1 class="toolkit-list__title">工具箱</h1>
+                <div class="toolkit-search">
+                  <i class="fa-solid fa-magnifying-glass toolkit-search__icon"></i>
+                  <input class="toolkit-search__input" v-model="toolSearch" placeholder="搜索工具...">
+                </div>
+              </div>
+              <div class="toolkit-grid-wrapper">
+                <div class="toolkit-grid">
+                  <button v-for="tool in filteredTools" :key="tool.id" class="toolkit-card" :class="{ 'toolkit-card--selected': tool.id === selectedToolId }" @click="selectedToolId = tool.id">
+                    <div class="toolkit-card__top">
+                      <div class="toolkit-card__icon" :class="tool.iconClass"><i :class="tool.icon"></i></div>
+                      <div class="toolkit-card__info">
+                        <div class="toolkit-card__name-row">
+                          <span class="toolkit-card__name">{{ tool.name }}</span>
+                          <span class="toolkit-card__status" :class="'toolkit-card__status--' + statusClass(tool)">{{ statusLabel(tool) }}</span>
+                        </div>
+                        <span class="toolkit-card__desc">{{ tool.description }}</span>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </section>
+            <aside class="toolkit-detail">
+              <div class="toolkit-detail__content">
+                <div class="toolkit-detail__header">
+                  <div class="toolkit-detail__top">
+                    <div class="toolkit-detail__icon" :class="selectedTool.iconClass"><i :class="selectedTool.icon"></i></div>
+                    <div>
+                      <div class="toolkit-detail__name">{{ selectedTool.name }} <span class="toolkit-detail__version">{{ selectedTool.version }}</span></div>
+                      <div class="toolkit-detail__status" :class="'toolkit-detail__status--' + statusClass(selectedTool)">
+                        <span class="toolkit-detail__status-dot" :class="'toolkit-detail__status-dot--' + statusClass(selectedTool)"></span>{{ statusLabel(selectedTool) }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <p class="toolkit-detail__desc">{{ selectedTool.description }}</p>
+                <hr class="ox-divider">
+                <div class="toolkit-detail__toggle-row">
+                  <span class="toolkit-detail__toggle-label">启用工具</span>
+                  <label class="toolkit-toggle">
+                    <input type="checkbox" v-model="selectedTool.enabled" @change="persistToolSettings">
+                    <span class="toolkit-toggle__slider"></span>
+                  </label>
+                </div>
+                <hr class="ox-divider">
+                <div class="toolkit-detail__section">
+                  <div class="toolkit-detail__section-title">配置</div>
+                  <div class="toolkit-detail__fields">
+                    <label v-for="field in selectedTool.fields" :key="field.label" class="ox-input-group">
+                      <span class="ox-input-label">{{ field.label }}</span>
+                      <select v-if="field.type === 'select'" class="ox-input" v-model="field.value" @change="updateToolField(selectedTool, field)">
+                        <option v-for="option in field.options" :key="option">{{ option }}</option>
+                      </select>
+                      <input v-else class="ox-input" v-model="field.value">
+                    </label>
+                  </div>
+                </div>
+                <hr class="ox-divider">
+                <div class="toolkit-detail__actions">
+                  <button class="ox-btn ox-btn--secondary"><i class="fa-solid fa-rotate-right"></i>重启</button>
+                  <button class="ox-btn ox-btn--secondary" @click="persistToolSettings"><i class="fa-solid fa-floppy-disk"></i>保存</button>
+                  <button class="role-btn--danger-ghost" @click="stopSelectedTool"><i class="fa-solid fa-trash-can"></i>卸载</button>
+                </div>
+                <hr class="ox-divider">
+                <div class="toolkit-detail__log-title">运行日志</div>
+                <div class="toolkit-detail__log">
+                  <div v-for="line in selectedTool.logs" :key="line">{{ line }}</div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'role'">
+          <div class="ox-split">
+            <aside class="role-left">
+              <div class="role-left__header">
+                <div class="role-left__title-row">
+                  <h1 class="role-left__title">角色设置</h1>
+                  <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="addRoleDraft"><i class="fa-solid fa-plus"></i>新建角色</button>
+                </div>
+                <div class="role-left__search">
+                  <i class="fa-solid fa-magnifying-glass role-left__search-icon"></i>
+                  <input class="role-left__search-input" v-model="roleSearch" placeholder="搜索角色...">
+                </div>
+              </div>
+              <div class="role-left__list">
+                <button v-for="role in filteredRoles" :key="role.id" class="role-card" :class="{ 'role-card--active': selectedRoleId === role.id }" @click="selectedRoleId = role.id">
+                  <div class="role-card__top">
+                    <div class="role-card__avatar" :style="{ background: role.color }">{{ role.initial }}</div>
+                    <div class="role-card__info">
+                      <div class="role-card__name-row">
+                        <span class="role-card__name">{{ role.name }}</span>
+                        <span class="role-card__tag role-card__tag--accent">{{ role.tag }}</span>
+                      </div>
+                      <div class="role-card__desc">{{ role.desc }}</div>
+                    </div>
+                  </div>
+                  <div class="role-card__time">{{ role.updated }}</div>
+                </button>
+              </div>
+            </aside>
+            <section class="role-right">
+              <div class="role-right__inner">
+                <div class="role-editor__header">
+                  <h1 class="role-editor__title">编辑角色</h1>
+                  <div class="role-editor__actions">
+                    <button class="ox-btn ox-btn--secondary" @click="exportRole"><i class="fa-solid fa-file-export"></i>导出</button>
+                    <button class="ox-btn ox-btn--secondary" @click="copyRole"><i class="fa-solid fa-copy"></i>复制</button>
+                    <button class="role-btn--danger-ghost" @click="deleteSelectedRole"><i class="fa-solid fa-trash-can"></i>删除</button>
+                    <button class="ox-btn ox-btn--primary" @click="persistRole"><i class="fa-solid fa-floppy-disk"></i>保存</button>
+                  </div>
+                </div>
+
+                <div class="role-avatar-upload">
+                  <div class="role-avatar-upload__circle" :style="{ background: selectedRole.color }">
+                    {{ selectedRole.initial }}
+                    <div class="role-avatar-upload__overlay"><i class="fa-solid fa-camera"></i><span>更换头像</span></div>
+                  </div>
+                </div>
+
+                <div class="role-tabs">
+                  <div class="role-global-settings">
+                    <span>角色管理</span>
+                    <span>角色语音分配</span>
+                    <span>全局设置</span>
+                    <span>数据分析师</span>
+                    <span>客服机器人</span>
+                  </div>
+                  <div class="role-tab-bar">
+                    <button v-for="tab in roleTabs" :key="tab.id" class="role-tab-pill" :class="{ 'role-tab-pill--active': roleTab === tab.id }" @click="roleTab = tab.id">
+                      <i :class="tab.icon"></i>{{ tab.label }}
+                    </button>
+                  </div>
+
+                  <div v-if="roleTab === 'memory'" class="role-tab-content role-tab-content--active">
+                    <div class="role-tab-panel">
+                      <div class="role-tab-panel__inner">
+                        <div class="role-section-header">
+                          <h1 class="role-section-header__title">角色卡&记忆</h1>
+                          <p class="role-section-header__subtitle">定义角色身份、模型绑定、长期记忆和系统提示词</p>
+                        </div>
+                        <div class="role-field-grid">
+                          <label class="role-field">
+                            <span class="role-field__label">角色名称</span>
+                            <input class="ox-input role-field__input" v-model="selectedRole.name">
+                          </label>
+                          <label class="role-field">
+                            <span class="role-field__label">角色标签</span>
+                            <input class="ox-input role-field__input" v-model="selectedRole.tag">
+                          </label>
+                        </div>
+                        <label class="role-field">
+                          <span class="role-field__label">角色描述</span>
+                          <input class="ox-input role-field__input" v-model="selectedRole.desc">
+                        </label>
+                        <label class="role-field">
+                          <span class="role-field__label">绑定模型</span>
+                          <select class="ox-input role-field__input" v-model="selectedRole.model">
+                            <option v-for="model in modelOptions" :key="model.id" :value="model.id">{{ model.label }}</option>
+                          </select>
+                        </label>
+                        <div class="role-field">
+                          <span class="role-field__label">创造性</span>
+                          <div class="role-slider-row">
+                            <input class="role-slider" type="range" min="0" max="2" step="0.1" v-model.number="selectedRole.temperature">
+                            <span class="role-slider__value">{{ Number(selectedRole.temperature || 0.7).toFixed(1) }}</span>
+                          </div>
+                          <div class="role-slider__labels">
+                            <span class="role-slider__label-text">精确 (0)</span>
+                            <span class="role-slider__label-text">平衡</span>
+                            <span class="role-slider__label-text">创意 (1)</span>
+                          </div>
+                        </div>
+                        <label class="role-field">
+                          <span class="role-field__label">系统提示词</span>
+                          <textarea class="ox-input role-field__input role-prompt" v-model="selectedRole.prompt"></textarea>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-else-if="roleTab === 'voice'" class="role-tab-content role-tab-content--active">
+                    <div class="role-tab-panel">
+                      <div class="role-tab-panel__inner">
+                        <div class="role-section-header">
+                          <h1 class="role-section-header__title">多角色语音配置</h1>
+                          <p class="role-section-header__subtitle">为每个角色配置独立的语音合成方案</p>
+                        </div>
+                        <h2 class="role-subsection-title">语音供应商</h2>
+                        <div class="voice-provider-cards">
+                          <button v-for="provider in voiceProviders" :key="provider.id" class="voice-provider-card" :class="{ 'voice-provider-card--selected': voiceProvider === provider.id }" @click="voiceProvider = provider.id">
+                            <span class="voice-provider-card__icon" :class="provider.iconClass"><i :class="provider.icon"></i></span>
+                            <span class="voice-provider-card__name">{{ provider.name }}</span>
+                          </button>
+                        </div>
+                        <h2 class="role-subsection-title">角色音色</h2>
+                        <div class="voice-table-wrap">
+                          <table class="voice-table">
+                            <thead><tr><th>角色</th><th>音色</th><th>语气</th><th>试听</th><th>启用</th></tr></thead>
+                            <tbody>
+                          <tr v-for="row in voiceRows" :key="row.role">
+                                <td>{{ row.role }}</td>
+                                <td>{{ row.voice }}</td>
+                                <td>{{ row.tone }}</td>
+                                <td><button class="voice-play-btn" @click="previewVoice(row)"><i class="fa-solid fa-play"></i></button></td>
+                                <td>
+                                  <label class="ox-toggle">
+                                    <input type="checkbox" v-model="row.enabled">
+                                    <span class="ox-toggle__track"></span>
+                                    <span class="ox-toggle__thumb"></span>
+                                  </label>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                        <div class="voice-global-settings">
+                          <div class="role-field">
+                            <span class="role-field__label">语速</span>
+                            <div class="role-slider-row">
+                              <input id="voiceSpeedSlider" class="role-slider" type="range" min="0.5" max="2" step="0.1" v-model.number="voiceSpeed">
+                              <span class="role-slider__value">{{ Number(voiceSpeed).toFixed(1) }}</span>
+                            </div>
+                          </div>
+                          <div class="role-field">
+                            <span class="role-field__label">音量</span>
+                            <div class="role-slider-row">
+                              <input id="voiceVolumeSlider" class="role-slider" type="range" min="0" max="100" step="1" v-model.number="voiceVolume">
+                              <span class="role-slider__value">{{ voiceVolume }}</span>
+                            </div>
+                          </div>
+                          <div class="role-slider__labels"><span>慢 (0.5)</span><span>快 (2.0)</span><span>静音 (0)</span><span>最大 (100)</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-else-if="roleTab === 'appearance'" class="role-tab-content role-tab-content--active">
+                    <div class="role-tab-panel">
+                      <div class="role-tab-panel__inner">
+                        <div class="role-section-header">
+                          <h1 class="role-section-header__title">多角色外观配置</h1>
+                          <p class="role-section-header__subtitle">自定义每个角色的形象和动画表现</p>
+                        </div>
+                        <h2 class="role-subsection-title">角色形象</h2>
+                        <div class="avatar-grid">
+                          <div v-for="role in roles.slice(0, 4)" :key="role.id" class="avatar-card">
+                            <div class="avatar-card__img" :style="{ background: role.color }">{{ role.initial }}</div>
+                            <span class="avatar-card__name">{{ role.name }}</span>
+                            <button class="avatar-card__btn"><i class="fa-solid fa-arrows-rotate"></i>更换形象</button>
+                          </div>
+                        </div>
+                        <h2 class="role-subsection-title">VRM 模型配置</h2>
+                        <div class="vrm-section">
+                          <div class="vrm-upload">
+                            <i class="fa-solid fa-cloud-arrow-up vrm-upload__icon"></i>
+                            <span class="vrm-upload__text">拖拽或点击上传 VRM 文件</span>
+                            <span class="vrm-upload__hint">支持 .vrm 格式，最大 50MB</span>
+                            <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="openFilePicker('上传 VRM')">上传 VRM</button>
+                          </div>
+                          <div class="vrm-preview"><span>3D 预览区域</span></div>
+                        </div>
+                        <h2 class="role-subsection-title">动画设置</h2>
+                        <div class="anim-settings">
+                          <label class="role-field">
+                            <span class="role-field__label">待机动作</span>
+                            <select class="vision-select"><option>自然呼吸</option><option>轻微摇摆</option><option>静立不动</option></select>
+                          </label>
+                          <label class="role-field">
+                            <span class="role-field__label">说话动作</span>
+                            <select class="vision-select"><option>口型同步</option><option>手势配合</option><option>点头回应</option></select>
+                          </label>
+                          <label class="role-field">
+                            <span class="role-field__label">表情映射</span>
+                            <span class="ox-toggle">
+                              <input type="checkbox" checked>
+                              <span class="ox-toggle__track"></span>
+                              <span class="ox-toggle__thumb"></span>
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-else-if="roleTab === 'behavior'" class="role-tab-content role-tab-content--active">
+                    <div class="role-tab-panel">
+                      <div class="role-tab-panel__inner">
+                        <div class="role-section-header">
+                          <h1 class="role-section-header__title">自主行为配置</h1>
+                          <p class="role-section-header__subtitle">定义角色在无人操作时的主动行为</p>
+                        </div>
+                        <div v-for="rule in behaviorRules" :key="rule.id" class="behavior-rule">
+                          <div class="behavior-rule__icon" :class="rule.className"><i :class="rule.icon"></i></div>
+                          <div class="behavior-rule__body">
+                            <div class="behavior-rule__name">{{ rule.name }}</div>
+                            <div class="behavior-rule__desc">{{ rule.desc }}</div>
+                          </div>
+                          <div class="behavior-rule__meta">
+                            <span class="behavior-rule__freq">{{ rule.freq }}</span>
+                            <label class="ox-toggle">
+                              <input type="checkbox" v-model="rule.enabled">
+                              <span class="ox-toggle__track"></span>
+                              <span class="ox-toggle__thumb"></span>
+                            </label>
+                          </div>
+                        </div>
+                        <button class="behavior-add-btn" @click="markAction('添加行为规则')"><i class="fa-solid fa-plus"></i>添加行为规则</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-else class="role-tab-content role-tab-content--active">
+                    <div class="role-tab-panel">
+                      <div class="role-tab-panel__inner">
+                        <div class="role-section-header">
+                          <h1 class="role-section-header__title">桌面视觉</h1>
+                          <p class="role-section-header__subtitle">让角色能够感知和理解桌面内容</p>
+                        </div>
+                        <h2 class="role-subsection-title">屏幕捕获设置</h2>
+                        <div class="vision-settings-grid">
+                          <div class="vision-row">
+                            <div>
+                              <div class="vision-row__label">启用桌面视觉</div>
+                              <div class="vision-row__hint">开启后角色可以感知屏幕内容</div>
+                            </div>
+                            <div class="vision-row__control">
+                              <label class="ox-toggle">
+                                <input type="checkbox" v-model="selectedRole.vision">
+                                <span class="ox-toggle__track"></span>
+                                <span class="ox-toggle__thumb"></span>
+                              </label>
+                            </div>
+                          </div>
+                          <div class="vision-row">
+                            <div>
+                              <div class="vision-row__label">截图频率</div>
+                              <div class="vision-row__hint">自动截取屏幕的时间间隔</div>
+                            </div>
+                            <div class="vision-row__control">
+                              <select class="vision-select" v-model="selectedRole.screenFrequency">
+                                <option>每5秒</option>
+                                <option>每10秒</option>
+                                <option>每30秒</option>
+                                <option>手动</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div class="vision-row">
+                            <div>
+                              <div class="vision-row__label">识别区域</div>
+                              <div class="vision-row__hint">选择屏幕捕获的范围</div>
+                            </div>
+                            <div class="vision-row__control">
+                              <div class="radio-pills">
+                                <button class="radio-pill radio-pill--active">全屏</button>
+                                <button class="radio-pill">当前窗口</button>
+                                <button class="radio-pill">自定义区域</button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <h2 class="role-subsection-title">视觉模型绑定</h2>
+                        <div class="vision-settings-grid">
+                          <div class="vision-row">
+                            <div>
+                              <div class="vision-row__label">视觉识别模型</div>
+                              <div class="vision-row__hint">用于理解屏幕截图内容的 AI 模型</div>
+                            </div>
+                            <div class="vision-row__control">
+                              <select class="vision-select" v-model="selectedRole.model">
+                                <option v-for="model in modelOptions" :key="model.id" :value="model.id">{{ model.label }}</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                        <h2 class="role-subsection-title">隐私设置</h2>
+                        <div class="vision-settings-grid">
+                          <div class="vision-row">
+                            <div>
+                              <div class="vision-row__label">自动模糊密码框</div>
+                              <div class="vision-row__hint">截图时自动遮挡密码输入区域</div>
+                            </div>
+                            <div class="vision-row__control">
+                              <label class="ox-toggle">
+                                <input type="checkbox" v-model="selectedRole.privacyBlur">
+                                <span class="ox-toggle__track"></span>
+                                <span class="ox-toggle__thumb"></span>
+                              </label>
+                            </div>
+                          </div>
+                          <div class="vision-row vision-row--stack">
+                            <div>
+                              <div class="vision-row__label">排除应用列表</div>
+                              <div class="vision-row__hint">这些应用的窗口不会被截图捕获</div>
+                            </div>
+                            <div class="tag-input-wrap">
+                              <span class="tag-input-tag">微信<i class="fa-solid fa-xmark tag-input-tag__remove"></i></span>
+                              <span class="tag-input-tag">1Password<i class="fa-solid fa-xmark tag-input-tag__remove"></i></span>
+                              <span class="tag-input-tag">银行客户端<i class="fa-solid fa-xmark tag-input-tag__remove"></i></span>
+                              <input class="tag-input-field" placeholder="输入应用名称后回车添加...">
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'home'">
+          <div class="ox-content">
+            <div class="home-wrap">
+              <section class="home-welcome">
+                <div class="home-welcome__content">
+                  <h1 class="home-welcome__greeting">{{ dashboardGreeting }}, 用户</h1>
+                  <p class="home-welcome__date">{{ dashboardDate }}</p>
+                  <p class="home-welcome__subtitle">原生神经符号 OS，让 AI 内核驱动你的工作流</p>
+                </div>
+                <div class="home-actions">
+                  <button class="home-action-pill" @click="navigate('chat')"><i class="fa-solid fa-comments"></i>新对话</button>
+                  <button class="home-action-pill" @click="navigate('role')"><i class="fa-solid fa-user-plus"></i>创建角色</button>
+                  <button class="home-action-pill" @click="navigate('toolkit')"><i class="fa-solid fa-download"></i>安装工具</button>
+                  <button class="home-action-pill" @click="navigate('task-center')"><i class="fa-solid fa-list-check"></i>任务队列</button>
+                  <button class="home-action-pill" @click="navigate('kernel')"><i class="fa-solid fa-brain"></i>内核控制台</button>
+                </div>
+              </section>
+
+              <div class="home-stats-grid">
+                <button v-for="stat in dashboardStats" :key="stat.label" class="uip-stat-card">
+                  <span class="uip-stat-card__icon" :class="'uip-tone--' + stat.tone"><i :class="stat.icon"></i></span>
+                  <span class="uip-stat-card__body">
+                    <span class="uip-stat-card__label">{{ stat.label }}</span>
+                    <span class="uip-stat-card__value">{{ stat.value }}</span>
+                    <span class="uip-stat-card__hint">{{ stat.hint }}</span>
+                  </span>
+                </button>
+              </div>
+
+              <section class="uip-panel">
+                <div class="uip-panel__header">
+                  <h2>快捷管理</h2>
+                  <span class="uip-status-pill">原型入口已对齐</span>
+                </div>
+                <div class="home-entry-grid home-entry-grid--wide">
+                  <button class="home-entry-card" @click="navigate('storage')">
+                    <span class="home-entry-card__icon" style="color:#0F766E;background:#0F766E18"><i class="fa-solid fa-folder-open"></i></span>
+                    <span class="home-entry-card__label">文件管理</span>
+                    <span class="home-entry-card__desc">文本文件、图片文件、视频文件与续接中心</span>
+                  </button>
+                  <button class="home-entry-card" @click="navigate('deploy-bot')">
+                    <span class="home-entry-card__icon" style="color:#7C3AED;background:#7C3AED18"><i class="fa-solid fa-robot"></i></span>
+                    <span class="home-entry-card__label">部署管理</span>
+                    <span class="home-entry-card__desc">VRM桌宠、直播、即时通讯、播报和翻译</span>
+                  </button>
+                  <button class="home-entry-card" @click="navigate('api-group')">
+                    <span class="home-entry-card__icon" style="color:#2563EB;background:#2563EB18"><i class="fa-solid fa-plug"></i></span>
+                    <span class="home-entry-card__label">API 配置</span>
+                    <span class="home-entry-card__desc">OpenAI API、MCP API、VRM API 与服务映射</span>
+                  </button>
+                  <button class="home-entry-card" @click="navigate('role')">
+                    <span class="home-entry-card__icon" style="color:#F43F5E;background:#F43F5E18"><i class="fa-solid fa-users-gear"></i></span>
+                    <span class="home-entry-card__label">活跃角色</span>
+                    <span class="home-entry-card__desc">智能助手、数据分析师、客服机器人等角色</span>
+                  </button>
+                </div>
+              </section>
+
+              <div class="home-columns">
+                <section class="uip-panel">
+                  <div class="uip-panel__header">
+                    <h2>最近对话</h2>
+                    <button class="uip-link-btn" @click="navigate('chat')">查看全部<i class="fa-solid fa-arrow-right"></i></button>
+                  </div>
+                  <div class="home-conv-list">
+                    <button v-for="conv in recentConversationRows" :key="conv.id" class="home-conv-row" @click="loadConversation(conv.id); navigate('chat')">
+                      <span class="home-conv-row__avatar">AI</span>
+                      <span class="home-conv-row__body">
+                        <span class="home-conv-row__title">{{ conv.title || '未命名对话' }}</span>
+                        <span class="home-conv-row__preview">{{ conv.messages?.[0]?.content || '继续处理当前上下文' }}</span>
+                      </span>
+                      <span class="home-conv-row__time">{{ formatDate(conv.timestamp) }}</span>
+                    </button>
+                  </div>
+                </section>
+
+                <section class="uip-panel">
+                  <div class="uip-panel__header">
+                    <h2>系统状态</h2>
+                    <span class="uip-status-pill" :class="wsConnected ? 'uip-status-pill--green' : 'uip-status-pill--amber'">{{ wsConnected ? '在线' : '连接中' }}</span>
+                  </div>
+                  <div class="kernel-metric-list">
+                    <div v-for="metric in kernelMetrics" :key="metric.label" class="kernel-metric-row">
+                      <span class="kernel-metric-row__label">{{ metric.label }}</span>
+                      <span class="kernel-metric-row__value" :class="'uip-text--' + metric.tone">{{ metric.value }}</span>
+                    </div>
+                  </div>
+                  <hr class="ox-divider">
+                  <div class="home-entry-grid">
+                    <button v-for="entry in dashboardEntries" :key="entry.route" class="home-entry-card" @click="navigate(entry.route)">
+                      <span class="home-entry-card__icon" :style="{ color: entry.color, background: entry.color + '18' }"><i :class="entry.icon"></i></span>
+                      <span class="home-entry-card__label">{{ entry.label }}</span>
+                      <span class="home-entry-card__desc">{{ entry.desc }}</span>
+                    </button>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'deploy-bot'">
+          <div class="ox-content">
+            <div class="ox-page-header">
+              <div>
+                <h1 class="ox-page-header__title">部署机器人</h1>
+                <p class="ox-page-header__subtitle">配置多平台机器人连接、权限和消息路由</p>
+              </div>
+              <div class="ox-page-header__actions">
+                <button class="ox-btn ox-btn--secondary" @click="fetchEngineStatus"><i class="fa-solid fa-rotate-right"></i>同步状态</button>
+                <button class="ox-btn ox-btn--secondary" @click="runApiAction('连接OBS')"><i class="fa-solid fa-link"></i>连接OBS</button>
+                <button class="ox-btn ox-btn--secondary" @click="startVrmWindow"><i class="fa-solid fa-play"></i>启动桌宠</button>
+                <button class="ox-btn ox-btn--primary" @click="createTaskDraft"><i class="fa-solid fa-plus"></i>添加机器人</button>
+              </div>
+            </div>
+
+            <div class="feature-toolbar">
+              <div class="ox-tabs ox-tabs--pill">
+                <button v-for="tab in deployTabs" :key="tab.id" class="ox-tab" :class="{ 'ox-tab--active': deployTab === tab.id }" @click="deployTab = tab.id">
+                  <i :class="tab.icon"></i>{{ tab.label }}
+                </button>
+              </div>
+              <span class="feature-toolbar__status">{{ lastAction }}</span>
+            </div>
+
+            <div class="uip-stat-grid">
+              <div class="uip-stat-card"><span class="uip-stat-card__icon uip-tone--green"><i class="fa-solid fa-signal"></i></span><span class="uip-stat-card__body"><span class="uip-stat-card__label">在线机器人</span><span class="uip-stat-card__value">2</span><span class="uip-stat-card__hint">消息桥接正常</span></span></div>
+              <div class="uip-stat-card"><span class="uip-stat-card__icon uip-tone--blue"><i class="fa-solid fa-message"></i></span><span class="uip-stat-card__body"><span class="uip-stat-card__label">今日消息</span><span class="uip-stat-card__value">2,427</span><span class="uip-stat-card__hint">跨平台收发</span></span></div>
+              <div class="uip-stat-card"><span class="uip-stat-card__icon uip-tone--purple"><i class="fa-solid fa-route"></i></span><span class="uip-stat-card__body"><span class="uip-stat-card__label">路由规则</span><span class="uip-stat-card__value">18</span><span class="uip-stat-card__hint">按角色与频道分发</span></span></div>
+              <div class="uip-stat-card"><span class="uip-stat-card__icon uip-tone--amber"><i class="fa-solid fa-plug-circle-xmark"></i></span><span class="uip-stat-card__body"><span class="uip-stat-card__label">OBS连接</span><span class="uip-stat-card__value">未连接</span><span class="uip-stat-card__hint">直播页可连接 OBS WebSocket</span></span></div>
+            </div>
+
+            <section class="uip-panel">
+              <div class="uip-panel__header">
+                <h2>{{ deployTabs.find(tab => tab.id === deployTab)?.label }}</h2>
+                <div class="feature-toolbar__actions">
+                  <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('重置部署配置')">重置</button>
+                  <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('保存部署配置')">保存配置</button>
+                  <button class="ox-btn ox-btn--primary ox-btn--sm" @click="markAction('部署')">部署</button>
+                </div>
+              </div>
+              <div class="action-grid action-grid--3">
+                <button v-for="panel in activeDeployPanels" :key="panel.label" class="action-card" @click="markAction(panel.label)">
+                  <i :class="panel.icon"></i>
+                  <span>{{ panel.label }}</span>
+                  <small>{{ panel.desc }}</small>
+                </button>
+              </div>
+            </section>
+
+            <div class="uip-grid uip-grid--4">
+              <article v-for="bot in deployBots" :key="bot.name" class="uip-card">
+                <div class="uip-card__top">
+                  <span class="uip-card__icon" :class="'uip-tone--' + bot.tone"><i :class="bot.icon"></i></span>
+                  <span class="uip-status-pill" :class="bot.status === '在线' ? 'uip-status-pill--green' : bot.status === '待授权' ? 'uip-status-pill--amber' : ''">{{ bot.status }}</span>
+                </div>
+                <h2 class="uip-card__title">{{ bot.name }}</h2>
+                <p class="uip-card__desc">{{ bot.channel }} · 今日 {{ bot.messages }} 条消息</p>
+                <div class="uip-card__actions">
+                  <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction(bot.name + ' 测试连接')"><i class="fa-solid fa-plug-circle-check"></i>测试连接</button>
+                  <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction(bot.name + ' 保存')"><i class="fa-solid fa-floppy-disk"></i>保存</button>
+                  <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction(bot.name + ' 日志')"><i class="fa-solid fa-file-lines"></i>日志</button>
+                </div>
+              </article>
+            </div>
+
+            <section class="uip-panel">
+              <div class="uip-panel__header"><h2>{{ deployTabs.find(tab => tab.id === deployTab)?.label }}</h2><button class="uip-link-btn" @click="markAction('保存部署配置')">保存配置<i class="fa-solid fa-arrow-right"></i></button></div>
+              <div class="config-grid">
+                <label class="ox-input-group"><span class="ox-input-label">启动通道</span><select class="ox-input"><option>桌宠 + 平台机器人</option><option>仅平台机器人</option><option>仅桌宠</option></select></label>
+                <label class="ox-input-group"><span class="ox-input-label">日志级别</span><select class="ox-input"><option>Info</option><option>Debug</option><option>Warning</option></select></label>
+                <label class="ox-input-group"><span class="ox-input-label">推流密钥</span><input class="ox-input" value="live-********"></label>
+                <label class="setting-row feature-toggle-row"><span>自动重连</span><span class="ox-toggle"><input type="checkbox" checked><span class="ox-toggle__track"></span><span class="ox-toggle__thumb"></span></span></label>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'api-group'">
+          <div class="ox-content">
+            <div class="ox-page-header">
+              <div>
+                <h1 class="ox-page-header__title">API 管理</h1>
+                <p class="ox-page-header__subtitle">管理兼容接口、密钥、调用审计和限流策略</p>
+              </div>
+              <div class="ox-page-header__actions">
+                <button class="ox-btn ox-btn--secondary" @click="fetchEngineStatus"><i class="fa-solid fa-play"></i>同步服务</button>
+                <button class="ox-btn ox-btn--secondary" @click="runApiAction('添加映射')"><i class="fa-solid fa-route"></i>添加映射</button>
+                <button class="ox-btn ox-btn--secondary" @click="exportDiagnostics"><i class="fa-solid fa-shield-halved"></i>审计</button>
+                <button class="ox-btn ox-btn--primary" @click="copyText('/v1/chat/completions', '接口路径')"><i class="fa-solid fa-key"></i>复制端点</button>
+              </div>
+            </div>
+            <div class="feature-toolbar">
+              <div class="ox-tabs ox-tabs--pill">
+                <button v-for="tab in apiTabs" :key="tab.id" class="ox-tab" :class="{ 'ox-tab--active': apiTab === tab.id }" @click="apiTab = tab.id">
+                  <i :class="tab.icon"></i>{{ tab.label }}
+                </button>
+              </div>
+              <div class="feature-toolbar__actions">
+                <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="importProviderModels"><i class="fa-solid fa-download"></i>导入模型</button>
+                <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="createTaskDraft"><i class="fa-solid fa-vial"></i>运行脚本</button>
+              </div>
+            </div>
+            <section class="uip-panel">
+              <div class="uip-panel__header"><h2>开发与扩展入口</h2><button class="uip-link-btn" @click="openApiDocs">FastAPI文档<i class="fa-solid fa-arrow-right"></i></button></div>
+              <div class="ox-tabs ox-tabs--pill dev-entry-tabs">
+                <button v-for="tab in apiDevTabs" :key="tab.id" class="ox-tab" @click="apiTab = tab.id === 'docs' ? 'docs' : apiTab; runApiAction(tab.label)">
+                  <i :class="tab.icon"></i>{{ tab.label }}
+                </button>
+              </div>
+              <div class="dev-entry-actions">
+                <button v-for="action in apiDevActions" :key="action.label" class="home-action-pill" @click="runApiAction(action.label)">
+                  <i :class="action.icon"></i>{{ action.label }}
+                </button>
+              </div>
+            </section>
+            <section class="uip-panel">
+              <div class="uip-panel__header">
+                <h2>VRM 与自动化能力</h2>
+                <button class="uip-link-btn" @click="apiTab = 'vrm'">查看 VRM API<i class="fa-solid fa-arrow-right"></i></button>
+              </div>
+              <div class="api-capability-grid">
+                <button v-for="row in apiVrmActions" :key="row.label" class="api-capability-card" @click="runApiAction(row.label, row)">
+                  <i class="fa-solid fa-user-astronaut"></i>
+                  <strong>{{ row.label }}</strong>
+                  <small>{{ row.method }} {{ row.path }}</small>
+                </button>
+              </div>
+              <div class="api-script-strip">
+                <button v-for="row in apiAutomationRows" :key="row.name" class="home-action-pill" @click="createTaskDraft">
+                  <i class="fa-solid fa-robot"></i>{{ row.name }}
+                </button>
+              </div>
+            </section>
+            <section class="uip-panel">
+              <div class="uip-panel__header"><h2>浏览器实例</h2><button class="uip-link-btn" @click="runApiAction('加载本地扩展')">加载本地扩展<i class="fa-solid fa-arrow-right"></i></button></div>
+              <div class="uip-grid uip-grid--3 api-browser-grid">
+                <div v-for="row in apiBrowserRows" :key="row.name" class="uip-stat-card">
+                  <span class="uip-stat-card__body">
+                    <span class="uip-stat-card__label">{{ row.name }}</span>
+                    <span class="uip-stat-card__value">{{ row.value }}</span>
+                    <span class="uip-stat-card__hint">{{ row.status }}</span>
+                  </span>
+                </div>
+              </div>
+            </section>
+            <section class="uip-panel">
+              <div class="uip-panel__header">
+                <h2>{{ apiPanelTitle }}</h2>
+                <div class="feature-toolbar__actions">
+                  <span class="uip-status-pill">Base URL {{ apiDocsUrl }}</span>
+                  <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="openApiDocs">Try it out</button>
+                </div>
+              </div>
+              <div v-if="apiTab === 'docker'" class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>容器</th><th>镜像</th><th>端口</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in apiPanelRows" :key="row.name">
+                      <td><strong>{{ row.name }}</strong></td>
+                      <td>{{ row.image }}</td>
+                      <td><code>{{ row.port }}</code></td>
+                      <td><span class="uip-status-pill" :class="row.status === '运行中' ? 'uip-status-pill--green' : 'uip-status-pill--amber'">{{ row.status }}</span></td>
+                      <td><button class="uip-link-btn" @click="runApiAction(row.name + ' 拉取镜像')">拉取镜像<i class="fa-solid fa-cloud-arrow-down"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else-if="apiTab === 'code'" class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>代码仓库</th><th>支持语言</th><th>分支</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in apiPanelRows" :key="row.repo">
+                      <td><strong>{{ row.repo }}</strong></td>
+                      <td>{{ row.language }}</td>
+                      <td>{{ row.branch }}</td>
+                      <td><span class="uip-status-pill">{{ row.status }}</span></td>
+                      <td><button class="uip-link-btn" @click="runApiAction(row.repo + ' 代码搜索')">代码搜索<i class="fa-solid fa-magnifying-glass"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else-if="apiTab === 'extension'" class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>已安装扩展</th><th>值</th><th>开发者模式</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in apiPanelRows" :key="row.name">
+                      <td><strong>{{ row.name }}</strong></td>
+                      <td>{{ row.value }}</td>
+                      <td><span class="uip-status-pill">{{ row.status }}</span></td>
+                      <td><button class="uip-link-btn" @click="runApiAction(row.name + ' 加载')">加载<i class="fa-solid fa-download"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else-if="apiTab === 'vrm'" class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>VRM API</th><th>方法</th><th>路径</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in apiPanelRows" :key="row.label">
+                      <td><strong>{{ row.label }}</strong></td>
+                      <td><span class="uip-status-pill">{{ row.method }}</span></td>
+                      <td><code>{{ row.path }}</code></td>
+                      <td><span class="uip-status-pill" :class="row.status === '启用' ? 'uip-status-pill--green' : 'uip-status-pill--amber'">{{ row.status }}</span></td>
+                      <td><button class="uip-link-btn" @click="runApiAction(row.label + ' 调试', row)">调试<i class="fa-solid fa-play"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else-if="apiTab === 'snapshots'" class="snapshot-list snapshot-list--rich">
+                <div v-for="snap in apiPanelRows" :key="snap.name" class="snapshot-row snapshot-row--rich">
+                  <span><strong>{{ snap.name }}</strong><small>{{ snap.time }} · {{ snap.size }}</small><small>{{ snap.content }}</small></span>
+                  <span class="uip-status-pill">{{ snap.status }}</span>
+                  <button class="uip-link-btn" @click="runApiAction(snap.name + ' 恢复')">恢复<i class="fa-solid fa-arrow-right"></i></button>
+                </div>
+              </div>
+              <div v-else-if="apiTab === 'scripts'" class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>自动化脚本</th><th>引擎</th><th>计划</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in apiPanelRows" :key="row.name">
+                      <td><strong>{{ row.name }}</strong></td>
+                      <td>{{ row.engine }}</td>
+                      <td>{{ row.schedule }}</td>
+                      <td><span class="uip-status-pill" :class="row.status === '运行中' ? 'uip-status-pill--green' : 'uip-status-pill--amber'">{{ row.status }}</span></td>
+                      <td><button class="uip-link-btn" @click="createTaskDraft">运行<i class="fa-solid fa-play"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>API 端点</th><th>方法</th><th>路径</th><th>类型</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in apiPanelRows" :key="row.path">
+                      <td><strong>{{ row.name }}</strong></td>
+                      <td><span class="uip-status-pill">{{ row.method }}</span></td>
+                      <td><code>{{ row.path }}</code></td>
+                      <td>{{ row.type }}</td>
+                      <td><span class="uip-status-pill" :class="row.status === '启用' ? 'uip-status-pill--green' : 'uip-status-pill--amber'">{{ row.status }}</span></td>
+                      <td><button class="uip-link-btn" @click="runApiAction(row.name + ' 调试', row)">调试<i class="fa-solid fa-play"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            <section class="uip-panel">
+              <div class="uip-panel__header">
+                <h2>容器列表</h2>
+                <button class="uip-link-btn" @click="apiTab = 'docker'">查看 Docker<i class="fa-solid fa-arrow-right"></i></button>
+              </div>
+              <div class="container-chip-row">
+                <span v-for="row in apiDockerRows" :key="row.name" class="container-chip">
+                  <i class="fa-brands fa-docker"></i>{{ row.name }}<small>{{ row.status }}</small>
+                </span>
+              </div>
+            </section>
+            <section class="uip-panel">
+              <div class="uip-panel__header">
+                <h2>智能体快照</h2>
+                <button class="uip-link-btn" @click="apiTab = 'snapshots'">查看快照<i class="fa-solid fa-arrow-right"></i></button>
+              </div>
+              <div class="snapshot-list">
+                <div v-for="snap in apiSnapshotRows" :key="snap.name" class="snapshot-row snapshot-row--rich">
+                  <span><strong>{{ snap.name }}</strong><small>{{ snap.content }}</small></span>
+                  <span class="uip-status-pill">{{ snap.status }}</span>
+                  <button class="uip-link-btn" @click="markAction(snap.name + ' 恢复')">恢复<i class="fa-solid fa-arrow-right"></i></button>
+                </div>
+              </div>
+            </section>
+            <section class="uip-panel">
+              <div class="uip-panel__header">
+                <h2>接口分组</h2>
+                <span class="uip-status-pill uip-status-pill--green">Gateway Ready</span>
+              </div>
+              <div class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>分组</th><th>路由</th><th>密钥</th><th>配额</th><th>状态</th></tr></thead>
+                  <tbody>
+                    <tr v-for="api in apiStatusRows" :key="api.name">
+                      <td><strong>{{ api.name }}</strong></td>
+                      <td><code>{{ api.route }}</code></td>
+                      <td>{{ api.key }}</td>
+                      <td><div class="uip-progress"><span :style="{ width: api.quota }"></span></div></td>
+                      <td><span class="uip-status-pill" :class="api.enabled ? 'uip-status-pill--green' : 'uip-status-pill--amber'">{{ api.status }}</span></td>
+                      <td><button class="uip-icon-btn" @click="copyText(api.route, '接口路由')"><i class="fa-solid fa-copy"></i></button><button class="uip-icon-btn" @click="runApiAction(api.name + ' 测试')"><i class="fa-solid fa-play"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            <section class="uip-panel">
+              <div class="uip-panel__header"><h2>快照与测试脚本</h2><div class="feature-toolbar__actions"><button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('创建快照')">创建快照</button><button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('导入快照')">导入快照</button><button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('导出')">导出</button></div></div>
+              <div class="snapshot-list">
+                <div v-for="snap in snapshotRows" :key="snap.name" class="snapshot-row">
+                  <span><strong>{{ snap.name }}</strong><small>{{ snap.time }} · {{ snap.size }}</small></span>
+                  <span class="uip-status-pill">{{ snap.status }}</span>
+                  <button class="uip-link-btn" @click="markAction(snap.name + ' 恢复')">恢复<i class="fa-solid fa-arrow-right"></i></button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'enterprise'">
+          <div class="ox-content">
+            <div class="ox-page-header">
+              <div>
+                <h1 class="ox-page-header__title">企业空间</h1>
+                <p class="ox-page-header__subtitle">团队知识、角色权限、空间审计与神经符号管理</p>
+              </div>
+              <div class="ox-page-header__actions">
+                <button class="ox-btn ox-btn--secondary" @click="markAction('刷新企业空间')"><i class="fa-solid fa-arrows-rotate"></i>刷新</button>
+                <button class="ox-btn ox-btn--secondary" @click="markAction('导出审计')"><i class="fa-solid fa-file-export"></i>导出审计</button>
+                <button class="ox-btn ox-btn--secondary" @click="markAction('发送邀请')"><i class="fa-solid fa-paper-plane"></i>发送邀请</button>
+                <button class="ox-btn ox-btn--primary" @click="markAction('邀请成员')"><i class="fa-solid fa-user-plus"></i>邀请成员</button>
+              </div>
+            </div>
+
+            <div class="feature-toolbar">
+              <div class="ox-tabs ox-tabs--pill">
+                <button v-for="tab in enterpriseTabs" :key="tab.id" class="ox-tab" :class="{ 'ox-tab--active': enterpriseTab === tab.id }" @click="enterpriseTab = tab.id">
+                  <i :class="tab.icon"></i>{{ tab.label }}
+                </button>
+              </div>
+              <div class="feature-toolbar__actions">
+                <label class="compact-search">
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                  <input v-model="enterpriseSearch" placeholder="搜索成员、符号、助手...">
+                </label>
+                <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('维护工具')"><i class="fa-solid fa-wrench"></i>维护工具</button>
+              </div>
+            </div>
+
+            <div class="uip-stat-grid">
+              <div class="uip-stat-card"><span class="uip-stat-card__icon uip-tone--blue"><i class="fa-solid fa-users"></i></span><span class="uip-stat-card__body"><span class="uip-stat-card__label">企业成员</span><span class="uip-stat-card__value">18</span><span class="uip-stat-card__hint">3 人待激活</span></span></div>
+              <div class="uip-stat-card"><span class="uip-stat-card__icon uip-tone--purple"><i class="fa-solid fa-brain"></i></span><span class="uip-stat-card__body"><span class="uip-stat-card__label">符号节点</span><span class="uip-stat-card__value">1,204</span><span class="uip-stat-card__hint">同步执行开启</span></span></div>
+              <div class="uip-stat-card"><span class="uip-stat-card__icon uip-tone--green"><i class="fa-solid fa-book"></i></span><span class="uip-stat-card__body"><span class="uip-stat-card__label">知识文档</span><span class="uip-stat-card__value">1,932</span><span class="uip-stat-card__hint">知识库同步正常</span></span></div>
+              <div class="uip-stat-card"><span class="uip-stat-card__icon uip-tone--amber"><i class="fa-solid fa-shield-halved"></i></span><span class="uip-stat-card__body"><span class="uip-stat-card__label">审计事件</span><span class="uip-stat-card__value">64</span><span class="uip-stat-card__hint">5 条需要复核</span></span></div>
+            </div>
+
+            <div class="uip-grid uip-grid--3">
+              <article v-for="space in enterpriseSpaces" :key="space.name" class="uip-card">
+                <div class="uip-card__top">
+                  <span class="uip-card__icon" :class="'uip-tone--' + space.tone"><i :class="space.icon"></i></span>
+                  <span class="uip-status-pill uip-status-pill--green">{{ space.members }} 人</span>
+                </div>
+                <h2 class="uip-card__title">{{ space.name }}</h2>
+                <p class="uip-card__desc">{{ space.owner }} · {{ space.docs }} 篇知识文档</p>
+                <div class="uip-card__meta">
+                  <span><i class="fa-solid fa-lock"></i>RBAC</span>
+                  <span><i class="fa-solid fa-clock-rotate-left"></i>审计开启</span>
+                </div>
+                <div class="uip-card__actions">
+                  <button class="uip-link-btn" @click="markAction(space.name + ' 进入')">进入<i class="fa-solid fa-arrow-right"></i></button>
+                  <button class="uip-link-btn" @click="markAction(space.name + ' 同步')">同步<i class="fa-solid fa-rotate-right"></i></button>
+                </div>
+              </article>
+            </div>
+
+            <section v-if="enterpriseTab === 'members'" class="uip-panel">
+              <div class="uip-panel__header"><h2>员工角色与助手分配</h2><div class="feature-toolbar__actions"><button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('取消')">取消</button><button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('复制邀请链接')">复制邀请链接</button><button class="ox-btn ox-btn--primary ox-btn--sm" @click="markAction('邀请新成员')">邀请新成员</button></div></div>
+              <div class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>成员</th><th>角色</th><th>空间</th><th>绑定 Agent</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="member in filteredEnterpriseMembers" :key="member.name">
+                      <td>{{ member.name }}</td>
+                      <td><span class="uip-status-pill">{{ member.role }}</span></td>
+                      <td>{{ member.group }}</td>
+                      <td>{{ member.agents }}</td>
+                      <td><span class="uip-status-pill" :class="member.status === '在线' ? 'uip-status-pill--green' : 'uip-status-pill--amber'">{{ member.status }}</span></td>
+                      <td><button class="uip-icon-btn" @click="markAction(member.name + ' 分配助手')"><i class="fa-solid fa-user-gear"></i></button><button class="uip-icon-btn uip-icon-btn--danger" @click="markAction(member.name + ' 删除')"><i class="fa-solid fa-trash-can"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="ability-radar">
+                <div><strong>能力雷达</strong><span>检索 92%</span><span>代码 78%</span><span>协作 84%</span></div>
+                <div><strong>权限策略</strong><span>Owner / Developer / Viewer</span></div>
+              </div>
+            </section>
+
+            <section v-else-if="enterpriseTab === 'symbols'" class="uip-panel">
+              <div class="uip-panel__header"><h2>神经符号表</h2><div class="feature-toolbar__actions"><button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('符号维护')"><i class="fa-solid fa-wrench"></i>维护</button><button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('刷新符号')"><i class="fa-solid fa-arrows-rotate"></i>刷新</button></div></div>
+              <div class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>归属</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in enterpriseSymbolRows" :key="row.id">
+                      <td>{{ row.id }}</td><td>{{ row.name }}</td><td>{{ row.type }}</td><td>{{ row.owner }}</td><td><span class="uip-status-pill" :class="row.status === '启用' ? 'uip-status-pill--green' : 'uip-status-pill--amber'">{{ row.status }}</span></td>
+                      <td><button class="uip-icon-btn" @click="markAction(row.name + ' 编辑')"><i class="fa-solid fa-pen"></i></button><button class="uip-icon-btn uip-icon-btn--danger" @click="markAction(row.name + ' 删除')"><i class="fa-solid fa-trash-can"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section v-else-if="enterpriseTab === 'graph'" class="uip-panel">
+              <div class="uip-panel__header"><h2>知识图谱操作</h2><button class="uip-link-btn" @click="markAction('导出图谱')">导出图谱<i class="fa-solid fa-arrow-right"></i></button></div>
+              <div class="action-grid action-grid--4">
+                <button class="action-card" @click="markAction('同步知识图谱')"><i class="fa-solid fa-rotate"></i><span>同步图谱</span><small>知识库与符号边同步</small></button>
+                <button class="action-card" @click="markAction('实体合并')"><i class="fa-solid fa-code-merge"></i><span>实体合并</span><small>清理重复实体</small></button>
+                <button class="action-card" @click="markAction('关系审计')"><i class="fa-solid fa-shield-halved"></i><span>关系审计</span><small>检查异常权限链路</small></button>
+                <button class="action-card" @click="markAction('创建图谱快照')"><i class="fa-solid fa-box-archive"></i><span>创建快照</span><small>可恢复版本</small></button>
+              </div>
+            </section>
+
+            <section v-else-if="enterpriseTab === 'aiops'" class="uip-panel">
+              <div class="uip-panel__header"><h2>XNet AIOps</h2><div class="ox-tabs ox-tabs--pill"><button class="ox-tab ox-tab--active">AIOps</button><button class="ox-tab">DataOps</button><button class="ox-tab">MLOps</button></div></div>
+              <div class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>任务</th><th>类型</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in enterpriseOpsRows" :key="row.name">
+                      <td>{{ row.name }}</td><td>{{ row.type }}</td><td><span class="uip-status-pill" :class="row.status === '运行中' ? 'uip-status-pill--green' : row.status === '测试中' ? 'uip-status-pill--amber' : ''">{{ row.status }}</span></td><td>{{ row.time }}</td>
+                      <td><button class="uip-link-btn" @click="markAction(row.name + ' 执行')">执行<i class="fa-solid fa-play"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section v-else class="uip-panel">
+              <div class="uip-panel__header"><h2>用量与权限矩阵</h2><button class="uip-link-btn" @click="markAction('编辑策略')">编辑策略<i class="fa-solid fa-arrow-right"></i></button></div>
+              <div class="enterprise-matrix">
+                <div>Owner</div><div>空间管理、密钥审批、成员邀请</div>
+                <div>Developer</div><div>工具调用、知识写入、任务执行</div>
+                <div>Viewer</div><div>只读检索、对话查看、报表下载</div>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'storage'">
+          <div class="ox-content">
+            <div class="ox-page-header">
+              <div>
+                <h1 class="ox-page-header__title">存储管理</h1>
+                <p class="ox-page-header__subtitle">管理本地文件、素材库、缓存和长期记忆空间</p>
+              </div>
+              <div class="ox-page-header__actions">
+                <button class="ox-btn ox-btn--secondary" @click="exportStorageIndex"><i class="fa-solid fa-file-export"></i>导出索引</button>
+                <button class="ox-btn ox-btn--secondary" @click="runSystemAction('清理缓存')"><i class="fa-solid fa-broom"></i>清理缓存</button>
+                <button class="ox-btn ox-btn--primary" @click="openFilePicker('上传文件')"><i class="fa-solid fa-upload"></i>上传文件</button>
+              </div>
+            </div>
+            <div class="feature-toolbar">
+              <div class="ox-tabs ox-tabs--pill">
+                <button v-for="tab in storageTabs" :key="tab.id" class="ox-tab" :class="{ 'ox-tab--active': storageTab === tab.id }" @click="storageTab = tab.id">
+                  <i :class="tab.icon"></i>{{ tab.label }}
+                </button>
+              </div>
+              <div class="feature-toolbar__actions">
+                <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('批量下载')">批量下载</button>
+                <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('批量删除')">批量删除</button>
+              </div>
+            </div>
+            <div class="uip-stat-grid">
+              <div v-for="stat in storageStats" :key="stat.label" class="uip-stat-card">
+                <span class="uip-stat-card__body"><span class="uip-stat-card__label">{{ stat.label }}</span><span class="uip-stat-card__value">{{ stat.value }}</span><span class="uip-stat-card__hint">{{ stat.hint }}</span></span>
+              </div>
+            </div>
+            <section class="storage-upload-zone">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+              <div>
+                <strong v-if="storageTab === 'images'">拖拽图片上传 或 点击选择 (PNG, JPG, GIF, WebP)</strong>
+                <strong v-else-if="storageTab === 'videos'">拖拽视频到此处上传</strong>
+                <strong v-else-if="storageTab === 'continuation'">续接中心</strong>
+                <strong v-else>拖拽文件上传</strong>
+                <span>{{ storageTab === 'continuation' ? '恢复中断的任务和对话，继续未完成的工作' : '支持文档、图片、音频、视频与结构化数据' }}</span>
+              </div>
+            </section>
+            <section v-if="storageTab === 'continuation'" class="uip-panel">
+              <div class="uip-panel__header"><h2>续接中心</h2><button class="uip-link-btn" @click="markAction('清理续接记录')">清理记录<i class="fa-solid fa-arrow-right"></i></button></div>
+              <div class="continuation-list">
+                <div v-for="row in storageContinuationRows" :key="row.title" class="continuation-row">
+                  <div><strong>{{ row.title }}</strong><small>{{ row.status }} · {{ row.updated }}</small></div>
+                  <div class="uip-progress"><span :style="{ width: row.progress + '%' }"></span></div>
+                  <span>{{ row.progress }}%</span>
+                  <button class="ox-btn ox-btn--primary ox-btn--sm" @click="markAction(row.title + ' 继续')">继续</button>
+                  <button class="uip-icon-btn uip-icon-btn--danger" @click="markAction(row.title + ' 删除')"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+              </div>
+            </section>
+            <section v-else class="uip-panel">
+              <div class="uip-panel__header"><h2>文件列表</h2><div class="ox-tabs ox-tabs--pill"><button class="ox-tab ox-tab--active">全部</button><button class="ox-tab">文档</button><button class="ox-tab">素材</button><button class="ox-tab">回忆</button></div></div>
+              <div class="uip-table-wrap">
+                <table class="uip-table">
+                  <thead><tr><th>名称</th><th>类型</th><th>大小</th><th>更新时间</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="file in activeStorageRows" :key="file.name">
+                      <td><span class="storage-file-name"><span class="storage-file-icon" :class="'uip-tone--' + file.tone"><i :class="file.icon"></i></span>{{ file.name }}</span></td>
+                      <td>{{ file.type }}</td>
+                      <td>{{ file.size }}</td>
+                      <td>{{ file.updated }}</td>
+                      <td><button class="uip-icon-btn" @click="markAction(file.name + ' 下载')"><i class="fa-solid fa-download"></i></button><button class="uip-icon-btn" @click="markAction(file.name + ' 预览')"><i class="fa-solid fa-eye"></i></button><button class="uip-icon-btn uip-icon-btn--danger" @click="markAction(file.name + ' 删除')"><i class="fa-solid fa-trash-can"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'system'">
+          <div class="ox-content">
+            <div class="ox-page-header">
+              <div>
+                <h1 class="ox-page-header__title">系统设置</h1>
+                <p class="ox-page-header__subtitle">语言、主题、快捷键、网络、内核策略和数据管理</p>
+              </div>
+              <div class="ox-page-header__actions">
+                <button class="ox-btn ox-btn--secondary" :disabled="systemActionLoading === 'check-updates'" @click="checkUpdates"><i class="fa-solid fa-rotate"></i>{{ systemActionLoading === 'check-updates' ? '检查中' : '检查更新' }}</button>
+                <button class="ox-btn ox-btn--secondary" @click="resetSystemSettings"><i class="fa-solid fa-arrow-rotate-left"></i>重置</button>
+                <button class="ox-btn ox-btn--primary" @click="saveSystemSettings"><i class="fa-solid fa-floppy-disk"></i>保存设置</button>
+              </div>
+            </div>
+            <div class="sys-layout">
+              <aside class="sys-vtabs">
+                <button v-for="section in systemSections" :key="section.id" class="sys-vtab" :class="{ 'sys-vtab--active': section.id === systemActiveSection }" @click="systemActiveSection = section.id">
+                  <span class="sys-vtab__icon"><i :class="section.icon"></i></span>{{ section.label }}
+                </button>
+              </aside>
+              <section class="sys-form">
+                <div class="sys-form__header">
+                  <h1 class="sys-form__title">{{ activeSystemSection.label }}</h1>
+                  <p class="sys-form__subtitle">{{ activeSystemSection.desc }}</p>
+                </div>
+                <div class="sys-section">
+                  <div class="sys-section__label"><i :class="activeSystemSection.icon"></i>{{ activeSystemSection.label }}</div>
+                  <div v-for="row in activeSystemSection.rows" :key="row[0]" class="sys-row">
+                    <div><div class="sys-row__label">{{ row[0] }}</div><div class="sys-row__hint">{{ activeSystemSection.desc }}</div></div>
+                    <div class="sys-row__value">{{ row[1] }}</div>
+                  </div>
+                </div>
+                <div class="sys-section">
+                  <div class="sys-section__label"><i class="fa-solid fa-database"></i>数据与维护</div>
+                  <div v-for="action in systemActionRows" :key="action.label" class="sys-row">
+                    <div><div class="sys-row__label">{{ action.label }}</div><div class="sys-row__hint">{{ action.desc }}</div></div>
+                    <button class="ox-btn ox-btn--secondary ox-btn--sm" :class="{ 'ox-btn--danger-soft': action.danger }" @click="runSystemAction(action)">
+                      <i :class="action.icon"></i>{{ action.button }}
+                    </button>
+                  </div>
+                </div>
+                <div class="sys-section">
+                  <div class="sys-section__label"><i class="fa-solid fa-circle-nodes"></i>运行状态</div>
+                  <div v-for="row in systemStatusRows" :key="row[0]" class="sys-row">
+                    <div class="sys-row__label">{{ row[0] }}</div>
+                    <div class="sys-row__value">{{ row[1] }}</div>
+                  </div>
+                </div>
+                <div class="sys-footer-actions">
+                  <button class="ox-btn ox-btn--secondary" @click="exportDiagnostics"><i class="fa-solid fa-file-export"></i>导出诊断日志</button>
+                  <button class="ox-btn ox-btn--secondary" @click="openConfigDirectory"><i class="fa-solid fa-folder-open"></i>打开配置目录</button>
+                  <button class="ox-btn ox-btn--primary" @click="restartApp"><i class="fa-solid fa-power-off"></i>应用并重启</button>
+                </div>
+                <p v-if="systemError" class="uip-inline-alert uip-inline-alert--error">{{ systemError }}</p>
+                <p v-else-if="systemNotice" class="uip-inline-alert">{{ systemNotice }}</p>
+              </section>
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'task-center'">
+          <div class="ox-content">
+            <div class="ox-page-header">
+              <div>
+                <h1 class="ox-page-header__title">任务中心</h1>
+                <p class="ox-page-header__subtitle">追踪后台任务、长运行工具和自动化计划</p>
+              </div>
+              <div class="ox-page-header__actions">
+                <button class="ox-btn ox-btn--secondary" :disabled="taskLoading" @click="loadTasks"><i class="fa-solid fa-rotate-right"></i>{{ taskLoading ? '刷新中' : '刷新' }}</button>
+                <button class="ox-btn ox-btn--secondary" @click="taskPriorityTab = taskPriorityTab === 'all' ? 'high' : 'all'"><i class="fa-solid fa-filter"></i>筛选任务</button>
+                <button class="ox-btn ox-btn--primary" :disabled="taskLoading" @click="createTaskDraft"><i class="fa-solid fa-plus"></i>新建任务</button>
+              </div>
+            </div>
+            <div class="feature-toolbar">
+              <div class="ox-tabs ox-tabs--pill">
+                <button v-for="tab in taskTabs" :key="tab.id" class="ox-tab" :class="{ 'ox-tab--active': taskTab === tab.id }" @click="taskTab = tab.id">{{ tab.label }}</button>
+              </div>
+              <div class="feature-toolbar__actions">
+                <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="filteredTaskRows.filter(task => task.canCancel).forEach(task => cancelTask(task))">暂停全部</button>
+                <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="exportTaskReport">导出报告</button>
+              </div>
+            </div>
+            <p v-if="taskError" class="uip-inline-alert uip-inline-alert--error">{{ taskError }}</p>
+            <p v-else-if="taskNotice" class="uip-inline-alert">{{ taskNotice }}</p>
+            <div class="priority-filter-row">
+              <button v-for="tab in taskPriorityTabs" :key="tab.id" class="priority-chip" :class="{ 'priority-chip--active': taskPriorityTab === tab.id }" @click="taskPriorityTab = tab.id">{{ tab.label }}</button>
+            </div>
+            <div v-if="!filteredTaskRows.length" class="uip-empty-state">
+              <i class="fa-solid fa-list-check"></i>
+              <strong>当前筛选下没有任务</strong>
+              <span>可以刷新真实任务中心，或从新 UI 创建一个任务草稿。</span>
+              <button class="ox-btn ox-btn--primary ox-btn--sm" @click="createTaskDraft">新建任务</button>
+            </div>
+            <div v-else class="task-board">
+              <article v-for="task in filteredTaskRows" :key="task.id" class="task-card">
+                <div class="task-card__header"><span class="task-card__id">{{ task.id }}</span><span class="uip-status-pill" :class="'uip-status-pill--' + task.tone">{{ task.status }}</span></div>
+                <h2 class="task-card__title">{{ task.title }}</h2>
+                <p v-if="task.description" class="task-card__desc">{{ task.description }}</p>
+                <p class="task-card__meta">{{ task.agent }} · {{ task.time }} · {{ task.priority === 'high' ? '高优先级' : task.priority === 'medium' ? '中优先级' : '低优先级' }}</p>
+                <div class="uip-progress"><span :style="{ width: task.progress + '%' }"></span></div>
+                <div class="task-card__footer">
+                  <span>进度 {{ task.progress }}%</span>
+                  <div class="feature-toolbar__actions">
+                    <button class="uip-link-btn" :disabled="!task.canStart && !task.canResume" @click="runTask(task)">{{ task.canResume ? '恢复' : '运行' }}<i class="fa-solid fa-play"></i></button>
+                    <button v-if="task.canCancel" class="uip-link-btn" @click="cancelTask(task)">取消<i class="fa-solid fa-pause"></i></button>
+                    <button class="uip-link-btn" @click="openTaskDetail(task)">详情<i class="fa-solid fa-arrow-right"></i></button>
+                    <button class="uip-icon-btn uip-icon-btn--danger" @click="deleteTask(task)"><i class="fa-solid fa-trash-can"></i></button>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <section v-if="taskDetailOpen && taskDetail" class="uip-panel task-detail-panel">
+              <div class="uip-panel__header">
+                <h2>{{ taskDetail.task?.title || '任务详情' }}</h2>
+                <button class="uip-icon-btn" @click="taskDetailOpen = false"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+              <div class="task-detail-grid">
+                <div><strong>状态</strong><span>{{ taskStatusLabel(taskDetail.task?.status) }}</span></div>
+                <div><strong>进度</strong><span>{{ taskDetail.task?.progress || 0 }}%</span></div>
+                <div><strong>工作区</strong><span>{{ taskDetail.workspace_dir || taskDetail.task?.workspace_dir || '-' }}</span></div>
+                <div><strong>子任务</strong><span>{{ taskDetail.child_tasks?.length || 0 }}</span></div>
+              </div>
+              <pre v-if="taskDetail.consensus_content" class="task-detail-pre">{{ taskDetail.consensus_content }}</pre>
+              <div v-if="taskDetail.task?.recent_trace_excerpt?.length" class="task-trace-list">
+                <span v-for="line in taskDetail.task.recent_trace_excerpt" :key="line">{{ line }}</span>
+              </div>
+            </section>
+            <section class="uip-panel">
+              <div class="uip-panel__header">
+                <h2>任务负责人</h2>
+                <span class="uip-status-pill">待处理 / 进行中</span>
+              </div>
+              <div class="task-people-grid">
+                <div v-for="person in taskPeopleRows" :key="person.name" class="task-person">
+                  <span class="task-person__avatar">{{ person.name.slice(0, 1) }}</span>
+                  <span><strong>{{ person.name }}</strong><small>{{ person.role }}</small></span>
+                  <span class="uip-status-pill" :class="person.status === '进行中' ? 'uip-status-pill--green' : 'uip-status-pill--amber'">{{ person.status }}</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'ai-browser'">
+          <div class="ox-content">
+            <div class="browser-page">
+              <section class="browser-frame">
+                <div class="browser-frame__bar">
+                  <span class="browser-frame__dot"></span><span class="browser-frame__dot"></span><span class="browser-frame__dot"></span>
+                  <div class="browser-frame__url"><i class="fa-solid fa-lock"></i>https://workspace.openxnet.local</div>
+                  <button class="uip-icon-btn" @click="markAction('刷新页面')"><i class="fa-solid fa-rotate-right"></i></button>
+                  <button class="uip-icon-btn" @click="markAction('截图记录')"><i class="fa-solid fa-camera"></i></button>
+                </div>
+                <div class="browser-frame__body">
+                  <h1>OpenXnet</h1>
+                  <p>AI Browser Workspace</p>
+                  <div class="browser-frame__grid"><span></span><span></span><span></span><span></span></div>
+                </div>
+              </section>
+              <aside class="browser-side">
+                <div class="ox-page-header">
+                  <div><h1 class="ox-page-header__title">AI 浏览器</h1><p class="ox-page-header__subtitle">网页理解、自动操作、截图记录与安全隔离</p></div>
+                </div>
+                <div class="browser-action-grid">
+                  <button v-for="action in browserActions" :key="action.label" class="home-action-pill" @click="markAction(action.label)">
+                    <i :class="action.icon"></i>{{ action.label }}
+                  </button>
+                </div>
+                <section class="browser-insight-panel">
+                  <div class="ox-tabs ox-tabs--pill">
+                    <button v-for="tab in browserInsightTabs" :key="tab.id" class="ox-tab" :class="{ 'ox-tab--active': browserInsightTab === tab.id }" @click="browserInsightTab = tab.id">{{ tab.label }}</button>
+                  </div>
+                  <div class="browser-insight-body">
+                    <div v-if="browserInsightTab === 'summary'">
+                      <h2>页面摘要</h2>
+                      <p>当前页面已完成 DOM、可访问性结构与截图摘要，可继续复制摘要或深入分析。</p>
+                      <div class="feature-toolbar__actions"><button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('复制摘要')">复制摘要</button><button class="ox-btn ox-btn--primary ox-btn--sm" @click="markAction('深入分析')">深入分析</button></div>
+                    </div>
+                    <div v-else-if="browserInsightTab === 'ask'" class="browser-ask-row">
+                      <input class="ox-input" placeholder="对此页面提问...">
+                      <button class="send-btn" @click="markAction('页面提问')"><i class="fa-solid fa-arrow-up"></i></button>
+                    </div>
+                    <div v-else>
+                      <h2>翻译</h2>
+                      <p>将页面选区、摘要或表格内容翻译到目标语言。</p>
+                      <button class="ox-btn ox-btn--secondary ox-btn--sm" @click="markAction('翻译页面')"><i class="fa-solid fa-language"></i>翻译页面</button>
+                    </div>
+                  </div>
+                </section>
+                <div class="uip-card" v-for="card in browserCards" :key="card.title">
+                  <div class="uip-card__top"><span class="uip-card__icon uip-tone--blue"><i :class="card.icon"></i></span></div>
+                  <h2 class="uip-card__title">{{ card.title }}</h2>
+                  <p class="uip-card__desc">{{ card.desc }}</p>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'kernel' || currentRoute === 'knowledge'">
+          <div class="ox-content">
+            <section class="kernel-console">
+              <div class="kernel-console__halo"><i :class="currentRoute === 'kernel' ? 'fa-solid fa-brain' : 'fa-solid fa-book-open'"></i></div>
+              <h1>{{ currentRoute === 'kernel' ? '神经符号内核' : '知识库' }}</h1>
+              <p>{{ currentRoute === 'kernel' ? '符号推理、记忆图谱、工具调度与多 Agent 运行时状态' : '本地知识、企业空间、长期记忆与语义检索统一入口' }}</p>
+              <div v-if="currentRoute === 'kernel'" class="ox-tabs ox-tabs--pill kernel-tab-bar">
+                <button v-for="tab in kernelTabs" :key="tab.id" class="ox-tab" :class="{ 'ox-tab--active': kernelTab === tab.id }" @click="kernelTab = tab.id">
+                  <i :class="tab.icon"></i>{{ tab.label }}
+                </button>
+              </div>
+              <div class="kernel-actions">
+                <button class="ox-btn ox-btn--secondary" @click="runEngineAction(currentRoute === 'kernel' ? '重启内核' : '同步知识库')"><i class="fa-solid fa-rotate-right"></i>{{ currentRoute === 'kernel' ? '重启内核' : '同步知识库' }}</button>
+                <button class="ox-btn ox-btn--secondary" @click="currentRoute === 'kernel' ? exportDiagnostics() : openFilePicker('导入文档')"><i class="fa-solid fa-file-export"></i>{{ currentRoute === 'kernel' ? '导出状态' : '导入文档' }}</button>
+                <button class="ox-btn ox-btn--secondary" @click="runEngineAction(currentRoute === 'kernel' ? '清空缓存' : '清空检索缓存')"><i class="fa-solid fa-broom"></i>{{ currentRoute === 'kernel' ? '清空缓存' : '清空检索缓存' }}</button>
+                <button class="ox-btn ox-btn--primary" @click="createTaskDraft"><i class="fa-solid fa-plus"></i>{{ currentRoute === 'kernel' ? '新建计划' : '新建知识空间' }}</button>
+              </div>
+              <div v-if="currentRoute === 'kernel'" class="kernel-filter-strip">
+                <button v-for="filter in kernelEventFilters" :key="filter" class="priority-chip" @click="markAction(filter)">{{ filter }}</button>
+              </div>
+              <div class="kernel-console__metrics">
+                <div v-for="metric in kernelMetrics" :key="metric.label"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div>
+              </div>
+              <div v-if="currentRoute === 'kernel'" class="kernel-analysis-card">
+                <strong>用户请求分析</strong>
+                <span class="uip-status-pill uip-status-pill--amber">执行中</span>
+                <small>历史计划、推理请求、符号变更和配置修改正在审计。</small>
+              </div>
+              <div v-if="currentRoute === 'kernel'" class="kernel-flow">
+                <div v-for="(step, index) in kernelFlowSteps" :key="step.label" class="kernel-flow-step">
+                  <span class="kernel-flow-step__index">{{ index + 1 }}</span>
+                  <strong>{{ step.label }}</strong>
+                  <small>{{ step.desc }}</small>
+                </div>
+              </div>
+              <div v-if="currentRoute === 'kernel'" class="kernel-filter-strip">
+                <button v-for="filter in kernelPlanFilters" :key="filter" class="priority-chip" @click="markAction('历史计划 ' + filter)">{{ filter }}</button>
+              </div>
+              <div v-if="currentRoute === 'kernel'" class="kernel-plan-list">
+                <div v-for="row in kernelPlanRows" :key="row.name" class="kernel-plan-row">
+                  <span>{{ row.name }}</span>
+                  <span>{{ row.time }}</span>
+                  <span>{{ row.steps }} 步</span>
+                  <span class="uip-status-pill" :class="row.status === '成功' ? 'uip-status-pill--green' : row.status === '失败' ? 'uip-status-pill--warning' : ''">{{ row.status }}</span>
+                </div>
+              </div>
+              <div class="kernel-console__log">
+                <span>[runtime] workspace mounted at /uiplan/</span>
+                <span>[symbolic] 1,204 nodes indexed</span>
+                <span>[tools] {{ enabledToolRows.length }} active tools ready</span>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'subscription'">
+          <div class="ox-content">
+            <div class="ox-page-header">
+              <div><h1 class="ox-page-header__title">订阅管理</h1><p class="ox-page-header__subtitle">套餐、额度、用量和企业权益同步</p></div>
+              <div class="ox-page-header__actions">
+                <button class="ox-btn ox-btn--secondary" :disabled="subscriptionLoading" @click="syncSubscription"><i class="fa-solid fa-rotate"></i>{{ subscriptionLoading ? '同步中' : '同步订阅' }}</button>
+                <button class="ox-btn ox-btn--secondary" @click="exportUsageReport"><i class="fa-solid fa-file-invoice"></i>导出账单</button>
+                <button class="ox-btn ox-btn--primary" @click="openLastOrderPayment"><i class="fa-solid fa-credit-card"></i>{{ isAuthenticated ? '管理账单' : '登录账号' }}</button>
+              </div>
+            </div>
+            <section class="subscription-current">
+              <div>
+                <span class="uip-status-pill" :class="subscriptionStatusClass">{{ subscriptionStatusLabel }}</span>
+                <h2>{{ subscriptionCurrentPlan.name }}</h2>
+                <p>{{ subscriptionCurrentPlan.quota }} · {{ subscriptionExpiryText }}</p>
+                <small>{{ subscriptionActionText }}</small>
+              </div>
+              <div class="feature-toolbar__actions">
+                <button class="ox-btn ox-btn--secondary" :disabled="!isAuthenticated || subscriptionActionLoading" @click="renewCurrentPlan">续费</button>
+                <button class="ox-btn ox-btn--primary" :disabled="!isAuthenticated || subscriptionActionLoading" @click="upgradeFromCurrentPlan">升级</button>
+              </div>
+            </section>
+            <p v-if="subscriptionError" class="uip-inline-alert uip-inline-alert--error">{{ subscriptionError }}</p>
+            <p v-else-if="subscriptionNotice" class="uip-inline-alert">{{ subscriptionNotice }}</p>
+            <div class="uip-grid uip-grid--4">
+              <article v-for="plan in subscriptionPlans" :key="plan.id" class="uip-card" :class="{ 'uip-card--selected': plan.current }">
+                <div class="uip-card__top"><h2 class="uip-card__title">{{ plan.name }}</h2><span v-if="plan.current" class="uip-status-pill uip-status-pill--green">当前</span></div>
+                <div class="plan-price"><span v-if="plan.price !== '定制'">¥</span>{{ plan.price }}<span v-if="plan.price !== '定制'">/月</span></div>
+                <p class="uip-card__desc">{{ plan.quota }}</p>
+                <ul class="plan-feature-list">
+                  <li v-for="feature in plan.features" :key="feature"><i class="fa-solid fa-check"></i>{{ feature }}</li>
+                </ul>
+                <button class="ox-btn ox-btn--block" :class="plan.current ? 'ox-btn--secondary' : 'ox-btn--primary'" :disabled="plan.current || subscriptionActionLoading === 'purchase:' + plan.id || subscriptionActionLoading === 'renew:' + plan.id || subscriptionActionLoading === 'upgrade:' + plan.id" @click="handlePlanAction(plan)">
+                  {{ subscriptionActionLoading.endsWith(':' + plan.id) ? '处理中...' : plan.cta }}
+                </button>
+              </article>
+            </div>
+            <div class="uip-grid uip-grid--2 subscription-lower-grid">
+              <section class="uip-panel">
+                <div class="uip-panel__header"><h2>额度用量</h2><button class="uip-link-btn" @click="exportUsageReport">导出报告<i class="fa-solid fa-arrow-right"></i></button></div>
+                <div class="usage-list">
+                  <div v-for="row in subscriptionUsageRows" :key="row.label" class="usage-row">
+                    <div><strong>{{ row.label }}</strong><span>{{ row.used }} / {{ row.total }}</span></div>
+                    <div class="uip-progress"><span :style="{ width: row.percent + '%' }"></span></div>
+                  </div>
+                </div>
+              </section>
+              <section class="uip-panel">
+                <div class="uip-panel__header"><h2>账单记录</h2><button class="uip-link-btn" @click="markAction('支付设置')">支付设置<i class="fa-solid fa-arrow-right"></i></button></div>
+                <div class="uip-table-wrap">
+                  <table class="uip-table">
+                    <thead><tr><th>项目</th><th>金额</th><th>状态</th><th>日期</th></tr></thead>
+                    <tbody><tr v-for="row in billingRows" :key="row.item"><td>{{ row.item }}</td><td>{{ row.amount }}</td><td><span class="uip-status-pill">{{ row.status }}</span></td><td>{{ row.date }}</td></tr></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+            <section class="uip-panel">
+              <div class="uip-panel__header">
+                <h2>套餐对比</h2>
+                <button class="uip-link-btn" @click="markAction('联系我们')">联系我们<i class="fa-solid fa-arrow-right"></i></button>
+              </div>
+              <div class="uip-table-wrap">
+                <table class="uip-table subscription-compare">
+                  <thead><tr><th>权益</th><th>免费版</th><th>专业版</th><th>企业版</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in subscriptionComparisonRows" :key="row.item">
+                      <td><strong>{{ row.item }}</strong></td>
+                      <td>{{ row.free }}</td>
+                      <td>{{ row.pro }}</td>
+                      <td>{{ row.enterprise }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="currentRoute === 'about'">
+          <div class="ox-content">
+            <section class="about-page">
+              <div class="about-logo">OX</div>
+              <h1>OpenXnet</h1>
+              <p>面向 AI 多代理工作流的桌面操作系统式工作台。</p>
+              <div class="about-grid">
+                <span v-for="row in aboutInfoRows" :key="row[0]"><strong>{{ row[0] }}</strong><small>{{ row[1] }}</small></span>
+              </div>
+              <div class="about-feature-grid">
+                <button v-for="feature in aboutFeatureRows" :key="feature.label" class="about-feature-card" @click="runApiAction(feature.label)">
+                  <i :class="feature.icon"></i>
+                  <strong>{{ feature.label }}</strong>
+                  <small>{{ feature.desc }}</small>
+                </button>
+              </div>
+              <div class="about-actions">
+                <button v-for="action in aboutActions" :key="action.label" class="ox-btn" :class="action.label === '检查更新' ? 'ox-btn--primary' : 'ox-btn--secondary'" @click="action.label === '检查更新' ? checkUpdates() : action.label === '打开官网' ? openExternalUrl('https://openxnet.synapxnet.com') : action.label === '查看许可' ? openExternalUrl('https://www.gnu.org/licenses/agpl-3.0.html') : runApiAction(action.label)">
+                  <i :class="action.icon"></i>{{ action.label }}
+                </button>
+              </div>
+              <div class="about-build-strip">
+                <span><i class="fa-solid fa-code-branch"></i>UIPlan SPA</span>
+                <span><i class="fa-solid fa-shield-halved"></i>Local First</span>
+                <span><i class="fa-solid fa-clock"></i>{{ clock }}</span>
+              </div>
+            </section>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="ox-content">
+            <section class="shell-placeholder">
+              <div class="shell-placeholder__icon"><i :class="placeholderPage.icon"></i></div>
+              <div class="shell-kernel-status">
+                <span class="shell-kernel-status__title">内核状态</span>
+                <span class="shell-kernel-status__item"><span class="shell-kernel-status__dot"></span>Runtime Ready</span>
+                <span class="shell-kernel-status__item"><span class="shell-kernel-status__dot shell-kernel-status__dot--blue"></span>{{ currentModelLabel }}</span>
+              </div>
+              <h1 class="shell-placeholder__title">{{ placeholderPage.title }}</h1>
+              <p class="shell-placeholder__desc">{{ placeholderPage.desc }}</p>
+              <div class="shell-placeholder__features">
+                <span v-for="feature in placeholderPage.features" :key="feature" class="shell-placeholder__feature"><i class="fa-solid fa-check"></i>{{ feature }}</span>
+              </div>
+            </section>
+          </div>
+        </template>
+      </main>
+    </div>
+
+    <footer class="ox-statusbar">
+      <div class="ox-statusbar__left">
+        <span class="ox-statusbar__item"><span class="ox-statusbar__dot" :class="{ 'ox-statusbar__dot--offline': !wsConnected }"></span>{{ wsConnected ? '后端已连接' : '连接中' }}</span>
+        <span class="ox-statusbar__item"><i class="fa-solid fa-code-branch"></i>UIPlan SPA</span>
+      </div>
+      <div class="ox-statusbar__right">
+        <span class="ox-statusbar__item"><i class="fa-solid fa-bolt"></i>{{ lastAction }}</span>
+        <span class="ox-statusbar__item"><i class="fa-solid fa-microchip"></i>{{ currentModelLabel }}</span>
+        <span class="ox-statusbar__item"><i class="fa-solid fa-clock"></i>{{ clock }}</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="../libs/vue.global.prod.js"></script>
+  <script src="./app.js?v=20260505-ui-rewrite-19"></script>
+</body>
+</html>

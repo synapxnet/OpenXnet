@@ -1,0 +1,8 @@
+{
+  "schema": "goai.skill.change-execute.output.v1.1",
+  "decision": "REQUEST_APPROVAL",
+  "summary": "三平台证据一致指向输入契约漂移，完整修复计划及补偿范围固定，建议提交人工审批。",
+  "confidence": 0.93,
+  "requestedToolNames": [],
+  "evidenceIds": ["ev_aiops", "ev_dataops", "ev_mlops"]
+}

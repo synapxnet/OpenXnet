@@ -1,0 +1,221 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Boot Sequence: initialization phases and entry point
+-- Executes in strict phase order with rollback on failure
+
+module BootInit {|
+
+  requires :: [:SystemManifest]
+  version :: "0.1.0"
+
+  -- Boot state machine
+  enum BootState {|
+    :PreInit
+    :KernelLoading
+    :SymbolMounting
+    :ProcessSpawning
+    :Running
+    :Degraded
+    :Panic
+  |}
+
+  state boot_state :: BootState = :PreInit
+
+  -- Phase 1: Kernel Module Loading
+  phase KernelLoad {|
+    priority :: 0
+    timeout :: 30s
+    on_failure :: :Panic
+
+    transition boot_state :PreInit -> :KernelLoading
+
+    -- Load order determined by priority and dependency graph
+    invoke load_module("memory") {|
+      retry 3 with 200ms
+      on :success -> emit :ModuleLoaded with {| name :: "memory" |}
+      on :failure -> emit :PANIC with {| reason :: "memory module critical" |}
+    |}
+
+    invoke load_module("signals") {|
+      retry 3 with 200ms
+      after :memory
+      on :success -> emit :ModuleLoaded with {| name :: "signals" |}
+      on :failure -> emit :PANIC with {| reason :: "signals module critical" |}
+    |}
+
+    invoke load_module("scheduler") {|
+      retry 3 with 200ms
+      after :memory, :signals
+      on :success -> emit :ModuleLoaded with {| name :: "scheduler" |}
+      on :failure -> emit :PANIC with {| reason :: "scheduler module critical" |}
+    |}
+
+    invoke load_module("ipc") {|
+      retry 2 with 500ms
+      after :memory, :scheduler
+      on :success -> emit :ModuleLoaded with {| name :: "ipc" |}
+      on :failure -> emit :PANIC with {| reason :: "ipc module critical" |}
+    |}
+
+    invoke load_module("syscall") {|
+      retry 2 with 500ms
+      after :scheduler, :memory, :ipc, :signals
+      on :success -> emit :ModuleLoaded with {| name :: "syscall" |}
+      on :failure -> emit :PANIC with {| reason :: "syscall module critical" |}
+    |}
+
+    invoke load_module("policy") {|
+      retry 2 with 500ms
+      after :syscall, :memory
+      on :success -> emit :ModuleLoaded with {| name :: "policy" |}
+      on :failure -> emit :PANIC with {| reason :: "policy module critical" |}
+    |}
+
+    invoke load_module("devices") {|
+      retry 2 with 1s
+      after :ipc, :policy, :signals
+      on :success -> emit :ModuleLoaded with {| name :: "devices" |}
+      on :failure -> emit :DeviceLoadFailed
+        -- non-critical, boot continues in degraded mode
+    |}
+
+    invoke load_module("watchdog") {|
+      retry 2 with 1s
+      after :scheduler, :signals, :ipc
+      on :success -> emit :ModuleLoaded with {| name :: "watchdog" |}
+      on :failure -> emit :PANIC with {| reason :: "watchdog module critical" |}
+    |}
+  |}
+
+  -- Phase 2: Symbol Graph Mounting
+  phase SymbolMount {|
+    priority :: 1
+    timeout :: 15s
+    after :: KernelLoad
+    on_failure :: :Degraded
+
+    transition boot_state :KernelLoading -> :SymbolMounting
+
+    invoke mount_graph(:kernel) {|
+      path :: "/os/graphs/kernel.symgraph"
+      mount_point :: :kernel
+      preload :: true
+      on :success -> emit :GraphMounted with {| name :: :kernel |}
+      on :failure -> emit :PANIC with {| reason :: "kernel graph required" |}
+    |}
+
+    invoke mount_graph(:process) {|
+      path :: "/os/graphs/process.symgraph"
+      mount_point :: :process
+      preload :: true
+      on :success -> emit :GraphMounted with {| name :: :process |}
+      on :failure -> emit :PANIC with {| reason :: "process graph required" |}
+    |}
+
+    invoke mount_graph(:device) {|
+      path :: "/os/graphs/device.symgraph"
+      mount_point :: :device
+      preload :: false
+      on :success -> emit :GraphMounted with {| name :: :device |}
+      on :failure -> emit :GraphDegraded with {| name :: :device |}
+    |}
+
+    invoke mount_graph(:user) {|
+      path :: "/os/graphs/user.symgraph"
+      mount_point :: :user
+      preload :: false
+      on :success -> emit :GraphMounted with {| name :: :user |}
+      on :failure -> emit :GraphDegraded with {| name :: :user |}
+    |}
+
+    invoke mount_graph(:net) {|
+      path :: "/os/graphs/net.symgraph"
+      mount_point :: :net
+      preload :: false
+      on :success -> emit :GraphMounted with {| name :: :net |}
+      on :failure -> emit :GraphDegraded with {| name :: :net |}
+    |}
+  |}
+
+  -- Phase 3: Daemon Process Spawning
+  phase ProcessSpawn {|
+    priority :: 2
+    timeout :: 10s
+    after :: SymbolMount
+    on_failure :: :Degraded
+
+    transition boot_state :SymbolMounting -> :ProcessSpawning
+
+    spawn scheduler_daemon {|
+      module :: :scheduler
+      entry :: "schedule"
+      priority :: 0
+      capabilities :: [:process_create, :process_kill, :time_slice]
+      on :started -> emit :DaemonStarted with {| name :: "scheduler" |}
+      on :crashed -> emit :PANIC with {| reason :: "scheduler daemon required" |}
+    |}
+
+    spawn watchdog_daemon {|
+      module :: :watchdog
+      entry :: "monitor"
+      priority :: 1
+      capabilities :: [:signal_send, :process_inspect, :restart_process]
+      after :: :scheduler_daemon
+      on :started -> emit :DaemonStarted with {| name :: "watchdog" |}
+      on :crashed -> emit :PANIC with {| reason :: "watchdog daemon required" |}
+    |}
+
+    spawn device_manager {|
+      module :: :devices
+      entry :: "device_loop"
+      priority :: 2
+      capabilities :: [:device_register, :device_remove, :ipc_broadcast]
+      after :: :scheduler_daemon
+      on :started -> emit :DaemonStarted with {| name :: "device_manager" |}
+      on :crashed -> emit :DaemonDegraded with {| name :: "device_manager" |}
+    |}
+
+    spawn ipc_broker {|
+      module :: :ipc
+      entry :: "broker_loop"
+      priority :: 1
+      capabilities :: [:channel_create, :channel_destroy, :message_route]
+      after :: :scheduler_daemon
+      on :started -> emit :DaemonStarted with {| name :: "ipc_broker" |}
+      on :crashed -> emit :PANIC with {| reason :: "ipc broker required" |}
+    |}
+  |}
+
+  -- Entry point: called by bootloader
+  entry main {|
+    emit :BootStarted with {| timestamp :: now(), version :: "0.1.0" |}
+
+    invoke KernelLoad {|
+      on :complete -> invoke SymbolMount {|
+        on :complete -> invoke ProcessSpawn {|
+          on :complete -> {|
+            transition boot_state :ProcessSpawning -> :Running
+            emit :BootComplete with {| timestamp :: now() |}
+          |}
+        |}
+      |}
+    |}
+
+    -- Fallback: if any non-critical phase degrades
+    on :DeviceLoadFailed -> {|
+      transition boot_state -> :Degraded
+      emit :BootDegraded with {| reason :: "device module unavailable" |}
+    |}
+
+    on :GraphDegraded -> {|
+      transition boot_state -> :Degraded
+      emit :BootDegraded with {| reason :: "symbol graph partial mount" |}
+    |}
+
+    on :PANIC -> {|
+      transition boot_state -> :Panic
+      emit :KernelPanic with {| timestamp :: now() |}
+      invoke halt_system()
+    |}
+  |}
+
+|}

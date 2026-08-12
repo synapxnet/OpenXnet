@@ -1,0 +1,350 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Signal Dispatch System
+-- Signal types, handler registration, routing, and built-in signals
+
+module Signals {|
+
+  requires :: [:memory]
+  version :: "0.1.0"
+
+  -- Built-in signal types
+  enum SignalType {|
+    -- Process lifecycle
+    :SIGTERM      -- graceful termination request
+    :SIGKILL      -- immediate forced termination
+    :SIGCHLD      -- child process state change
+    :SIGSTOP      -- suspend process
+    :SIGCONT      -- resume suspended process
+
+    -- Faults and errors
+    :SIGSEGV      -- invalid memory access
+    :SIGBUS       -- memory alignment fault
+    :SIGFPE       -- arithmetic fault
+    :SIGABRT      -- process abort (self-triggered)
+    :SIGPANIC     -- unrecoverable kernel error
+
+    -- I/O and communication
+    :SIGIO        -- I/O ready
+    :SIGPIPE      -- broken IPC channel
+    :SIGURG       -- urgent data on channel
+
+    -- System events
+    :SIGALRM      -- timer expired
+    :SIGVTALRM    -- virtual timer expired
+    :SIGHUP       -- connection hangup / config reload
+    :SIGWINCH     -- display resize
+
+    -- Custom / user-defined
+    :SIGUSR1      -- user signal 1
+    :SIGUSR2      -- user signal 2
+    :SIGCUSTOM    -- custom payload signal
+  |}
+
+  -- Signal disposition (default action)
+  enum SignalDisposition {|
+    :Terminate    -- kill the process
+    :Ignore       -- discard signal
+    :Stop         -- suspend the process
+    :Continue     -- resume the process
+    :CoreDump     -- terminate + dump state
+    :Handle       -- invoke registered handler
+  |}
+
+  -- Signal delivery mode
+  enum DeliveryMode {|
+    :Synchronous  -- deliver immediately, block sender
+    :Asynchronous -- queue for delivery
+    :Deferred     -- deliver on next schedule tick
+  |}
+
+  -- Signal instance
+  struct Signal {|
+    id :: UInt64
+    signal_type :: SignalType
+    sender_pid :: UInt32
+    target_pid :: UInt32
+    payload :: Option[Any]
+    timestamp :: Timestamp
+    delivery :: DeliveryMode
+    priority :: UInt8              -- 0 = highest
+    handled :: Bool
+  |}
+
+  -- Signal handler registration
+  struct SignalHandler {|
+    signal_type :: SignalType
+    owner_pid :: UInt32
+    handler_fn :: Symbol           -- function to invoke
+    mask_during_handler :: Bool    -- block same signal while handling
+    one_shot :: Bool               -- auto-deregister after first delivery
+  |}
+
+  -- Default disposition table
+  config DefaultDispositions {|
+    :SIGTERM   -> :Terminate
+    :SIGKILL   -> :Terminate    -- cannot be caught or ignored
+    :SIGCHLD   -> :Ignore
+    :SIGSTOP   -> :Stop         -- cannot be caught or ignored
+    :SIGCONT   -> :Continue
+    :SIGSEGV   -> :CoreDump
+    :SIGBUS    -> :CoreDump
+    :SIGFPE    -> :CoreDump
+    :SIGABRT   -> :CoreDump
+    :SIGPANIC  -> :CoreDump
+    :SIGIO     -> :Ignore
+    :SIGPIPE   -> :Terminate
+    :SIGURG    -> :Ignore
+    :SIGALRM   -> :Terminate
+    :SIGVTALRM -> :Terminate
+    :SIGHUP    -> :Terminate
+    :SIGWINCH  -> :Ignore
+    :SIGUSR1   -> :Terminate
+    :SIGUSR2   -> :Terminate
+    :SIGCUSTOM -> :Ignore
+  |}
+
+  -- Uncatchable signals (cannot be handled or masked)
+  const UNCATCHABLE :: List[SignalType] = [:SIGKILL, :SIGSTOP]
+
+  -- Configuration
+  config SignalConfig {|
+    max_pending_signals :: 256
+    max_handlers_per_process :: 32
+    signal_delivery_timeout :: 5s
+    coalesce_duplicates :: true
+    default_delivery :: :Asynchronous
+  |}
+
+  -- State
+  state handler_table :: Map[UInt32, List[SignalHandler]] = Map.empty()
+  state pending_signals :: Map[UInt32, Queue[Signal]] = Map.empty()
+  state signal_masks :: Map[UInt32, Set[SignalType]] = Map.empty()
+  state next_signal_id :: UInt64 = 1
+
+  -- Register a signal handler for a process
+  syscall register_handler(pid :: UInt32, sig_type :: SignalType,
+                           handler_fn :: Symbol) -> Result[Void, Error] {|
+    -- Cannot catch uncatchable signals
+    if List.contains(UNCATCHABLE, sig_type) {|
+      return Err(:SignalUncatchable)
+    |}
+
+    let handlers = handler_table.get(pid).unwrap_or([])
+
+    if List.length(handlers) >= SignalConfig.max_handlers_per_process {|
+      return Err(:HandlerLimitReached)
+    |}
+
+    -- Remove existing handler for same signal type
+    let filtered = List.filter(handlers, h -> h.signal_type != sig_type)
+
+    let handler = SignalHandler {|
+      signal_type :: sig_type
+      owner_pid :: pid
+      handler_fn :: handler_fn
+      mask_during_handler :: true
+      one_shot :: false
+    |}
+
+    handler_table = Map.insert(handler_table, pid,
+                               List.append(filtered, handler))
+    emit :HandlerRegistered with {| pid :: pid, signal :: sig_type |}
+    return Ok(())
+  |}
+
+  -- Deregister a signal handler
+  syscall deregister_handler(pid :: UInt32,
+                             sig_type :: SignalType) -> Result[Void, Error] {|
+    let handlers = handler_table.get(pid).unwrap_or([])
+    let filtered = List.filter(handlers, h -> h.signal_type != sig_type)
+    handler_table = Map.insert(handler_table, pid, filtered)
+    return Ok(())
+  |}
+
+  -- Set signal mask for a process
+  syscall set_mask(pid :: UInt32, mask :: Set[SignalType]) -> Result[Void, Error] {|
+    -- Cannot mask uncatchable signals
+    let clean_mask = Set.difference(mask, Set.from_list(UNCATCHABLE))
+    signal_masks = Map.insert(signal_masks, pid, clean_mask)
+    return Ok(())
+  |}
+
+  -- Send a signal to a process
+  syscall send_signal(sender :: UInt32, target :: UInt32,
+                      sig_type :: SignalType,
+                      payload :: Option[Any]) -> Result[Void, Error] {|
+    -- Capability check for dangerous signals
+    if sig_type == :SIGKILL or sig_type == :SIGSTOP {|
+      let has_cap = invoke Policy.check_capability(sender, :signal_manage)
+      if not has_cap and sender != get_parent_of(target) {|
+        return Err(:PermissionDenied)
+      |}
+    |}
+
+    let sig = Signal {|
+      id :: next_signal_id
+      signal_type :: sig_type
+      sender_pid :: sender
+      target_pid :: target
+      payload :: payload
+      timestamp :: now()
+      delivery :: SignalConfig.default_delivery
+      priority :: get_signal_priority(sig_type)
+      handled :: false
+    |}
+    next_signal_id = next_signal_id + 1
+
+    invoke route_signal(sig)
+    return Ok(())
+  |}
+
+  -- Route a signal to its target
+  service route_signal(sig :: Signal) -> Void {|
+    let target = sig.target_pid
+
+    -- Check if signal is masked
+    let mask = signal_masks.get(target).unwrap_or(Set.empty())
+    if Set.contains(mask, sig.signal_type) and
+       not List.contains(UNCATCHABLE, sig.signal_type) {|
+      -- Queue as pending (will deliver when unmasked)
+      let queue = pending_signals.get(target).unwrap_or(Queue.empty())
+      if Queue.size(queue) < SignalConfig.max_pending_signals {|
+        -- Coalesce if enabled
+        if SignalConfig.coalesce_duplicates {|
+          let already_pending = Queue.exists(queue, s -> s.signal_type == sig.signal_type)
+          if already_pending {| return |}
+        |}
+        pending_signals = Map.insert(pending_signals, target,
+                                     Queue.enqueue(queue, sig))
+      |}
+      return
+    |}
+
+    -- Deliver the signal
+    invoke deliver_signal(sig)
+  |}
+
+  -- Deliver a signal (execute disposition or handler)
+  service deliver_signal(sig :: Signal) -> Void {|
+    let target = sig.target_pid
+
+    -- Check for registered handler first
+    let handlers = handler_table.get(target).unwrap_or([])
+    let handler = List.find(handlers, h -> h.signal_type == sig.signal_type)
+
+    match handler {|
+      Some(h) -> {|
+        -- Mask signal during handling if configured
+        if h.mask_during_handler {|
+          let current_mask = signal_masks.get(target).unwrap_or(Set.empty())
+          signal_masks = Map.insert(signal_masks, target,
+                                    Set.insert(current_mask, sig.signal_type))
+        |}
+
+        -- Invoke the handler function
+        invoke Scheduler.inject_handler(target, h.handler_fn, sig.payload)
+
+        -- Remove one-shot handlers
+        if h.one_shot {|
+          invoke deregister_handler(target, sig.signal_type)
+        |}
+
+        emit :SignalDelivered with {|
+          signal :: sig.signal_type, target :: target, disposition :: :Handle
+        |}
+      |}
+      None -> {|
+        -- Apply default disposition
+        let disposition = DefaultDispositions[sig.signal_type]
+        invoke apply_disposition(target, sig, disposition)
+      |}
+    |}
+  |}
+
+  -- Apply default signal disposition
+  service apply_disposition(pid :: UInt32, sig :: Signal,
+                            disposition :: SignalDisposition) -> Void {|
+    match disposition {|
+      :Terminate -> {|
+        emit :SignalDelivered with {|
+          signal :: sig.signal_type, target :: pid, disposition :: :Terminate
+        |}
+        invoke Scheduler.terminate(pid, :signal_killed)
+      |}
+      :Stop -> {|
+        emit :SignalDelivered with {|
+          signal :: sig.signal_type, target :: pid, disposition :: :Stop
+        |}
+        invoke Scheduler.suspend(pid)
+      |}
+      :Continue -> {|
+        emit :SignalDelivered with {|
+          signal :: sig.signal_type, target :: pid, disposition :: :Continue
+        |}
+        invoke Scheduler.resume(pid)
+      |}
+      :CoreDump -> {|
+        emit :CoreDumpRequested with {| pid :: pid, signal :: sig.signal_type |}
+        invoke dump_process_state(pid)
+        invoke Scheduler.terminate(pid, :core_dumped)
+      |}
+      :Ignore -> {|
+        -- Do nothing
+        emit :SignalIgnored with {| signal :: sig.signal_type, target :: pid |}
+      |}
+      :Handle -> ()  -- should not reach here
+    |}
+  |}
+
+  -- Get pending signals for a process
+  syscall get_pending(pid :: UInt32) -> List[Signal] {|
+    return Queue.to_list(pending_signals.get(pid).unwrap_or(Queue.empty()))
+  |}
+
+  -- Flush pending signals (deliver all unmasked)
+  service flush_pending(pid :: UInt32) -> Void {|
+    let queue = pending_signals.get(pid).unwrap_or(Queue.empty())
+    let mask = signal_masks.get(pid).unwrap_or(Set.empty())
+    let remaining = Queue.empty()
+
+    for sig in Queue.to_list(queue) {|
+      if not Set.contains(mask, sig.signal_type) {|
+        invoke deliver_signal(sig)
+      |} else {|
+        remaining = Queue.enqueue(remaining, sig)
+      |}
+    |}
+
+    pending_signals = Map.insert(pending_signals, pid, remaining)
+  |}
+
+  -- Get priority for a signal type (lower = higher priority)
+  service get_signal_priority(sig_type :: SignalType) -> UInt8 {|
+    match sig_type {|
+      :SIGKILL  -> 0
+      :SIGSTOP  -> 0
+      :SIGPANIC -> 1
+      :SIGSEGV  -> 2
+      :SIGBUS   -> 2
+      :SIGABRT  -> 3
+      :SIGTERM  -> 5
+      :SIGCHLD  -> 10
+      :SIGALRM  -> 8
+      :SIGHUP   -> 7
+      _         -> 15
+    |}
+  |}
+
+  -- Broadcast a signal to all processes
+  service broadcast_signal(sender :: UInt32, sig_type :: SignalType,
+                           payload :: Option[Any]) -> UInt32 {|
+    let delivered = 0
+    let all_pids = invoke Scheduler.get_all_pids()
+    for pid in all_pids where pid != sender {|
+      invoke send_signal(sender, pid, sig_type, payload)
+      delivered = delivered + 1
+    |}
+    return delivered
+  |}
+
+|}

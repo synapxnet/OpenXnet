@@ -1,0 +1,224 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Symbol-to-Runtime Binding Mappings
+-- Maps abstract ontology concepts to concrete Python implementations
+
+{-- Bindings connect the declarative neuro-symbolic layer to the
+    imperative runtime. Each binding maps a concept or relation
+    to a Python module path, class, or function that implements
+    its behavior at runtime. The kernel loader resolves these
+    bindings during boot phase 2 (symbol table initialization). --}
+
+-- ==================================================================
+-- Core entity bindings
+-- ==================================================================
+
+bindings CoreEntities {|
+
+  -- Process management (references scheduler.oxk)
+  bind :Process -> "os.kernel.scheduler.ProcessManager"
+  bind :ProcessState -> "os.kernel.scheduler.ProcessState"
+  bind :PCB -> "os.kernel.scheduler.PCB"
+  bind :PriorityClass -> "os.kernel.scheduler.PriorityClass"
+
+  -- Memory management (references memory.oxk)
+  bind :Memory -> "os.kernel.memory.MemoryPool"
+  bind :SymbolSlot -> "os.kernel.memory.SymbolSlot"
+  bind :SlotState -> "os.kernel.memory.SlotState"
+  bind :GarbageCollector -> "os.kernel.memory.GarbageCollector"
+
+  -- IPC channels
+  bind :Channel -> "os.kernel.ipc.Channel"
+  bind :ChannelBuffer -> "os.kernel.ipc.RingBuffer"
+  bind :MessageQueue -> "os.kernel.ipc.MessageQueue"
+  bind :Protocol -> "os.kernel.ipc.Protocol"
+
+  -- Signals
+  bind :Signal -> "os.kernel.signals.Signal"
+  bind :SignalDispatcher -> "os.kernel.signals.Dispatcher"
+  bind :SignalMask -> "os.kernel.signals.SignalMask"
+  bind :SignalHandler -> "os.kernel.signals.Handler"
+
+  -- Devices
+  bind :Device -> "os.kernel.devices.DeviceManager"
+  bind :DeviceDriver -> "os.kernel.devices.Driver"
+  bind :DeviceState -> "os.kernel.devices.DeviceState"
+  bind :DeviceRegistry -> "os.kernel.devices.Registry"
+
+  -- Agents (neural-symbolic autonomous processes)
+  bind :Agent -> "os.kernel.agents.Agent"
+  bind :AgentReasoner -> "os.kernel.agents.Reasoner"
+  bind :KnowledgeBase -> "os.kernel.agents.KnowledgeBase"
+
+|}
+
+-- ==================================================================
+-- Scheduler service bindings
+-- ==================================================================
+
+bindings SchedulerServices {|
+
+  bind :spawn -> "os.kernel.scheduler.spawn_process"
+  bind :terminate -> "os.kernel.scheduler.terminate_process"
+  bind :suspend -> "os.kernel.scheduler.suspend_process"
+  bind :resume -> "os.kernel.scheduler.resume_process"
+  bind :yield -> "os.kernel.scheduler.yield_current"
+  bind :schedule -> "os.kernel.scheduler.run_scheduler"
+  bind :context_switch -> "os.kernel.scheduler.context_switch"
+  bind :compute_neural_weight -> "os.kernel.scheduler.compute_neural_weight"
+  bind :compute_quantum -> "os.kernel.scheduler.compute_quantum"
+  bind :idle_loop -> "os.kernel.scheduler.idle_loop"
+  bind :enqueue_task -> "os.kernel.scheduler.enqueue_task"
+
+  -- Scheduler configuration constants
+  bind :base_quantum -> "os.kernel.scheduler.CONFIG_BASE_QUANTUM"
+  bind :max_quantum -> "os.kernel.scheduler.CONFIG_MAX_QUANTUM"
+  bind :min_quantum -> "os.kernel.scheduler.CONFIG_MIN_QUANTUM"
+  bind :epoch_duration -> "os.kernel.scheduler.CONFIG_EPOCH_DURATION"
+  bind :max_processes -> "os.kernel.scheduler.CONFIG_MAX_PROCESSES"
+  bind :neural_decay_rate -> "os.kernel.scheduler.CONFIG_NEURAL_DECAY_RATE"
+
+|}
+
+-- ==================================================================
+-- Memory service bindings
+-- ==================================================================
+
+bindings MemoryServices {|
+
+  bind :allocate -> "os.kernel.memory.allocate_slot"
+  bind :free -> "os.kernel.memory.free_slot"
+  bind :pin -> "os.kernel.memory.pin_slot"
+  bind :unpin -> "os.kernel.memory.unpin_slot"
+  bind :access -> "os.kernel.memory.access_slot"
+  bind :link_slots -> "os.kernel.memory.link_slots"
+  bind :gc_young -> "os.kernel.memory.gc_young_generation"
+  bind :gc_full -> "os.kernel.memory.gc_full_collection"
+  bind :defragment -> "os.kernel.memory.defragment_pool"
+  bind :increment_ref -> "os.kernel.memory.increment_ref"
+  bind :decrement_ref -> "os.kernel.memory.decrement_ref"
+
+  -- Memory pool configuration
+  bind :total_slots -> "os.kernel.memory.CONFIG_TOTAL_SLOTS"
+  bind :activation_decay_rate -> "os.kernel.memory.CONFIG_ACTIVATION_DECAY_RATE"
+  bind :activation_floor -> "os.kernel.memory.CONFIG_ACTIVATION_FLOOR"
+  bind :gc_pressure_threshold -> "os.kernel.memory.CONFIG_GC_PRESSURE_THRESHOLD"
+
+|}
+
+-- ==================================================================
+-- IPC service bindings
+-- ==================================================================
+
+bindings IPCServices {|
+
+  bind :open_channel -> "os.kernel.ipc.open_channel"
+  bind :close_channel -> "os.kernel.ipc.close_channel"
+  bind :send_message -> "os.kernel.ipc.send_message"
+  bind :recv_message -> "os.kernel.ipc.recv_message"
+  bind :broadcast -> "os.kernel.ipc.broadcast_message"
+  bind :subscribe -> "os.kernel.ipc.subscribe_channel"
+  bind :unsubscribe -> "os.kernel.ipc.unsubscribe_channel"
+  bind :peek_channel -> "os.kernel.ipc.peek_channel"
+  bind :drain_channel -> "os.kernel.ipc.drain_channel"
+
+|}
+
+-- ==================================================================
+-- Signal dispatch bindings
+-- ==================================================================
+
+bindings SignalServices {|
+
+  bind :emit_signal -> "os.kernel.signals.emit"
+  bind :register_handler -> "os.kernel.signals.register_handler"
+  bind :unregister_handler -> "os.kernel.signals.unregister_handler"
+  bind :mask_signal -> "os.kernel.signals.mask"
+  bind :unmask_signal -> "os.kernel.signals.unmask"
+  bind :pending_signals -> "os.kernel.signals.get_pending"
+  bind :deliver_signal -> "os.kernel.signals.deliver"
+
+  -- Signal type identifiers
+  bind :SIGTERM -> "os.kernel.signals.SIGTERM"
+  bind :SIGKILL -> "os.kernel.signals.SIGKILL"
+  bind :SIGSTOP -> "os.kernel.signals.SIGSTOP"
+  bind :SIGCONT -> "os.kernel.signals.SIGCONT"
+  bind :SIGCHLD -> "os.kernel.signals.SIGCHLD"
+  bind :SIGMEM -> "os.kernel.signals.SIGMEM"
+  bind :SIGDEV -> "os.kernel.signals.SIGDEV"
+  bind :SIGWATCH -> "os.kernel.signals.SIGWATCH"
+  bind :SIGIPC -> "os.kernel.signals.SIGIPC"
+  bind :SIGFAULT -> "os.kernel.signals.SIGFAULT"
+
+|}
+
+-- ==================================================================
+-- Device manager bindings
+-- ==================================================================
+
+bindings DeviceServices {|
+
+  bind :register_device -> "os.kernel.devices.register"
+  bind :unregister_device -> "os.kernel.devices.unregister"
+  bind :probe_device -> "os.kernel.devices.probe"
+  bind :reset_device -> "os.kernel.devices.reset"
+  bind :device_status -> "os.kernel.devices.get_status"
+  bind :device_capabilities -> "os.kernel.devices.get_capabilities"
+
+|}
+
+-- ==================================================================
+-- Watchdog and system services bindings
+-- ==================================================================
+
+bindings WatchdogServices {|
+
+  bind :watchdog -> "os.kernel.watchdog.WatchdogDaemon"
+  bind :watchdog_ping -> "os.kernel.watchdog.ping"
+  bind :watchdog_register -> "os.kernel.watchdog.register_process"
+  bind :watchdog_timeout -> "os.kernel.watchdog.check_timeouts"
+  bind :shed_load -> "os.kernel.watchdog.shed_load"
+  bind :health_check -> "os.kernel.watchdog.system_health_check"
+
+|}
+
+-- ==================================================================
+-- Inference engine bindings
+-- ==================================================================
+
+bindings InferenceEngine {|
+
+  bind :forward_chain -> "os.kernel.inference.forward_chain"
+  bind :match_pattern -> "os.kernel.inference.match_pattern"
+  bind :fire_rule -> "os.kernel.inference.fire_rule"
+  bind :working_memory -> "os.kernel.inference.WorkingMemory"
+  bind :rule_registry -> "os.kernel.inference.RuleRegistry"
+  bind :conflict_resolution -> "os.kernel.inference.resolve_conflicts"
+  bind :activation_spread -> "os.kernel.inference.spread_activation"
+
+|}
+
+-- ==================================================================
+-- Utility and primitive type bindings
+-- ==================================================================
+
+bindings Primitives {|
+
+  bind :UInt32 -> "builtins.int"
+  bind :UInt64 -> "builtins.int"
+  bind :Float64 -> "builtins.float"
+  bind :String -> "builtins.str"
+  bind :Bool -> "builtins.bool"
+  bind :Symbol -> "os.kernel.types.Symbol"
+  bind :Duration -> "os.kernel.types.Duration"
+  bind :Timestamp -> "os.kernel.types.Timestamp"
+  bind :SlotId -> "os.kernel.types.SlotId"
+  bind :ChannelId -> "os.kernel.types.ChannelId"
+  bind :List -> "builtins.list"
+  bind :Map -> "builtins.dict"
+  bind :Set -> "builtins.set"
+  bind :Option -> "typing.Optional"
+  bind :Result -> "os.kernel.types.Result"
+  bind :Queue -> "collections.deque"
+  bind :Array -> "array.array"
+
+|}

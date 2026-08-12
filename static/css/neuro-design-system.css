@@ -1,0 +1,1146 @@
+/*
+ * OpenXnet v0.5.7 — Neuro Design System
+ * =======================================
+ * 
+ * Copyright (C) 2026 Synapxnet. All rights reserved.
+ * Proprietary and Confidential.
+ *
+ * 神经科技设计系统 — 暗夜神经脉冲主题 (Dark Neuro-Pulse)
+ *
+ * 功能:
+ *   1. Neuro 主题变量 (cyan/violet 脉冲色系)
+ *   2. 神经符号卡片 (发光 + 脉冲动画)
+ *   3. 知识图谱节点/连线样式 (D3.js 力导向图)
+ *   4. Usage 看板美化
+ *   5. 全局微交互 (hover/transition/ripple)
+ *   6. 玻璃态组件 (glassmorphism)
+ *
+ * 用法:
+ *   在 index.html 中引入:
+ *   <link rel="stylesheet" href="/css/neuro-design-system.css">
+ *
+ *   或在 Vue SFC 中:
+ *   @import '../css/neuro-design-system.css';
+ *
+ * Author: maoyo
+ * Department: 研发部
+ * Date: 2026-04-14
+ * Version: 1.0.0
+ */
+
+/* ═══════════════════════════════════════════════
+   0. Local Font Stack
+   ═══════════════════════════════════════════════ */
+
+
+/* ═══════════════════════════════════════════════
+   1. Neuro 主题变量
+   ═══════════════════════════════════════════════ */
+
+:root {
+  /* -- 脉冲色系 -- */
+  --neuro-cyan: #00f0ff;
+  --neuro-cyan-dim: #0099aa;
+  --neuro-cyan-glow: rgba(0, 240, 255, 0.3);
+  --neuro-violet: #a855f7;
+  --neuro-violet-dim: #7c3aed;
+  --neuro-violet-glow: rgba(168, 85, 247, 0.3);
+  --neuro-emerald: #10b981;
+  --neuro-amber: #f59e0b;
+  --neuro-rose: #f43f5e;
+
+  /* -- 背景层级 -- */
+  --neuro-bg-deep: #0a0e17;
+  --neuro-bg-base: #0f1520;
+  --neuro-bg-surface: #151c2a;
+  --neuro-bg-elevated: #1a2435;
+  --neuro-bg-overlay: rgba(15, 21, 32, 0.85);
+  --neuro-bg-glass: rgba(21, 28, 42, 0.65);
+
+  /* -- 文字 -- */
+  --neuro-text-primary: #e8edf5;
+  --neuro-text-secondary: #8b95a8;
+  --neuro-text-muted: #5a6478;
+
+  /* -- 边框 -- */
+  --neuro-border: rgba(255, 255, 255, 0.06);
+  --neuro-border-active: rgba(0, 240, 255, 0.3);
+
+  /* -- 间距/圆角 -- */
+  --neuro-radius-sm: 6px;
+  --neuro-radius-md: 10px;
+  --neuro-radius-lg: 16px;
+  --neuro-radius-xl: 24px;
+
+  /* -- 动画 -- */
+  --neuro-transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --neuro-transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  --neuro-spring: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* -- 字体 -- */
+  --neuro-font-body: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+  --neuro-font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* -- 阴影 -- */
+  --neuro-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --neuro-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --neuro-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --neuro-shadow-glow-cyan: 0 0 20px rgba(0, 240, 255, 0.15);
+  --neuro-shadow-glow-violet: 0 0 20px rgba(168, 85, 247, 0.15);
+}
+
+
+/* ═══════════════════════════════════════════════
+   2. 全局基础
+   ═══════════════════════════════════════════════ */
+
+.neuro-root,
+[data-neuro] {
+  font-family: var(--neuro-font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.neuro-mono {
+  font-family: var(--neuro-font-mono);
+}
+
+
+/* ═══════════════════════════════════════════════
+   3. 神经符号卡片 (Neuro Symbol Card)
+   ═══════════════════════════════════════════════ */
+
+.neuro-card {
+  background: var(--neuro-bg-surface);
+  border: 1px solid var(--neuro-border);
+  border-radius: var(--neuro-radius-md);
+  padding: 16px 20px;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--neuro-transition);
+}
+
+.neuro-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--neuro-cyan), var(--neuro-violet));
+  opacity: 0;
+  transition: opacity var(--neuro-transition);
+}
+
+.neuro-card:hover {
+  border-color: var(--neuro-border-active);
+  box-shadow: var(--neuro-shadow-glow-cyan);
+  transform: translateY(-2px);
+}
+
+.neuro-card:hover::before {
+  opacity: 1;
+}
+
+/* 发光变体 */
+.neuro-card--glow {
+  box-shadow: var(--neuro-shadow-glow-cyan);
+  border-color: var(--neuro-border-active);
+}
+
+.neuro-card--glow::before {
+  opacity: 1;
+}
+
+/* 脉冲动画 */
+.neuro-card--pulse {
+  animation: neuro-pulse 2s ease-in-out infinite;
+}
+
+@keyframes neuro-pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(0, 240, 255, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.25), 0 0 40px rgba(0, 240, 255, 0.1);
+  }
+}
+
+/* 符号卡内容 */
+.neuro-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.neuro-card__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--neuro-radius-sm);
+  background: linear-gradient(135deg, var(--neuro-cyan-dim), var(--neuro-violet-dim));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 16px;
+}
+
+.neuro-card__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--neuro-text-primary);
+}
+
+.neuro-card__subtitle {
+  font-size: 12px;
+  color: var(--neuro-text-secondary);
+  margin-top: 2px;
+}
+
+.neuro-card__body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--neuro-text-secondary);
+}
+
+.neuro-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.neuro-card__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--neuro-cyan);
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+}
+
+.neuro-card__tag--violet {
+  color: var(--neuro-violet);
+  background: rgba(168, 85, 247, 0.08);
+  border-color: rgba(168, 85, 247, 0.15);
+}
+
+.neuro-card__tag--emerald {
+  color: var(--neuro-emerald);
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.15);
+}
+
+.neuro-card__score {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--neuro-font-mono);
+  color: var(--neuro-amber);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+
+/* ═══════════════════════════════════════════════
+   4. 玻璃态组件 (Glassmorphism)
+   ═══════════════════════════════════════════════ */
+
+.neuro-glass {
+  background: var(--neuro-bg-glass);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--neuro-radius-md);
+}
+
+.neuro-glass--dark {
+  background: rgba(10, 14, 23, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+
+/* ═══════════════════════════════════════════════
+   5. 知识图谱样式 (D3.js Force Graph)
+   ═══════════════════════════════════════════════ */
+
+.neuro-kg-container {
+  background: var(--neuro-bg-deep);
+  border-radius: var(--neuro-radius-lg);
+  border: 1px solid var(--neuro-border);
+  overflow: hidden;
+  position: relative;
+}
+
+/* SVG 节点 */
+.neuro-kg-node {
+  cursor: pointer;
+  transition: all var(--neuro-transition);
+}
+
+.neuro-kg-node circle {
+  fill: var(--neuro-bg-elevated);
+  stroke: var(--neuro-cyan-dim);
+  stroke-width: 2px;
+  transition: all var(--neuro-transition);
+}
+
+.neuro-kg-node:hover circle {
+  fill: var(--neuro-bg-surface);
+  stroke: var(--neuro-cyan);
+  stroke-width: 3px;
+  filter: drop-shadow(0 0 8px var(--neuro-cyan-glow));
+}
+
+.neuro-kg-node text {
+  fill: var(--neuro-text-secondary);
+  font-size: 11px;
+  font-family: var(--neuro-font-body);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.neuro-kg-node--active circle {
+  fill: rgba(0, 240, 255, 0.15);
+  stroke: var(--neuro-cyan);
+  stroke-width: 3px;
+  filter: drop-shadow(0 0 12px var(--neuro-cyan-glow));
+}
+
+.neuro-kg-node--active text {
+  fill: var(--neuro-text-primary);
+  font-weight: 600;
+}
+
+/* 类型着色 */
+.neuro-kg-node--entity circle   { stroke: var(--neuro-cyan); }
+.neuro-kg-node--concept circle  { stroke: var(--neuro-violet); }
+.neuro-kg-node--relation circle { stroke: var(--neuro-emerald); }
+.neuro-kg-node--event circle    { stroke: var(--neuro-amber); }
+
+/* SVG 连线 */
+.neuro-kg-link {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1.5px;
+  transition: all var(--neuro-transition);
+}
+
+.neuro-kg-link:hover {
+  stroke: rgba(0, 240, 255, 0.3);
+  stroke-width: 2.5px;
+}
+
+.neuro-kg-link--strong {
+  stroke: rgba(0, 240, 255, 0.2);
+  stroke-width: 2px;
+}
+
+/* 图谱工具栏 */
+.neuro-kg-toolbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 10;
+}
+
+.neuro-kg-toolbar button {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--neuro-radius-sm);
+  background: var(--neuro-bg-glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--neuro-border);
+  color: var(--neuro-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--neuro-transition);
+}
+
+.neuro-kg-toolbar button:hover {
+  background: var(--neuro-bg-elevated);
+  color: var(--neuro-cyan);
+  border-color: var(--neuro-border-active);
+}
+
+
+/* ═══════════════════════════════════════════════
+   6. Usage 看板
+   ═══════════════════════════════════════════════ */
+
+.neuro-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.neuro-usage-stat {
+  background: var(--neuro-bg-surface);
+  border: 1px solid var(--neuro-border);
+  border-radius: var(--neuro-radius-md);
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--neuro-transition);
+}
+
+.neuro-usage-stat:hover {
+  border-color: var(--neuro-border-active);
+  box-shadow: var(--neuro-shadow-glow-cyan);
+}
+
+.neuro-usage-stat__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--neuro-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.neuro-usage-stat__value {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: var(--neuro-font-mono);
+  color: var(--neuro-text-primary);
+  line-height: 1;
+}
+
+.neuro-usage-stat__value--cyan { color: var(--neuro-cyan); }
+.neuro-usage-stat__value--violet { color: var(--neuro-violet); }
+.neuro-usage-stat__value--emerald { color: var(--neuro-emerald); }
+.neuro-usage-stat__value--amber { color: var(--neuro-amber); }
+
+.neuro-usage-stat__trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.neuro-usage-stat__trend--up {
+  color: var(--neuro-emerald);
+}
+
+.neuro-usage-stat__trend--down {
+  color: var(--neuro-rose);
+}
+
+/* 背景装饰线 */
+.neuro-usage-stat::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--neuro-cyan), transparent);
+  opacity: 0;
+  transition: opacity var(--neuro-transition);
+}
+
+.neuro-usage-stat:hover::after {
+  opacity: 1;
+}
+
+/* 进度条 */
+.neuro-progress {
+  width: 100%;
+  height: 4px;
+  background: var(--neuro-bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.neuro-progress__bar {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--neuro-cyan-dim), var(--neuro-cyan));
+  transition: width 0.6s ease;
+}
+
+.neuro-progress__bar--violet {
+  background: linear-gradient(90deg, var(--neuro-violet-dim), var(--neuro-violet));
+}
+
+
+/* ═══════════════════════════════════════════════
+   7. 全局微交互 (Micro-Interactions)
+   ═══════════════════════════════════════════════ */
+
+/* Hover 提升 */
+.neuro-hover-lift {
+  transition: transform var(--neuro-transition), box-shadow var(--neuro-transition);
+}
+
+.neuro-hover-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--neuro-shadow-md);
+}
+
+/* Hover 发光 */
+.neuro-hover-glow {
+  transition: box-shadow var(--neuro-transition);
+}
+
+.neuro-hover-glow:hover {
+  box-shadow: var(--neuro-shadow-glow-cyan);
+}
+
+/* 涟漪效果 */
+.neuro-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.neuro-ripple::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(0, 240, 255, 0.15);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: width 0.5s ease, height 0.5s ease, opacity 0.5s ease;
+}
+
+.neuro-ripple:active::after {
+  width: 200%;
+  height: 200%;
+  opacity: 1;
+  transition: 0s;
+}
+
+/* 淡入动画 */
+.neuro-fade-in {
+  animation: neuro-fade-in 0.4s ease-out forwards;
+}
+
+@keyframes neuro-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 滑入动画 */
+.neuro-slide-up {
+  animation: neuro-slide-up 0.5s var(--neuro-spring) forwards;
+}
+
+@keyframes neuro-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 缩放进入 */
+.neuro-scale-in {
+  animation: neuro-scale-in 0.3s var(--neuro-spring) forwards;
+}
+
+@keyframes neuro-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 打字机光标 */
+.neuro-typing-cursor::after {
+  content: '▎';
+  color: var(--neuro-cyan);
+  animation: neuro-blink 1s step-end infinite;
+}
+
+@keyframes neuro-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 骨架屏加载 */
+.neuro-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--neuro-bg-surface) 25%,
+    var(--neuro-bg-elevated) 50%,
+    var(--neuro-bg-surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: neuro-skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--neuro-radius-sm);
+}
+
+@keyframes neuro-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Spin 加载 */
+.neuro-spin {
+  animation: neuro-spin 1s linear infinite;
+}
+
+@keyframes neuro-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+
+/* ═══════════════════════════════════════════════
+   8. 按钮系统
+   ═══════════════════════════════════════════════ */
+
+.neuro-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--neuro-font-body);
+  border-radius: var(--neuro-radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all var(--neuro-transition);
+  outline: none;
+  user-select: none;
+}
+
+.neuro-btn--primary {
+  background: linear-gradient(135deg, var(--neuro-cyan-dim), var(--neuro-violet-dim));
+  color: white;
+  border: none;
+}
+
+.neuro-btn--primary:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 4px 15px rgba(0, 240, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.neuro-btn--ghost {
+  background: transparent;
+  color: var(--neuro-text-secondary);
+  border: 1px solid var(--neuro-border);
+}
+
+.neuro-btn--ghost:hover {
+  color: var(--neuro-cyan);
+  border-color: var(--neuro-border-active);
+  background: rgba(0, 240, 255, 0.05);
+}
+
+.neuro-btn--sm {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+
+/* ═══════════════════════════════════════════════
+   9. 输入框
+   ═══════════════════════════════════════════════ */
+
+.neuro-input {
+  background: var(--neuro-bg-elevated);
+  border: 1px solid var(--neuro-border);
+  border-radius: var(--neuro-radius-sm);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-family: var(--neuro-font-body);
+  color: var(--neuro-text-primary);
+  outline: none;
+  transition: all var(--neuro-transition);
+}
+
+.neuro-input:focus {
+  border-color: var(--neuro-cyan-dim);
+  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.1);
+}
+
+.neuro-input::placeholder {
+  color: var(--neuro-text-muted);
+}
+
+
+/* ═══════════════════════════════════════════════
+   10. 工具提示 (Tooltip)
+   ═══════════════════════════════════════════════ */
+
+.neuro-tooltip {
+  position: relative;
+}
+
+.neuro-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  padding: 4px 10px;
+  background: var(--neuro-bg-elevated);
+  border: 1px solid var(--neuro-border);
+  border-radius: var(--neuro-radius-sm);
+  font-size: 11px;
+  color: var(--neuro-text-primary);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--neuro-transition), transform var(--neuro-transition);
+}
+
+.neuro-tooltip:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-8px);
+}
+
+
+/* ═══════════════════════════════════════════════
+   11. 徽章 / 状态指示
+   ═══════════════════════════════════════════════ */
+
+.neuro-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.neuro-badge--online {
+  color: var(--neuro-emerald);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.neuro-badge--offline {
+  color: var(--neuro-text-muted);
+  background: var(--neuro-bg-elevated);
+}
+
+.neuro-badge--warning {
+  color: var(--neuro-amber);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.neuro-badge--error {
+  color: var(--neuro-rose);
+  background: rgba(244, 63, 94, 0.1);
+}
+
+/* 脉动圆点 */
+.neuro-dot-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--neuro-emerald);
+  position: relative;
+}
+
+.neuro-dot-pulse::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--neuro-emerald);
+  animation: neuro-dot-pulse-ring 1.5s ease-out infinite;
+}
+
+@keyframes neuro-dot-pulse-ring {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+
+/* ═══════════════════════════════════════════════
+   12. 响应式工具类
+   ═══════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .neuro-usage-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .neuro-usage-stat__value {
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 480px) {
+  .neuro-usage-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* ═══════════════════════════════════════════════
+   13. Phase-1 UX 微交互增强 (v0.5.7)
+   ═══════════════════════════════════════════════
+   
+   基于 Mixed_review_results.md 差距分析对标:
+   - Antigravity Monitor: 按钮/卡片交互反馈密度
+   - FloatingUniverse:    边缘唤醒动效曲线
+   
+   Author: maoyo (AI-assisted)
+   Date: 2026-04-14
+   ═══════════════════════════════════════════════ */
+
+/* ─── 13.1 全局按钮微反馈 ─── */
+.el-button,
+.neuro-btn,
+.tile-item,
+[class*="sidebar-item"],
+[class*="menu-item"] {
+  transition: transform 0.15s cubic-bezier(.4,0,.2,1),
+              box-shadow 0.18s cubic-bezier(.4,0,.2,1),
+              background 0.2s cubic-bezier(.4,0,.2,1),
+              border-color 0.2s cubic-bezier(.4,0,.2,1) !important;
+}
+
+.el-button:not(:disabled):hover,
+.neuro-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.el-button:not(:disabled):active,
+.neuro-btn:not(:disabled):active,
+.tile-item:active {
+  transform: scale(0.97) !important;
+  transition-duration: 0.08s !important;
+}
+
+/* ─── 13.2 卡片 hover 发光 & 提升 ─── */
+.tile-item,
+.provider-card,
+.vendor-card,
+.el-card {
+  transition: transform 0.25s cubic-bezier(.4,0,.2,1),
+              box-shadow 0.25s cubic-bezier(.4,0,.2,1),
+              border-color 0.25s cubic-bezier(.4,0,.2,1) !important;
+}
+
+.tile-item:hover,
+.provider-card:hover,
+.vendor-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--neuro-shadow-md), var(--neuro-shadow-glow-cyan);
+}
+
+/* ─── 13.3 Toast 通知系统 ─── */
+.neuro-toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.neuro-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-radius: var(--neuro-radius-md);
+  background: var(--neuro-bg-glass);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid var(--neuro-border);
+  color: var(--neuro-text-primary);
+  font-size: 13px;
+  font-family: var(--neuro-font-body);
+  box-shadow: var(--neuro-shadow-md);
+  animation: neuro-toast-in 0.35s cubic-bezier(.34,1.56,.64,1) forwards;
+  max-width: 380px;
+  word-break: break-word;
+}
+
+.neuro-toast.neuro-toast-out {
+  animation: neuro-toast-out 0.25s ease-in forwards;
+}
+
+.neuro-toast__icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.neuro-toast--success {
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.neuro-toast--success .neuro-toast__icon {
+  color: var(--neuro-emerald);
+}
+
+.neuro-toast--info {
+  border-color: rgba(0, 240, 255, 0.2);
+}
+.neuro-toast--info .neuro-toast__icon {
+  color: var(--neuro-cyan);
+}
+
+.neuro-toast--warning {
+  border-color: rgba(245, 158, 11, 0.3);
+}
+.neuro-toast--warning .neuro-toast__icon {
+  color: var(--neuro-amber);
+}
+
+.neuro-toast--error {
+  border-color: rgba(244, 63, 94, 0.3);
+}
+.neuro-toast--error .neuro-toast__icon {
+  color: var(--neuro-rose);
+}
+
+@keyframes neuro-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes neuro-toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(40px) scale(0.9);
+  }
+}
+
+/* ─── 13.4 状态 Chip 条 (顶栏信息密度增强) ─── */
+.neuro-topbar-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.neuro-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--neuro-font-body);
+  border: 1px solid transparent;
+  cursor: default;
+  transition: all 0.2s cubic-bezier(.4,0,.2,1);
+  user-select: none;
+}
+
+.neuro-chip--engine {
+  color: var(--neuro-emerald);
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.15);
+}
+
+.neuro-chip--token {
+  color: var(--neuro-cyan);
+  background: rgba(0, 240, 255, 0.06);
+  border-color: rgba(0, 240, 255, 0.12);
+  font-family: var(--neuro-font-mono);
+}
+
+.neuro-chip--cost {
+  color: var(--neuro-amber);
+  background: rgba(245, 158, 11, 0.06);
+  border-color: rgba(245, 158, 11, 0.12);
+  font-family: var(--neuro-font-mono);
+}
+
+.neuro-chip--status {
+  color: var(--neuro-text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--neuro-border);
+}
+
+.neuro-chip:hover {
+  filter: brightness(1.2);
+}
+
+/* Chip 内脉动圆点 */
+.neuro-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  position: relative;
+}
+
+.neuro-chip__dot--live::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  animation: neuro-dot-pulse-ring 1.5s ease-out infinite;
+}
+
+/* ─── 13.5 End-of-Content 哨兵 ─── */
+.neuro-eoc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px 0 12px;
+  margin-top: 16px;
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+  pointer-events: none;
+  user-select: none;
+}
+
+.neuro-eoc.neuro-eoc--visible {
+  opacity: 1;
+}
+
+.neuro-eoc::before,
+.neuro-eoc::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--neuro-border), transparent);
+}
+
+.neuro-eoc__text {
+  font-size: 11px;
+  color: var(--neuro-text-muted);
+  opacity: 0.6;
+  white-space: nowrap;
+  letter-spacing: 0.05em;
+}
+
+/* ─── 13.6 空状态引导卡片 ─── */
+.neuro-empty-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 32px;
+  text-align: center;
+  animation: neuro-fade-in 0.6s ease-out forwards;
+}
+
+.neuro-empty-guide__icon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 20px;
+  color: var(--neuro-text-muted);
+  opacity: 0.4;
+}
+
+.neuro-empty-guide__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--neuro-text-primary);
+  margin-bottom: 8px;
+}
+
+.neuro-empty-guide__desc {
+  font-size: 13px;
+  color: var(--neuro-text-secondary);
+  line-height: 1.6;
+  max-width: 360px;
+  margin-bottom: 20px;
+}
+
+.neuro-empty-guide__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border-radius: var(--neuro-radius-sm);
+  background: linear-gradient(135deg, var(--neuro-cyan-dim), var(--neuro-violet-dim));
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all var(--neuro-transition);
+}
+
+.neuro-empty-guide__action:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 4px 15px rgba(0, 240, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+/* ─── 13.7 Focus Ring 增强 (A11y) ─── */
+.el-button:focus-visible,
+.neuro-btn:focus-visible,
+.neuro-chip:focus-visible,
+.tile-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.25);
+}
+
+/* ─── 13.8 prefers-reduced-motion 兼容 ─── */
+@media (prefers-reduced-motion: reduce) {
+  .neuro-toast,
+  .neuro-toast.neuro-toast-out,
+  .neuro-card,
+  .neuro-card--pulse,
+  .neuro-empty-guide,
+  .neuro-eoc,
+  .tile-item,
+  .el-button,
+  .neuro-btn {
+    animation: none !important;
+    transition: none !important;
+  }
+}

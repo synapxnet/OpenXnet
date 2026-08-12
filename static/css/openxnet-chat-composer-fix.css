@@ -1,0 +1,97 @@
+/* Composer overrides retained for AI Browser surfaces only. */
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .unified-input-wrapper,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .unified-input-wrapper {
+  position: relative !important;
+  display: block !important;
+  min-width: 0 !important;
+  padding: 8px 10px !important;
+  border-radius: 22px !important;
+  overflow: visible !important;
+}
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .attachment-preview-list,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .attachment-preview-list {
+  margin: 0 0 6px !important;
+  padding: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .input-container-wrapper,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .input-container-wrapper {
+  position: relative !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 16px !important;
+  overflow: visible !important;
+}
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .input-box-transparent .el-textarea__inner,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .input-box-transparent .el-textarea__inner {
+  min-height: 82px !important;
+  padding: 10px 12px !important;
+  line-height: 1.45 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .input-status-bar,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .input-status-bar {
+  display: none !important;
+}
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .status-pill,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .status-pill {
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  padding: 0 10px !important;
+  font-size: 12px !important;
+}
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .status-pill .pill-text,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .status-pill .pill-text {
+  max-width: min(210px, 36vw) !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .chat-composer-actions,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .chat-composer-actions {
+  display: none !important;
+}
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .chat-composer-actions > *,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .chat-composer-actions > * {
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .chat-composer-actions .el-button,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .chat-composer-actions .el-button {
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  border-radius: 11px !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .chat-composer-actions .send-btn.el-button,
+.openxnet-redesign-app .ox-ai-browser-composer-shell .chat-composer-actions .send-btn.el-button {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  border-radius: 13px !important;
+  margin-left: 4px !important;
+}
+
+@media (max-width: 640px) {
+  body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .input-status-bar,
+  .openxnet-redesign-app .ox-ai-browser-composer-shell .input-status-bar {
+    right: 112px !important;
+  }
+
+  body.openxnet-ui-redesign-body .ox-ai-browser-composer-shell .status-pill .pill-text,
+  .openxnet-redesign-app .ox-ai-browser-composer-shell .status-pill .pill-text {
+    max-width: 128px !important;
+  }
+}

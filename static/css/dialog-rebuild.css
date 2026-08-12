@@ -1,0 +1,3874 @@
+/* =========================================================
+   dialog-rebuild.css
+   ---------------------------------------------------------
+   彻底重建：个人中心 (.personal-center-dialog) 与
+   订阅中心 (.unlock-dialog) 两个 el-dialog 的内容区域。
+   通过 body 选择器提升特异性，确保覆盖 access-ui-from-h.css
+   中所有遗留旧规则，无需删除旧文件即可一锤定音。
+   ========================================================= */
+
+/* ---------- 公共：el-dialog 基本 sizing & 滚动 ---------- */
+/* ⚠️ 关键修复：Element Plus 把 customClass 直接拼到 .el-dialog 根上
+   （<div class="el-dialog unlock-dialog">），所以以前写的
+   `.unlock-dialog .el-dialog` 后代选择器永远不命中——必须用复合
+   选择器 `.el-dialog.unlock-dialog` 才能选中 dialog 容器本身。 */
+
+/* 让 overlay-dialog 居中并裁掉外层滚动，由 dialog 内部 body 接管 */
+body.openxnet-ui-redesign-body .el-overlay-dialog:has(> .el-dialog.unlock-dialog),
+body.openxnet-ui-redesign-body .el-overlay-dialog:has(> .el-dialog.personal-center-dialog) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+  overflow: hidden !important;
+}
+
+/* dialog 自身：限定高度 + 列向 flex，由 body 撑开剩余空间 */
+body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog,
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog {
+  display: flex !important;
+  flex-direction: column !important;
+  position: relative !important; /* 锚点：::before 进度条 / ::after 加载胶囊以此为基 */
+  margin: 0 !important;
+  top: auto !important;
+  max-height: calc(100vh - 48px) !important;
+  height: auto !important;
+  border-radius: 22px !important;
+  overflow: hidden !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22) !important;
+}
+
+body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__header,
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__header {
+  flex: 0 0 auto !important;
+  padding: 16px 24px !important;
+  margin: 0 !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__title,
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__title {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.01em !important;
+}
+
+/* =========================================================
+   1. 个人中心 —— 一屏放下，不出滚动条
+   ========================================================= */
+body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog {
+  /* 控制总宽度；高度由公共规则给的 max-height 控制 */
+  width: min(1040px, calc(100vw - 48px)) !important;
+}
+
+body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__body {
+  overflow: hidden !important;
+  padding: 14px 18px !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__footer {
+  display: none !important; /* footer 已折进 form-card 内部 */
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-shell {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) !important;
+  gap: 12px !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  height: 100% !important;
+  min-height: 0 !important;
+}
+
+/* 左侧 hero */
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero,
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  padding: 14px 16px !important;
+  border-radius: 18px !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06) !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero {
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.96), rgba(239, 246, 255, 0.88) 42%, rgba(236, 253, 245, 0.82)) !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card {
+  background: rgba(255, 255, 255, 0.94) !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero-head {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-avatar-shell,
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-avatar {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 14px !important;
+  font-size: 20px !important;
+  flex-shrink: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero-copy {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  min-width: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-kicker {
+  font-size: 10px !important;
+  letter-spacing: 0.08em !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero-copy h3 {
+  font-size: 16px !important;
+  margin: 0 !important;
+  line-height: 1.3 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero-copy p {
+  font-size: 11px !important;
+  line-height: 1.45 !important;
+  margin: 0 !important;
+  color: #475569 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-badge-row {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 3px 9px !important;
+  font-size: 10px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.7) !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  padding: 7px 9px !important;
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, 0.78) !important;
+  border: 1px solid rgba(148, 163, 184, 0.14) !important;
+  min-height: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card span {
+  font-size: 10px !important;
+  color: #64748b !important;
+  line-height: 1.2 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card strong {
+  font-size: 12px !important;
+  color: #0f172a !important;
+  line-height: 1.2 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-usage-panel {
+  padding: 8px 10px !important;
+  border-radius: 12px !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-usage-panel .access-usage-head strong {
+  font-size: 12px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-usage-panel .access-usage-summary-row {
+  gap: 4px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-usage-panel .access-usage-summary-item {
+  padding: 4px 6px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-usage-panel .access-usage-summary-item span {
+  font-size: 10px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-usage-panel .access-usage-summary-item strong {
+  font-size: 12px !important;
+}
+
+/* 右侧 form */
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card .login-entry-form-head {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card .login-entry-form-title {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card .login-entry-form-subtitle {
+  font-size: 11px !important;
+  color: #64748b !important;
+  line-height: 1.4 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card .login-entry-form .el-form-item {
+  margin-bottom: 6px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card .login-entry-form .el-form-item__label {
+  padding: 0 0 1px !important;
+  font-size: 11px !important;
+  line-height: 1.3 !important;
+  font-weight: 600 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card .login-entry-form .el-input__wrapper {
+  padding: 0 10px !important;
+  border-radius: 10px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card .login-entry-form .el-input__inner {
+  height: 28px !important;
+  font-size: 12px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card .unlock-inline-note {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 6px !important;
+  padding: 6px 9px !important;
+  font-size: 10px !important;
+  line-height: 1.4 !important;
+  border-radius: 8px !important;
+  background: rgba(241, 245, 249, 0.85) !important;
+  color: #475569 !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card .unlock-inline-note i {
+  margin-top: 2px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  padding: 8px 10px !important;
+  border-radius: 10px !important;
+  background: rgba(248, 250, 252, 0.94) !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  min-height: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile:hover {
+  background: rgba(219, 234, 254, 0.6) !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile i {
+  font-size: 14px !important;
+  color: #2563eb !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile strong {
+  font-size: 12px !important;
+  color: #0f172a !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile span {
+  font-size: 10px !important;
+  color: #64748b !important;
+  line-height: 1.4 !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-row {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  justify-content: flex-end !important;
+  margin-top: auto !important;
+  padding-top: 6px !important;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22) !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-row .el-button {
+  margin-left: 0 !important;
+  height: 30px !important;
+  padding: 0 14px !important;
+  font-size: 12px !important;
+  border-radius: 8px !important;
+}
+
+/* 个人中心：低分辨率回退一栏，允许垂直滚动 */
+@media (max-width: 1024px), (max-height: 720px) {
+  body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-shell {
+    grid-template-columns: minmax(0, 1fr) !important;
+    height: auto !important;
+  }
+  body.openxnet-ui-redesign-body .personal-center-dialog .el-dialog__body {
+    overflow-y: auto !important;
+  }
+}
+
+/* =========================================================
+   2. 订阅中心 —— 卡片紧凑、布局清晰、整体可滚动
+   ========================================================= */
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog {
+  width: min(1160px, calc(100vw - 48px)) !important;
+  /* 关键：用确定高度而非 max-height，让 flex 子项（body）有
+     可以扩张的剩余空间。max-height + height:auto 时，dialog 会
+     按内容自然高度收缩到 header 大小，body 反而被压成 0。 */
+  height: calc(100vh - 48px) !important;
+  max-height: calc(100vh - 48px) !important;
+}
+
+/* body：flex-basis 用 auto（即内容自然高度），然后允许 shrink；
+   配合外层固定高度，body 会被严格限定在 dialog 高度 - header
+   的剩余空间，里面的 8 张套餐卡内容溢出由 overflow-y 接管。 */
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  height: auto !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 16px 20px 20px !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* 滚动条样式：让用户一眼看到可以滚 */
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__body::-webkit-scrollbar {
+  width: 10px;
+}
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__body::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.08);
+  border-radius: 999px;
+}
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__body::-webkit-scrollbar-thumb {
+  background: rgba(91, 163, 197, 0.45);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__body::-webkit-scrollbar-thumb:hover {
+  background: rgba(91, 163, 197, 0.65);
+  background-clip: content-box;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-dialog-shell {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 14px !important;
+}
+
+/* hero */
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-dialog-hero {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  padding: 18px 20px !important;
+  border-radius: 18px !important;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(56, 189, 248, 0.12) 50%, rgba(45, 212, 191, 0.12)) !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-dialog-hero-main {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) !important;
+  gap: 14px !important;
+  align-items: start !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-dialog-copy h3 {
+  margin: 0 0 4px !important;
+  font-size: 18px !important;
+  line-height: 1.3 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-dialog-copy p {
+  margin: 0 !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  color: #475569 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-dialog-status-panel {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  padding: 10px 12px !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.65) !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-dialog-status-label {
+  font-size: 10px !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: #64748b !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-dialog-status-value {
+  font-size: 14px !important;
+  color: #0f172a !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-dialog-status-foot {
+  font-size: 11px !important;
+  color: #64748b !important;
+  line-height: 1.45 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-hero-stats {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-hero-stat {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  padding: 8px 10px !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.7) !important;
+  border: 1px solid rgba(148, 163, 184, 0.14) !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-hero-stat-value {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-hero-stat-label {
+  font-size: 10px !important;
+  color: #64748b !important;
+}
+
+/* 积分 panel */
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-panel {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  padding: 12px 14px !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-item {
+  padding: 7px 10px !important;
+  border-radius: 10px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-item span {
+  font-size: 10px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-item strong {
+  font-size: 14px !important;
+}
+
+/* plan grid + cards */
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  align-items: stretch !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-card {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  padding: 14px !important;
+  border-radius: 16px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06) !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-card.featured {
+  border-color: rgba(37, 99, 235, 0.45) !important;
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.16) !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-card.active {
+  border-color: rgba(16, 185, 129, 0.5) !important;
+  background: rgba(236, 253, 245, 0.88) !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-card.disabled {
+  opacity: 0.7 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-header {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-badge-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  flex-wrap: wrap !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-badge,
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-ribbon {
+  min-height: 22px !important;
+  padding: 1px 8px !important;
+  font-size: 10px !important;
+  border-radius: 999px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-status {
+  min-height: 22px !important;
+  padding: 1px 8px !important;
+  font-size: 10px !important;
+  border-radius: 999px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-title-row {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-title-row h4 {
+  margin: 0 !important;
+  font-size: 15px !important;
+  line-height: 1.25 !important;
+  color: #0f172a !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-model-count {
+  font-size: 10px !important;
+  color: #64748b !important;
+  white-space: nowrap !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-card > p {
+  margin: 0 !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+  color: #64748b !important;
+  min-height: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-tags {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 4px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-tags .el-tag {
+  height: 20px !important;
+  line-height: 18px !important;
+  padding: 0 6px !important;
+  font-size: 10px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-billing {
+  display: flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 5px 10px !important;
+  font-size: 11px !important;
+  border-radius: 8px !important;
+  background: rgba(241, 245, 249, 0.8) !important;
+  color: #475569 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-meta-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 5px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-meta-item {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1px !important;
+  padding: 5px 9px !important;
+  border-radius: 9px !important;
+  background: rgba(241, 245, 249, 0.78) !important;
+  min-height: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-meta-item span {
+  font-size: 10px !important;
+  color: #64748b !important;
+  line-height: 1.2 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-meta-item strong {
+  font-size: 12px !important;
+  color: #0f172a !important;
+  line-height: 1.2 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-current {
+  display: flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 4px 8px !important;
+  font-size: 10px !important;
+  border-radius: 8px !important;
+  background: rgba(16, 185, 129, 0.12) !important;
+  color: #047857 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  margin-top: auto !important;
+  padding-top: 6px !important;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22) !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-price-block {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1px !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-price {
+  font-size: 18px !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  line-height: 1.1 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-price-note {
+  font-size: 10px !important;
+  color: #64748b !important;
+  line-height: 1.35 !important;
+  max-width: none !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-footer .el-button {
+  flex-shrink: 0 !important;
+  height: 30px !important;
+  padding: 0 14px !important;
+  font-size: 12px !important;
+  border-radius: 8px !important;
+}
+
+/* ---------- 加油包 panel：清楚展示 input + “立即充值”按钮 ---------- */
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-panel {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding: 14px 16px !important;
+  border-radius: 14px !important;
+  background: linear-gradient(135deg, rgba(254, 243, 199, 0.6), rgba(255, 255, 255, 0.94)) !important;
+  border: 1px solid rgba(245, 158, 11, 0.32) !important;
+  box-shadow: 0 10px 22px rgba(245, 158, 11, 0.1) !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-copy {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  flex: 1 1 240px !important;
+  min-width: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-copy .subscription-credit-kicker {
+  font-size: 10px !important;
+  color: #b45309 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-copy strong {
+  font-size: 14px !important;
+  color: #0f172a !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-copy span {
+  font-size: 11px !important;
+  color: #64748b !important;
+  line-height: 1.4 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-shrink: 0 !important;
+  flex-wrap: wrap !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-actions .el-input-number {
+  width: 120px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  height: 34px !important;
+  min-width: 120px !important;
+  padding: 0 16px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  border-radius: 10px !important;
+  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  white-space: nowrap !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-button:hover {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b) !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-button .el-button__content,
+body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-button > span {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+/* 收费规则 panel */
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-rule-panel {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  padding: 12px 14px !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-rule-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-rule-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+}
+
+body.openxnet-ui-redesign-body .unlock-dialog .unlock-rule-item {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 6px !important;
+  padding: 6px 10px !important;
+  font-size: 11px !important;
+  line-height: 1.45 !important;
+  border-radius: 8px !important;
+  background: rgba(241, 245, 249, 0.7) !important;
+  color: #475569 !important;
+}
+
+/* 订阅中心：低分辨率回退到 2 列、再到 1 列 */
+@media (max-width: 1100px) {
+  body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  body.openxnet-ui-redesign-body .unlock-dialog .unlock-dialog-hero-main {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-grid,
+  body.openxnet-ui-redesign-body .unlock-dialog .unlock-hero-stats,
+  body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-panel {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-actions {
+    width: 100% !important;
+  }
+  body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-actions .el-input-number,
+  body.openxnet-ui-redesign-body .unlock-dialog .subscription-topup-button {
+    flex: 1 1 auto !important;
+    width: auto !important;
+  }
+}
+
+/* =========================================================
+   3. 暗色主题适配
+   ========================================================= */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog {
+  background: rgba(15, 23, 42, 0.96) !important;
+  color: #e2e8f0 !important;
+}
+
+/* dialog 顶栏（el-dialog__header 是默认白底，dark theme 必须覆盖） */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__header,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__header,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__header,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__header,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__header,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__header,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__header,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__header {
+  background: transparent !important;
+  border-bottom-color: rgba(71, 85, 105, 0.45) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__title,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__title,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__title,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__title,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__title {
+  color: #E6EDF6 !important;
+}
+
+/* 右上角关闭按钮 */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__headerbtn .el-dialog__close,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__headerbtn .el-dialog__close,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__headerbtn .el-dialog__close,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__headerbtn .el-dialog__close,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__headerbtn .el-dialog__close,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__headerbtn .el-dialog__close,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__headerbtn .el-dialog__close,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__headerbtn .el-dialog__close {
+  color: #94A3B8 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__headerbtn:hover .el-dialog__close,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.personal-center-dialog .el-dialog__headerbtn:hover .el-dialog__close,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__headerbtn:hover .el-dialog__close,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__headerbtn:hover .el-dialog__close {
+  color: #E6EDF6 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-form-card,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-card,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-panel,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-panel,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-rule-panel,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-rule-panel {
+  background: rgba(30, 41, 59, 0.94) !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-meta-item,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-meta-item,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-item,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-item {
+  background: rgba(51, 65, 85, 0.6) !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+}
+
+/* 暗色：把 light 模式写死的 #0f172a 标题字 / #64748b 标签字翻成亮色 */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card span,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card span,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-meta-item span,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-meta-item span,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-item span,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-item span {
+  color: #94A3B8 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card strong,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-meta-item strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-meta-item strong,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-item strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .subscription-credit-item strong {
+  color: #E6EDF6 !important;
+}
+
+/* 暗色：badges (尝鲜版 / 手机号 / 企业空间已解锁) 与 hero kicker / 描述文字 */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-badge,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-badge,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-badge,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-badge {
+  background: rgba(51, 65, 85, 0.7) !important;
+  color: #CBD5E1 !important;
+  border: 1px solid rgba(71, 85, 105, 0.4) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-kicker,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-kicker,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-kicker,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-kicker {
+  background: rgba(51, 65, 85, 0.6) !important;
+  color: #94A3B8 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero-copy h3,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero-copy h3,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero-copy p,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero-copy p {
+  color: #E6EDF6 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero-copy p,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero-copy p {
+  color: #94A3B8 !important;
+}
+
+/* 订阅中心：plan card hero（旗舰版/至尊版 标题区）+ 价格区 + 模型 chips */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-summary,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-summary,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-card h4,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-card h4,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-price strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-price strong {
+  color: #E6EDF6 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-summary {
+  color: #94A3B8 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-models .unlock-plan-model-pill,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-plan-models .unlock-plan-model-pill {
+  background: rgba(51, 65, 85, 0.6) !important;
+  color: #CBD5E1 !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+}
+
+/* 订阅中心 hero（顶部黄色横条 BILLING & ACCESS / 收费规则 + 加油包卡） */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-rule-panel li,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-rule-panel li {
+  color: #CBD5E1 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-rule-panel,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .unlock-dialog .unlock-rule-panel {
+  background: rgba(30, 41, 59, 0.7) !important;
+}
+
+/* =========================================================
+   4. 顶栏 + 用户头像：跟随系统主题切换
+   ---------------------------------------------------------
+   旧规则把 .top-bar 默认色写成深色固定值，浅色则在
+   light-theme-override 里覆盖；当多次 toggle 之后，
+   styles.css 里的 var(--el-bg-color-page) 偶尔会赢，导致
+   深色主题下顶栏仍呈白色 — 这里用最高特异性强制收齐。
+
+   切换主题时的"延时"问题：原来 .ox-prototype-icon-button /
+   .ox-prototype-avatar-button 有 140ms 的 background-color
+   过渡，body 直接 snap 到新主题，topbar 还在过渡 → 视觉上
+   出现延迟。下面把顶栏元素的 transition 全部清零，使整个
+   顶栏与 body 同帧切换。
+   ========================================================= */
+
+/* —— 顶栏搜索按钮：可点击（修复 pointer-events:none 与 app-region:drag） —— */
+body.openxnet-ui-redesign-body .ox-prototype-topbar-center {
+  /* 容器虽然 pointer-events:none，但内部按钮要恢复 */
+  pointer-events: none !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-topbar-search {
+  pointer-events: auto !important;
+  -webkit-app-region: no-drag !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 320px;
+  max-width: 520px;
+  height: 32px !important;
+  padding: 0 14px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  background: rgba(15, 23, 42, 0.04) !important;
+  color: #475569 !important;
+  font: 500 12px/1 var(--ox-font-sans, system-ui) !important;
+  cursor: pointer !important;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-topbar-search:hover {
+  background: rgba(15, 23, 42, 0.08) !important;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  color: #1e293b !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-topbar-search > i {
+  font-size: 12px;
+  color: var(--ox-accent, #5BA3C5);
+  flex-shrink: 0;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-topbar-search-text {
+  flex: 1 1 auto;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.18);
+  color: #475569;
+  font: 600 10px/1 var(--ox-font-mono, 'JetBrains Mono', monospace);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+/* —— 主题切换无过渡：顶栏与头像跟随 body 同帧切换 —— */
+body.openxnet-ui-redesign-body .openxnet-redesign-app .top-bar,
+body.openxnet-ui-redesign-body .top-bar.el-header,
+body.openxnet-ui-redesign-body .ox-prototype-topbar-shell,
+body.openxnet-ui-redesign-body .ox-prototype-brand-icon,
+body.openxnet-ui-redesign-body .ox-prototype-brand-wordmark,
+body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle,
+body.openxnet-ui-redesign-body .ox-prototype-icon-button,
+body.openxnet-ui-redesign-body .ox-prototype-language-button,
+body.openxnet-ui-redesign-body .ox-prototype-theme-button,
+body.openxnet-ui-redesign-body .ox-prototype-topbar-search,
+body.openxnet-ui-redesign-body .ox-prototype-topbar-search-text,
+body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd,
+body.openxnet-ui-redesign-body .ox-prototype-avatar-button,
+body.openxnet-ui-redesign-body .ox-prototype-avatar-copy {
+  transition:
+    background-color 0s,
+    background-image 0s,
+    background 0s,
+    color 0s,
+    border-color 0s,
+    box-shadow 0s,
+    -webkit-text-fill-color 0s !important;
+}
+
+/* —— 浅色主题：顶栏 + 头像统一为浅色 —— */
+html[data-theme="light"] body.openxnet-ui-redesign-body .openxnet-redesign-app .top-bar,
+html[data-theme="light"] body.openxnet-ui-redesign-body .top-bar.el-header,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-topbar-shell {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(244, 247, 251, 0.94)) !important;
+  background-color: rgba(248, 249, 251, 0.96) !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+  color: #1e293b !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-brand-wordmark,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-brand-icon {
+  color: #5BA3C5 !important;
+  -webkit-text-fill-color: #5BA3C5 !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-icon-button,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-language-button,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-theme-button {
+  color: #475569 !important;
+  background: transparent !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle:hover,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-icon-button:hover,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-language-button:hover,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-theme-button:hover {
+  background: rgba(15, 23, 42, 0.06) !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search {
+  background: rgba(15, 23, 42, 0.04) !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  color: #475569 !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search:hover {
+  background: rgba(15, 23, 42, 0.07) !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-text {
+  color: #64748b !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd {
+  background: rgba(15, 23, 42, 0.06) !important;
+  color: #475569 !important;
+  border-color: transparent !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border: 1.5px solid rgba(15, 23, 42, 0.1) !important;
+  color: #1e293b !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in {
+  background: linear-gradient(135deg, rgba(91, 163, 197, 0.14), rgba(96, 165, 250, 0.12)) !important;
+  border-color: rgba(91, 163, 197, 0.32) !important;
+  color: #0369a1 !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in.has-quota-ring {
+  border: 0 !important;
+  background:
+    conic-gradient(
+      from -90deg,
+      var(--ox-avatar-ring-start, #34d399) 0deg,
+      var(--ox-avatar-ring-end, #22c55e) var(--ox-avatar-ring-angle, 360deg),
+      rgba(148, 163, 184, 0.22) var(--ox-avatar-ring-angle, 360deg),
+      rgba(148, 163, 184, 0.22) 360deg
+    ) !important;
+  color: #1e293b !important;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.08),
+    0 6px 18px var(--ox-avatar-ring-glow, rgba(34, 197, 94, 0.26)) !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in.has-quota-ring:hover {
+  background:
+    conic-gradient(
+      from -90deg,
+      var(--ox-avatar-ring-start, #34d399) 0deg,
+      var(--ox-avatar-ring-end, #22c55e) var(--ox-avatar-ring-angle, 360deg),
+      rgba(148, 163, 184, 0.22) var(--ox-avatar-ring-angle, 360deg),
+      rgba(148, 163, 184, 0.22) 360deg
+    ) !important;
+  color: #1e293b !important;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.10),
+    0 8px 22px var(--ox-avatar-ring-glow, rgba(34, 197, 94, 0.34)) !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button:hover {
+  background: rgba(241, 245, 249, 0.96) !important;
+}
+
+/* —— 深色主题（dark/midnight/neon/ink）：顶栏 + 头像统一为深色 —— */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .openxnet-redesign-app .top-bar,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .top-bar.el-header,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-topbar-shell,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .openxnet-redesign-app .top-bar,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .top-bar.el-header,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-topbar-shell,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .openxnet-redesign-app .top-bar,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .top-bar.el-header,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-topbar-shell,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .openxnet-redesign-app .top-bar,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .top-bar.el-header,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-topbar-shell {
+  background: linear-gradient(180deg, rgba(14, 16, 23, 0.98), rgba(9, 10, 15, 0.96)) !important;
+  background-color: rgba(11, 13, 20, 0.96) !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36) !important;
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-brand-wordmark,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-brand-wordmark,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-brand-wordmark,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-brand-wordmark {
+  color: #93c5fd !important;
+  -webkit-text-fill-color: #93c5fd !important;
+}
+
+/* 暗色主题下也保持 logo 透明、无边框、无阴影 */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-brand-icon,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-brand-icon,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-brand-icon,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-brand-icon {
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: inherit !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-icon-button,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-language-button,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-theme-button,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-icon-button,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-language-button,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-theme-button,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-icon-button,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-language-button,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-theme-button,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-icon-button,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-language-button,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-theme-button {
+  color: #cbd5e1 !important;
+  background: transparent !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle:hover,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-icon-button:hover,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-language-button:hover,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-theme-button:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-icon-button:hover,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle:hover,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-icon-button:hover,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle:hover,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-icon-button:hover {
+  background: rgba(148, 163, 184, 0.12) !important;
+  color: #f1f5f9 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search {
+  background: rgba(30, 41, 59, 0.62) !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search:hover,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search:hover,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search:hover {
+  background: rgba(30, 41, 59, 0.82) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-text,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-text,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-text,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-text {
+  color: #94a3b8 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd {
+  background: rgba(148, 163, 184, 0.18) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button {
+  background: rgba(26, 29, 40, 0.92) !important;
+  border: 1.5px solid rgba(148, 163, 184, 0.2) !important;
+  color: #e2e8f0 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in {
+  background: linear-gradient(135deg, rgba(91, 163, 197, 0.18), rgba(96, 165, 250, 0.16)) !important;
+  border-color: rgba(91, 163, 197, 0.42) !important;
+  color: #93c5fd !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in.has-quota-ring,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in.has-quota-ring,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in.has-quota-ring,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in.has-quota-ring {
+  border: 0 !important;
+  background:
+    conic-gradient(
+      from -90deg,
+      var(--ox-avatar-ring-start, #34d399) 0deg,
+      var(--ox-avatar-ring-end, #22c55e) var(--ox-avatar-ring-angle, 360deg),
+      rgba(148, 163, 184, 0.22) var(--ox-avatar-ring-angle, 360deg),
+      rgba(148, 163, 184, 0.22) 360deg
+    ) !important;
+  color: #e6edf6 !important;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.10),
+    0 6px 18px var(--ox-avatar-ring-glow, rgba(34, 197, 94, 0.42)) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button:hover,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button:hover,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button:hover {
+  background: rgba(91, 163, 197, 0.18) !important;
+  border-color: rgba(91, 163, 197, 0.5) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-avatar-copy,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-avatar-copy,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-avatar-copy,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-avatar-copy {
+  color: inherit !important;
+}
+
+/* =========================================================
+   5. Brand 图标：把 OX 字符替换成 logo 之后，
+   原容器统一去掉渐变背景/阴影，让 logo 直接呈现，
+   并适当缩小启动页 logo 尺寸。
+   ========================================================= */
+
+/* 顶栏品牌图标 —— 透明，logo 直出 */
+body.openxnet-ui-redesign-body .ox-prototype-brand-icon,
+.openxnet-redesign-app .ox-prototype-brand-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-brand-icon img,
+.openxnet-redesign-app .ox-prototype-brand-icon img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+/* 侧边栏品牌图标（移动态/缩起态可能用到） */
+body.openxnet-ui-redesign-body .sidebar-brand-mark,
+.openxnet-redesign-app .sidebar-brand-mark {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+body.openxnet-ui-redesign-body .sidebar-brand-mark img,
+.openxnet-redesign-app .sidebar-brand-mark img {
+  background: transparent !important;
+}
+
+/* 启动 splash 大 logo —— 缩小尺寸 + 去渐变 + 去阴影 */
+body.openxnet-ui-redesign-body .boot-splash__mark,
+.openxnet-redesign-app .boot-splash__mark,
+.boot-splash .boot-splash__mark {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: clamp(48px, 6vh, 64px) !important;
+  height: clamp(48px, 6vh, 64px) !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
+body.openxnet-ui-redesign-body .boot-splash__mark img,
+.openxnet-redesign-app .boot-splash__mark img,
+.boot-splash .boot-splash__mark img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+  background: transparent !important;
+}
+
+/* 实时对话空状态 logo */
+body.openxnet-ui-redesign-body .ox-chat-empty-state__icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  overflow: hidden !important;
+}
+
+body.openxnet-ui-redesign-body .ox-chat-empty-state__icon img {
+  width: 80% !important;
+  height: 80% !important;
+  object-fit: contain !important;
+  display: block !important;
+  background: transparent !important;
+}
+
+/* skeleton.html splash logo（在 redesign-body 类作用域之外） */
+.logo-shell {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  width: clamp(56px, 7vh, 72px) !important;
+  height: clamp(56px, 7vh, 72px) !important;
+}
+
+.logo-shell .logo-shell__img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+  background: transparent !important;
+}
+
+/* ops-vite 关于页 mark */
+.ox-vite-about-mark {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+.ox-vite-about-mark img {
+  width: 80% !important;
+  height: 80% !important;
+  object-fit: contain !important;
+  display: block !important;
+  background: transparent !important;
+}
+
+/* =========================================================
+   6. 快速面板（Ctrl+K）—— 命令中心样式
+   原 home-command-dialog 没有任何样式，本节补完整。
+   ========================================================= */
+body.openxnet-ui-redesign-body .home-command-dialog .el-dialog {
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22) !important;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog .el-dialog__header {
+  padding: 0 !important;
+  margin: 0 !important;
+  border-bottom: none !important;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog .el-dialog__body {
+  padding: 0 !important;
+}
+
+/* ── Header ── */
+body.openxnet-ui-redesign-body .home-command-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px 14px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(91, 163, 197, 0.16), transparent 55%),
+    linear-gradient(135deg, rgba(91, 163, 197, 0.08), rgba(96, 165, 250, 0.06));
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ox-accent, #5BA3C5);
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+  line-height: 1.25;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-lead {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ox-text-secondary, #475569);
+  max-width: 620px;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  font-size: 11px;
+  font-weight: 600;
+  align-self: flex-start;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-status.is-ready {
+  background: rgba(34, 197, 94, 0.14);
+  color: #16a34a;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--ox-text-secondary, #475569);
+  font: 600 11px/1 var(--ox-font-mono, 'JetBrains Mono', monospace);
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Body ── */
+body.openxnet-ui-redesign-body .home-command-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px 18px;
+  max-height: calc(80vh - 140px);
+  overflow-y: auto;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-body .el-input--large {
+  --el-input-height: 40px;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-body .el-input__wrapper {
+  border-radius: 12px !important;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.22) inset !important;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-body .el-input__wrapper:focus-within {
+  box-shadow: 0 0 0 2px rgba(91, 163, 197, 0.45) inset !important;
+}
+
+body.openxnet-ui-redesign-body .home-command-dialog-body .el-input__prefix i {
+  color: var(--ox-accent, #5BA3C5);
+}
+
+/* ── Deck Overview cards (4 columns) ── */
+body.openxnet-ui-redesign-body .home-command-deck-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body.openxnet-ui-redesign-body .home-command-deck-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+body.openxnet-ui-redesign-body .home-command-deck-card.is-warning {
+  background: linear-gradient(135deg, rgba(254, 243, 199, 0.6), rgba(255, 255, 255, 0.94));
+  border-color: rgba(245, 158, 11, 0.32);
+}
+
+body.openxnet-ui-redesign-body .home-command-deck-card.is-active {
+  background: linear-gradient(135deg, rgba(220, 252, 231, 0.6), rgba(255, 255, 255, 0.94));
+  border-color: rgba(34, 197, 94, 0.32);
+}
+
+body.openxnet-ui-redesign-body .home-command-deck-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgba(91, 163, 197, 0.14);
+  color: var(--ox-accent, #5BA3C5);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+body.openxnet-ui-redesign-body .home-command-deck-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .home-command-deck-card-label {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .home-command-deck-card-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+  line-height: 1.2;
+}
+
+body.openxnet-ui-redesign-body .home-command-deck-card-meta {
+  font-size: 11px;
+  color: var(--ox-text-muted, #64748b);
+  line-height: 1.4;
+}
+
+/* ── Section switcher (recall / scene) ── */
+body.openxnet-ui-redesign-body .home-command-desktop-switcher {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  align-self: flex-start;
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-switcher-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ox-text-secondary, #475569);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-switcher-button:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-switcher-button.active {
+  background: var(--ox-accent, #5BA3C5);
+  color: #fff;
+}
+
+/* ── Recall main panel ── */
+body.openxnet-ui-redesign-body .home-command-desktop-recall {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-kicker {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-summary {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ox-text-secondary, #475569);
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--ox-text-muted, #64748b);
+}
+body.openxnet-ui-redesign-body .home-command-desktop-recall-meta i {
+  color: var(--ox-accent, #5BA3C5);
+  margin-right: 4px;
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22);
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-button {
+  border-radius: 10px !important;
+  font-weight: 500 !important;
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-button--primary {
+  width: 100%;
+  height: 38px !important;
+  background: var(--ox-accent, #5BA3C5) !important;
+  border-color: var(--ox-accent, #5BA3C5) !important;
+  color: #fff !important;
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-button--primary:hover {
+  background: #4A93B8 !important;
+  border-color: #4A93B8 !important;
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-button--compact {
+  height: 32px !important;
+  font-size: 12px !important;
+  padding: 0 12px !important;
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+/* ── Layout presets ── */
+body.openxnet-ui-redesign-body .home-command-desktop-recall-layouts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22);
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-layout-kicker {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-layout-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+body.openxnet-ui-redesign-body .home-command-desktop-recall-button--layout {
+  height: 30px !important;
+  padding: 0 8px !important;
+  font-size: 11px !important;
+}
+
+/* ── Empty state ── */
+body.openxnet-ui-redesign-body .home-command-desktop-recall.is-empty .home-command-desktop-recall-main {
+  opacity: 0.7;
+}
+
+/* ── Scene panel ── */
+body.openxnet-ui-redesign-body .home-desktop-scene-shell--panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(241, 245, 249, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+body.openxnet-ui-redesign-body .home-desktop-scene-shell-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+body.openxnet-ui-redesign-body .home-desktop-scene-shell-kicker {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .home-desktop-scene-shell-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .home-desktop-scene-shell-summary {
+  font-size: 11px;
+  color: var(--ox-text-secondary, #475569);
+  line-height: 1.5;
+}
+
+body.openxnet-ui-redesign-body .home-desktop-scene-shell-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--ox-text-muted, #64748b);
+}
+body.openxnet-ui-redesign-body .home-desktop-scene-shell-meta i {
+  color: var(--ox-accent, #5BA3C5);
+  margin-right: 4px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 880px) {
+  body.openxnet-ui-redesign-body .home-command-deck-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  body.openxnet-ui-redesign-body .home-command-desktop-recall-quick-grid {
+    grid-template-columns: 1fr;
+  }
+  body.openxnet-ui-redesign-body .home-command-desktop-recall-layout-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ── Dark theme ── */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-dialog .el-dialog,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-dialog .el-dialog {
+  background: rgba(15, 23, 42, 0.96) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-dialog-title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-dialog-title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-deck-card-value,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-deck-card-value,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-desktop-recall-title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-desktop-recall-title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-desktop-scene-shell-title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-desktop-scene-shell-title {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-deck-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-deck-card,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-desktop-recall,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-desktop-recall {
+  background: rgba(30, 41, 59, 0.78) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-desktop-switcher,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-desktop-switcher {
+  background: rgba(15, 23, 42, 0.4) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-desktop-switcher-button,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-desktop-switcher-button {
+  color: #94a3b8 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-dialog-shortcut,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-dialog-shortcut {
+  background: rgba(148, 163, 184, 0.18) !important;
+  color: #cbd5e1 !important;
+}
+
+/* 暗色下顶栏搜索按钮配色 */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search {
+  background: rgba(30, 41, 59, 0.62) !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search:hover {
+  background: rgba(30, 41, 59, 0.82) !important;
+  color: #f1f5f9 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd {
+  background: rgba(148, 163, 184, 0.18) !important;
+  color: #e2e8f0 !important;
+}
+
+/* =========================================================
+   7. 命令面板 sections（核心功能列表，原本完全没有样式）
+   每个 section = kicker + title + summary + count + grid 按钮
+   ========================================================= */
+body.openxnet-ui-redesign-body .home-command-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+body.openxnet-ui-redesign-body .home-command-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+body.openxnet-ui-redesign-body .home-command-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.22);
+}
+
+body.openxnet-ui-redesign-body .home-command-section-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .home-command-section-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ox-accent, #5BA3C5);
+}
+
+body.openxnet-ui-redesign-body .home-command-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+  line-height: 1.25;
+}
+
+body.openxnet-ui-redesign-body .home-command-section-summary {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ox-text-secondary, #64748b);
+  max-width: 620px;
+}
+
+body.openxnet-ui-redesign-body .home-command-section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(91, 163, 197, 0.14);
+  color: var(--ox-accent, #5BA3C5);
+  font-family: var(--ox-font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* Grid of command items */
+body.openxnet-ui-redesign-body .home-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body.openxnet-ui-redesign-body .home-command-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(241, 245, 249, 0.45);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .home-command-item:hover {
+  background: rgba(91, 163, 197, 0.08);
+  border-color: rgba(91, 163, 197, 0.24);
+  transform: translateX(2px);
+}
+
+body.openxnet-ui-redesign-body .home-command-item.is-primary {
+  background: rgba(91, 163, 197, 0.10);
+  border-color: rgba(91, 163, 197, 0.32);
+}
+
+body.openxnet-ui-redesign-body .home-command-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgba(91, 163, 197, 0.14);
+  color: var(--ox-accent, #5BA3C5);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+body.openxnet-ui-redesign-body .home-command-item-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+body.openxnet-ui-redesign-body .home-command-item-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+body.openxnet-ui-redesign-body .home-command-item-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(91, 163, 197, 0.16);
+  color: var(--ox-accent, #5BA3C5);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+body.openxnet-ui-redesign-body .home-command-item-shortcut {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--ox-text-secondary, #475569);
+  font-family: var(--ox-font-mono, 'JetBrains Mono', monospace);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+body.openxnet-ui-redesign-body .home-command-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ox-text-primary, #1e293b);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.openxnet-ui-redesign-body .home-command-item-description {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ox-text-muted, #64748b);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+body.openxnet-ui-redesign-body .home-command-item-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--ox-text-muted, #94a3b8);
+  font-size: 11px;
+  flex-shrink: 0;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 160ms ease, transform 160ms ease, color 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .home-command-item:hover .home-command-item-arrow {
+  opacity: 1;
+  transform: translateX(0);
+  color: var(--ox-accent, #5BA3C5);
+}
+
+body.openxnet-ui-redesign-body .home-command-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  border-radius: 14px;
+  background: rgba(241, 245, 249, 0.6);
+  color: var(--ox-text-muted, #94a3b8);
+  font-size: 13px;
+  text-align: center;
+}
+
+body.openxnet-ui-redesign-body .home-command-empty i {
+  font-size: 22px;
+  color: var(--ox-accent, #5BA3C5);
+}
+
+@media (max-width: 720px) {
+  body.openxnet-ui-redesign-body .home-command-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* —— 修复：暗色主题下 dialog header 不再用浅色渐变（之前在
+   深色 dialog 上叠浅色径向渐变，导致标题完全看不清） —— */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-dialog-header,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-dialog-header,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .home-command-dialog-header,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .home-command-dialog-header {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(91, 163, 197, 0.22), transparent 55%),
+    linear-gradient(135deg, rgba(30, 41, 59, 0.96), rgba(15, 23, 42, 0.94)) !important;
+  border-bottom-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-dialog-lead,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-dialog-lead {
+  color: #cbd5e1 !important;
+}
+
+/* —— Dark theme: section / item 跟着调色 —— */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-section,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-section,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .home-command-section,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .home-command-section {
+  background: rgba(30, 41, 59, 0.78) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-section-title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-section-title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-item-title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-item-title {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-section-summary,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-section-summary,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-item-description,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-item-description {
+  color: #94a3b8 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-item,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-item {
+  background: rgba(15, 23, 42, 0.4) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-item:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-item:hover {
+  background: rgba(91, 163, 197, 0.18) !important;
+  border-color: rgba(91, 163, 197, 0.4) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-empty,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-empty {
+  background: rgba(30, 41, 59, 0.5) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .home-command-item-shortcut,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .home-command-item-shortcut {
+  background: rgba(148, 163, 184, 0.18) !important;
+  color: #cbd5e1 !important;
+}
+
+/* =========================================================
+   8. 订阅支付 dialog（fake-qr-dialog）—— 重塑布局
+   原 CSS 只画了 shell 背景，hero/controls/stage/meta/action 全部
+   没有结构样式，导致渲染成一段一段的纯文字。这里重建整套布局。
+   ========================================================= */
+
+/* el-dialog 容器（compound 选择器；见前文修复说明） */
+body.openxnet-ui-redesign-body .el-overlay-dialog:has(> .el-dialog.fake-qr-dialog) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+  overflow: hidden !important;
+}
+
+body.openxnet-ui-redesign-body .el-dialog.fake-qr-dialog {
+  display: flex !important;
+  flex-direction: column !important;
+  margin: 0 !important;
+  top: auto !important;
+  width: min(880px, calc(100vw - 48px)) !important;
+  max-height: calc(100vh - 48px) !important;
+  height: auto !important;
+  border-radius: 22px !important;
+  overflow: hidden !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22) !important;
+}
+
+body.openxnet-ui-redesign-body .el-dialog.fake-qr-dialog .el-dialog__header {
+  flex: 0 0 auto !important;
+  padding: 16px 24px !important;
+  margin: 0 !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+body.openxnet-ui-redesign-body .el-dialog.fake-qr-dialog .el-dialog__title {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+
+body.openxnet-ui-redesign-body .el-dialog.fake-qr-dialog .el-dialog__body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  padding: 0 !important;
+}
+
+/* shell 容器：4 段竖向布局 + 间距 */
+body.openxnet-ui-redesign-body .fake-qr-shell {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 14px !important;
+  padding: 18px 22px 22px !important;
+  background: var(--ox-bg-base, #f3f5f9) !important;
+}
+
+/* ── 1. Hero 卡 ── */
+body.openxnet-ui-redesign-body .fake-qr-hero {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  padding: 18px 22px !important;
+  border-radius: 16px !important;
+  background:
+    radial-gradient(circle at top right, rgba(91, 163, 197, 0.14), transparent 60%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.92)) !important;
+  border: 1px solid rgba(91, 163, 197, 0.24) !important;
+  box-shadow: 0 8px 22px rgba(91, 163, 197, 0.08) !important;
+  flex-wrap: wrap !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-hero-copy {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  align-self: flex-start !important;
+  padding: 4px 10px !important;
+  border-radius: 999px !important;
+  background: rgba(91, 163, 197, 0.18) !important;
+  color: var(--ox-accent, #5BA3C5) !important;
+  font: 700 11px/1 var(--ox-font-sans, system-ui) !important;
+  letter-spacing: 0.06em !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-head {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-plan {
+  font: 700 18px/1.3 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-price {
+  font: 700 16px/1.2 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-accent, #5BA3C5) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-selection-summary {
+  display: flex !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-selection-chip {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  padding: 8px 14px !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.7) !important;
+  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+  min-width: 110px !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-selection-chip > span {
+  font: 500 10px/1.2 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-selection-chip > strong {
+  font: 600 13px/1.2 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+}
+
+body.openxnet-ui-redesign-body .payment-method-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+
+/* ── 2. Controls 行：加油包积分 / 有效期 + 支付方式 ── */
+body.openxnet-ui-redesign-body .fake-qr-controls {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 14px !important;
+  padding: 14px 18px !important;
+  border-radius: 14px !important;
+  background: var(--ox-bg-surface, #fff) !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-controls > div {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-meta-label,
+body.openxnet-ui-redesign-body .fake-qr-control-label {
+  font: 700 11px/1 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-muted, #64748b) !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-fixed-cycle,
+body.openxnet-ui-redesign-body .fake-qr-fixed-pay-type {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 7px 12px !important;
+  border-radius: 8px !important;
+  background: rgba(241, 245, 249, 0.7) !important;
+  font: 600 13px/1.2 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+  align-self: flex-start !important;
+}
+
+/* ── 3. Status panel ── */
+body.openxnet-ui-redesign-body .fake-qr-status-panel {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  padding: 12px 16px !important;
+  border-radius: 12px !important;
+  background: var(--ox-bg-surface, #fff) !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-status-panel.is-loading {
+  background: rgba(91, 163, 197, 0.06) !important;
+  border-color: rgba(91, 163, 197, 0.32) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-status-panel.is-success {
+  background: rgba(34, 197, 94, 0.08) !important;
+  border-color: rgba(34, 197, 94, 0.32) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-status-panel.is-error,
+body.openxnet-ui-redesign-body .fake-qr-status-panel.is-expired {
+  background: rgba(239, 68, 68, 0.08) !important;
+  border-color: rgba(239, 68, 68, 0.32) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-status-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-status-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 3px 12px !important;
+  border-radius: 999px !important;
+  background: rgba(91, 163, 197, 0.16) !important;
+  color: var(--ox-accent, #5BA3C5) !important;
+  font: 600 11px/1.4 var(--ox-font-sans, system-ui) !important;
+  letter-spacing: 0.04em !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-status-text {
+  font: 500 13px/1.55 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-secondary, #475569) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-status-foot {
+  font: 500 11px/1.4 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+}
+
+/* ── 4. Stage：左边二维码 + 右边订单元信息 ── */
+body.openxnet-ui-redesign-body .fake-qr-stage {
+  display: grid !important;
+  grid-template-columns: minmax(260px, 1fr) minmax(0, 1fr) !important;
+  gap: 18px !important;
+  padding: 16px !important;
+  border-radius: 14px !important;
+  background: var(--ox-bg-surface, #fff) !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-canvas-shell {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  min-height: 240px !important;
+  padding: 16px !important;
+  border: 1px dashed rgba(148, 163, 184, 0.28) !important;
+  border-radius: 12px !important;
+  background: rgba(241, 245, 249, 0.4) !important;
+  position: relative !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-canvas-frame {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 12px !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-canvas-shell #unlock-fake-qr {
+  width: 192px !important;
+  height: 192px !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-canvas-caption {
+  font: 500 11px/1.5 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+  text-align: center !important;
+  max-width: 240px !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-empty-state {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 16px !important;
+  text-align: center !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-empty-state > i {
+  font-size: 26px !important;
+  color: var(--ox-accent, #5BA3C5) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-empty-state.is-warning > i {
+  color: #f59e0b !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-empty-state > strong {
+  font: 700 14px/1.3 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-empty-state > span {
+  font: 500 12px/1.5 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-muted, #64748b) !important;
+  max-width: 240px !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-expired-mask {
+  position: absolute !important;
+  inset: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  border: none !important;
+  background: rgba(15, 23, 42, 0.7) !important;
+  color: #fff !important;
+  font: 600 12px/1.4 var(--ox-font-sans, system-ui) !important;
+  border-radius: 12px !important;
+  cursor: pointer !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-expired-mask > i { font-size: 22px !important; }
+
+/* Meta 列表（订单号 / 状态 / 支付方式 / 订单类型 / 有效期） */
+body.openxnet-ui-redesign-body .fake-qr-meta {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-meta-item {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding: 10px 14px !important;
+  border-radius: 10px !important;
+  background: rgba(241, 245, 249, 0.5) !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-meta-item .fake-qr-meta-label {
+  font: 600 11px/1 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  flex-shrink: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-meta-item .fake-qr-meta-value {
+  font: 600 13px/1.3 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+  text-align: right !important;
+  word-break: break-all !important;
+}
+
+/* ── Upgrade preview ── */
+body.openxnet-ui-redesign-body .fake-qr-upgrade-preview {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  padding: 12px 16px !important;
+  border-radius: 12px !important;
+  background: rgba(91, 163, 197, 0.06) !important;
+  border: 1px solid rgba(91, 163, 197, 0.24) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-upgrade-preview > div {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-upgrade-preview > div > span {
+  font: 500 10px/1 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-upgrade-preview > div > strong {
+  font: 700 14px/1.2 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-accent, #5BA3C5) !important;
+}
+
+/* ── Action row ── */
+body.openxnet-ui-redesign-body .fake-qr-action-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 12px !important;
+  padding-top: 4px !important;
+  flex-wrap: wrap !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-action-row .el-button {
+  height: 36px !important;
+  border-radius: 10px !important;
+  padding: 0 18px !important;
+  font: 500 13px/1 var(--ox-font-sans, system-ui) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-action-hint {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-right: auto !important;
+  padding: 8px 12px !important;
+  border-radius: 999px !important;
+  background: rgba(34, 197, 94, 0.10) !important;
+  color: #16a34a !important;
+  font: 500 12px/1.4 var(--ox-font-sans, system-ui) !important;
+}
+
+body.openxnet-ui-redesign-body .fake-qr-action-hint > i {
+  font-size: 13px !important;
+}
+
+/* processing/partial 时换成蓝色提示 */
+body.openxnet-ui-redesign-body .fake-qr-action-row .fake-qr-action-hint:has(.fa-spinner) {
+  background: rgba(91, 163, 197, 0.10) !important;
+  color: var(--ox-accent, #5BA3C5) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-action-hint,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-action-hint {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #86efac !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-action-row .fake-qr-action-hint:has(.fa-spinner),
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-action-row .fake-qr-action-hint:has(.fa-spinner) {
+  background: rgba(91, 163, 197, 0.22) !important;
+  color: #93c5fd !important;
+}
+
+/* ── Responsive ── */
+@media (max-width: 720px) {
+  body.openxnet-ui-redesign-body .fake-qr-hero {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  body.openxnet-ui-redesign-body .fake-qr-controls {
+    grid-template-columns: 1fr !important;
+  }
+  body.openxnet-ui-redesign-body .fake-qr-stage {
+    grid-template-columns: 1fr !important;
+  }
+  body.openxnet-ui-redesign-body .fake-qr-upgrade-preview {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* ── Dark theme ── */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.fake-qr-dialog,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.fake-qr-dialog {
+  background: rgba(15, 23, 42, 0.96) !important;
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-shell,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-shell {
+  background: rgba(15, 23, 42, 0.96) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-hero,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-hero {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.88)) !important;
+  border-color: rgba(91, 163, 197, 0.32) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-plan,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-plan,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-empty-state > strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-empty-state > strong,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-meta-item .fake-qr-meta-value,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-meta-item .fake-qr-meta-value,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-selection-chip > strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-selection-chip > strong,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-fixed-cycle,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-fixed-cycle,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-fixed-pay-type,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-fixed-pay-type {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-controls,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-controls,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-status-panel,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-status-panel,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-stage,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-stage {
+  background: rgba(30, 41, 59, 0.78) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-canvas-shell,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-canvas-shell {
+  background: rgba(15, 23, 42, 0.5) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-meta-item,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-meta-item,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-fixed-cycle,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-fixed-cycle,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-fixed-pay-type,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-fixed-pay-type,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-selection-chip,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-selection-chip {
+  background: rgba(15, 23, 42, 0.5) !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .fake-qr-status-text,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .fake-qr-status-text {
+  color: #cbd5e1 !important;
+}
+
+/* =========================================================
+   9. 个人中心 · 套餐额度面板：刷新按钮 + 渐变进度条 +
+   永久积分 / 赠送积分 进度条
+   ========================================================= */
+
+/* 替换原有同步徽章：刷新按钮 */
+body.openxnet-ui-redesign-body .access-usage-refresh {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  height: 28px !important;
+  padding: 0 12px !important;
+  border: 1px solid rgba(91, 163, 197, 0.32) !important;
+  border-radius: 999px !important;
+  background: rgba(91, 163, 197, 0.08) !important;
+  color: var(--ox-accent, #5BA3C5) !important;
+  font: 600 11px/1 var(--ox-font-sans, system-ui) !important;
+  cursor: pointer !important;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease !important;
+}
+
+body.openxnet-ui-redesign-body .access-usage-refresh:hover:not(:disabled) {
+  background: rgba(91, 163, 197, 0.18) !important;
+  border-color: var(--ox-accent, #5BA3C5) !important;
+  transform: translateY(-1px) !important;
+}
+
+body.openxnet-ui-redesign-body .access-usage-refresh:disabled {
+  opacity: 0.6 !important;
+  cursor: wait !important;
+}
+
+body.openxnet-ui-redesign-body .access-usage-refresh > i {
+  font-size: 11px !important;
+}
+
+/* 单独一行的额度（套餐 / 永久 / 赠送） */
+body.openxnet-ui-redesign-body .access-quota-row {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  margin-top: 8px !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-row__label {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-row__label > span {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font: 500 11px/1.3 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-muted, #64748b) !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-row__label > span > i {
+  font-size: 11px !important;
+  color: var(--ox-accent, #5BA3C5) !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-row__label > strong {
+  font: 700 13px/1.2 var(--ox-font-mono, 'JetBrains Mono', monospace) !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-row__label > strong > small {
+  font: 500 11px/1.2 var(--ox-font-mono, monospace) !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+  margin-left: 2px !important;
+}
+
+/* 进度条容器：圆角灰底 */
+body.openxnet-ui-redesign-body .access-quota-bar {
+  position: relative !important;
+  width: 100% !important;
+  height: 8px !important;
+  border-radius: 999px !important;
+  background: rgba(148, 163, 184, 0.20) !important;
+  overflow: hidden !important;
+}
+
+/* 渐变填充 —— 颜色由 inline `style` 注入（getAccessQuotaGradientStyle）
+   这里只负责圆角 + 入场动画 */
+body.openxnet-ui-redesign-body .access-quota-bar__fill {
+  height: 100% !important;
+  border-radius: 999px !important;
+  transition:
+    width 480ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    background 320ms ease,
+    box-shadow 320ms ease !important;
+  min-width: 4px !important;
+}
+
+/* 永久 / 赠送积分的小行（标签前面带图标） */
+body.openxnet-ui-redesign-body .access-quota-credit-rows {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  margin-top: 2px !important;
+  padding-top: 6px !important;
+  border-top: 1px dashed rgba(148, 163, 184, 0.24) !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-row--credit {
+  margin-top: 4px !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-row--credit .access-quota-bar {
+  height: 6px !important;
+}
+
+/* 暗色主题 */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .access-usage-refresh,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .access-usage-refresh {
+  background: rgba(91, 163, 197, 0.18) !important;
+  border-color: rgba(91, 163, 197, 0.42) !important;
+  color: #93c5fd !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .access-usage-refresh:hover:not(:disabled),
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .access-usage-refresh:hover:not(:disabled) {
+  background: rgba(91, 163, 197, 0.28) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .access-quota-row__label > strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .access-quota-row__label > strong {
+  color: #f1f5f9 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .access-quota-row__label > span,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .access-quota-row__label > span {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .access-quota-bar,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .access-quota-bar {
+  background: rgba(148, 163, 184, 0.22) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .access-quota-credit-rows,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .access-quota-credit-rows {
+  border-top-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+/* —— 套餐 + 赠送 拆分明细两列 —— */
+body.openxnet-ui-redesign-body .access-quota-split {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  margin-top: 8px !important;
+  padding-top: 8px !important;
+  border-top: 1px dashed rgba(148, 163, 184, 0.24) !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-split-item {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 6px !important;
+  flex-wrap: wrap !important;
+  padding: 8px 10px !important;
+  border-radius: 10px !important;
+  background: rgba(241, 245, 249, 0.5) !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-split-item__label {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  font: 500 11px/1.2 var(--ox-font-sans, system-ui) !important;
+  color: var(--ox-text-muted, #64748b) !important;
+  flex-basis: 100% !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-split-item--plan .access-quota-split-item__label > i {
+  color: var(--ox-accent, #5BA3C5) !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-split-item--bonus .access-quota-split-item__label > i {
+  color: #f59e0b !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-split-item > strong {
+  font: 700 14px/1.2 var(--ox-font-mono, 'JetBrains Mono', monospace) !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+}
+
+body.openxnet-ui-redesign-body .access-quota-split-item > small {
+  font: 500 11px/1.2 var(--ox-font-mono, monospace) !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+}
+
+/* —— 永久积分独立卡 —— */
+body.openxnet-ui-redesign-body .personal-center-topup-panel {
+  margin-top: 10px !important;
+  border: 1px solid rgba(245, 158, 11, 0.32) !important;
+  background:
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.10), transparent 60%),
+    rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.06) !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-topup-panel .access-usage-kicker {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  color: #b45309 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-topup-panel .access-usage-kicker > i {
+  color: #d97706 !important;
+}
+
+body.openxnet-ui-redesign-body .personal-center-topup-panel .access-quota-row__label > span > i {
+  color: #d97706 !important;
+}
+
+body.openxnet-ui-redesign-body .access-usage-permanent-tag {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 3px 10px !important;
+  border-radius: 999px !important;
+  background: rgba(245, 158, 11, 0.14) !important;
+  color: #b45309 !important;
+  font: 600 11px/1.4 var(--ox-font-sans, system-ui) !important;
+  letter-spacing: 0.04em !important;
+}
+
+/* 暗色主题：拆分明细 + 永久积分卡 */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .access-quota-split-item,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .access-quota-split-item {
+  background: rgba(15, 23, 42, 0.5) !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .access-quota-split-item > strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .access-quota-split-item > strong {
+  color: #f1f5f9 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .access-quota-split,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .access-quota-split {
+  border-top-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-topup-panel,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-topup-panel {
+  background:
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.18), transparent 60%),
+    rgba(30, 41, 59, 0.78) !important;
+  border-color: rgba(245, 158, 11, 0.42) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-topup-panel .access-usage-kicker,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-topup-panel .access-usage-kicker {
+  color: #fed7aa !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .access-usage-permanent-tag,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .access-usage-permanent-tag {
+  background: rgba(245, 158, 11, 0.22) !important;
+  color: #fed7aa !important;
+}
+
+/* ════════════════════════════════════════════════════════════
+   登录 Dialog 左面板：暗色主题完整覆盖
+   （3+/9/3 数字卡 / 3 个 benefit-item / OPENXNET ACCESS chip / footer 信息卡）
+   ⚠️ 关键：登录弹窗的根 class 是 `.login-entry-dialog`（不是 `.unlock-dialog`！）
+   之前所有规则都写成 `.el-dialog.unlock-dialog .login-entry-*`，所以一条都没生效。
+   订阅中心 (.unlock-dialog) 里没有 .login-entry-* 元素，本来就不需要这些规则。
+   ════════════════════════════════════════════════════════════ */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-hero-panel,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-hero-panel,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-hero-panel,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-hero-panel {
+  background: rgba(15, 23, 42, 0.55) !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+  color: #E6EDF6 !important;
+}
+
+/* OPENXNET ACCESS chip：登录弹窗 + 订阅弹窗都有 .unlock-dialog-kicker */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .unlock-dialog-kicker,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .unlock-dialog-kicker,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .unlock-dialog-kicker,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .unlock-dialog-kicker,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-dialog-kicker,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-dialog-kicker,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-dialog-kicker,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-dialog-kicker {
+  background: rgba(91, 163, 197, 0.18) !important;
+  color: #93C5FD !important;
+  border-color: rgba(71, 85, 105, 0.45) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-copy h3,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-copy h3 {
+  color: #E6EDF6 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-copy p,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-copy p {
+  color: #94A3B8 !important;
+}
+
+/* 3+/9/3 数字卡 */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-metric,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-metric,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-metric,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-metric {
+  background: rgba(30, 41, 59, 0.7) !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+  color: #E6EDF6 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-metric-value,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-metric-value {
+  color: #93C5FD !important;
+  text-shadow: 0 0 14px rgba(91, 163, 197, 0.35);
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-metric-label,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-metric-label {
+  color: #94A3B8 !important;
+}
+
+/* 3 个 benefit bar */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-benefit-item,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-benefit-item,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-benefit-item,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-benefit-item {
+  background: rgba(30, 41, 59, 0.7) !important;
+  border: 1px solid rgba(71, 85, 105, 0.4) !important;
+  color: #CBD5E1 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-benefit-item i,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-benefit-item i {
+  color: #93C5FD !important;
+}
+
+/* footer 信息卡 + 注册步骤 stepper */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-register-step,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-register-step,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog [class*="login-entry-footer"],
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog [class*="login-entry-footer"] {
+  background: rgba(30, 41, 59, 0.6) !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+  color: #CBD5E1 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-register-step strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-register-step strong {
+  color: #E6EDF6 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-register-step span,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-register-step span {
+  color: #94A3B8 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-register-step-index,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-register-step-index {
+  background: rgba(91, 163, 197, 0.18) !important;
+  color: #93C5FD !important;
+}
+
+/* 登录 Dialog form panel + 输入框 + 主按钮 暗色 */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-form-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-form-card {
+  background: rgba(15, 23, 42, 0.6) !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+  box-shadow: 0 22px 40px rgba(0, 0, 0, 0.32) !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .el-input__wrapper,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .el-input__wrapper {
+  background: rgba(30, 41, 59, 0.7) !important;
+  box-shadow: inset 0 0 0 1px rgba(71, 85, 105, 0.4) !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .el-input__inner,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .el-input__inner {
+  color: #E6EDF6 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .el-form-item__label,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .el-form-item__label,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-form-title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.login-entry-dialog .login-entry-form-title {
+  color: #E6EDF6 !important;
+}
+
+/* ════════════════════════════════════════════════════════════
+   个人中心暗色补强：3 个状态卡 + 套餐进度条 + 加油包 + badge row
+   ════════════════════════════════════════════════════════════ */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-hero {
+  background: rgba(15, 23, 42, 0.55) !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card {
+  background: rgba(30, 41, 59, 0.78) !important;
+  border-color: rgba(71, 85, 105, 0.45) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card span,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card span {
+  color: #94A3B8 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-status-card strong {
+  color: #E6EDF6 !important;
+}
+
+/* 套餐进度条 panel + 加油包 panel + 子卡 */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .access-usage-panel,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .access-usage-panel,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-topup-panel,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-topup-panel,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .access-usage-stat,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .access-usage-stat {
+  background: rgba(30, 41, 59, 0.6) !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .access-usage-stat span,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .access-usage-stat span,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-topup-panel span,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-topup-panel span { color: #94A3B8 !important; }
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .access-usage-stat strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .access-usage-stat strong,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-topup-panel strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-topup-panel strong { color: #E6EDF6 !important; }
+
+/* 右侧 2 个 action tile（订阅高级模型 / 进入企业空间）*/
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile {
+  background: rgba(30, 41, 59, 0.7) !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+  color: #E6EDF6 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile strong { color: #E6EDF6 !important; }
+html[data-theme="dark"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile span,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .personal-center-dialog .personal-center-action-tile span { color: #94A3B8 !important; }
+
+/* ════════════════════════════════════════════════════════════
+   订阅中心：替换居中 spinner → dialog 顶端的进度条 + 右上角胶囊
+   ⚠️ 关键：必须挂在 .el-dialog 上（不滚动），不能挂在 .el-dialog__body 上（滚动容器内的 ::before/::after sticky 受 DOM 顺序限制，::after 永远在最末尾，根本看不到）。
+   ════════════════════════════════════════════════════════════ */
+
+/* 隐藏默认 element-plus 居中 spinner */
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-loading-spinner {
+  display: none !important;
+}
+/* 半透明遮罩仍然保留以阻止交互，但要透明一些 */
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-loading-mask {
+  background: rgba(255, 255, 255, 0.10) !important;
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-loading-mask,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-loading-mask {
+  background: rgba(15, 23, 42, 0.30) !important;
+}
+
+/* dialog 顶端进度条：放在 .el-dialog 上而不是 body 上，
+   .el-dialog 不滚动 + 已经 position:relative，所以 absolute 子元素相对它定位，
+   滚动 dialog 内容时进度条始终可见。 */
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog::before {
+  content: '';
+  position: absolute;
+  /* header 高度约 56px（padding 16+16 + line-height 24） */
+  top: 56px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  display: block;
+  z-index: 5;
+  background: linear-gradient(90deg, transparent, var(--ox-accent, #5BA3C5), transparent);
+  background-size: 200% 100%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+/* 当 v-loading 注入了 .el-loading-mask 时，:has() 触发显示 + 流光 */
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog:has(.el-loading-mask)::before {
+  opacity: 1;
+  animation: oxn-progress-shine 1.4s linear infinite;
+}
+@keyframes oxn-progress-shine {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* 右上角加载胶囊：absolute 挂在 .el-dialog 上，永远可见 */
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog::after {
+  content: '加载中…';
+  position: absolute;
+  top: 14px;
+  right: 56px; /* 让出关闭按钮 (.el-dialog__headerbtn) */
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(91, 163, 197, 0.95);
+  color: #FFFFFF;
+  font: 600 11px/1.2 var(--ox-font-sans, system-ui);
+  letter-spacing: 0.04em;
+  box-shadow: 0 6px 18px rgba(91, 163, 197, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+  z-index: 6;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+  pointer-events: none;
+  transition: opacity 240ms ease, transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+body.openxnet-ui-redesign-body .el-dialog.unlock-dialog:has(.el-loading-mask)::after {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* 英语环境改一下文案 */
+html[lang="en"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog::after,
+body[data-lang="en"] .el-dialog.unlock-dialog::after {
+  content: 'Loading…';
+}
+
+/* ════════════════════════════════════════════════════════════
+   订阅卡价格 + 价格说明：暗色下统一颜色（之前 price #f8fafc / note #cbd5e1
+   两个色阶都偏冷淡，价格说明看不清）。统一成天蓝 #93C5FD —— 与全局 accent
+   一致，价格保留粗体字 + 微光，副文案保留同色但弱化字重，层级靠字号区分。
+   ════════════════════════════════════════════════════════════ */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-plan-price,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-plan-price,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-plan-price,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-plan-price,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-plan-price-note,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-plan-price-note,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-plan-price-note,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-plan-price-note {
+  color: #93C5FD !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-plan-price,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .unlock-plan-price {
+  text-shadow: 0 0 12px rgba(91, 163, 197, 0.30);
+}
+
+/* ════════════════════════════════════════════════════════════
+   入门向导 (Setup Wizard) —— 独立 dialog，5 步式流程
+   ════════════════════════════════════════════════════════════ */
+.el-dialog.setup-wizard-dialog {
+  border-radius: 22px !important;
+  overflow: hidden !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22) !important;
+  background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%) !important;
+}
+.setup-wizard-dialog .el-dialog__header {
+  padding: 0 !important;
+  margin: 0 !important;
+  border-bottom: 1px solid rgba(91, 163, 197, 0.18) !important;
+}
+.setup-wizard-dialog .el-dialog__body {
+  padding: 24px 28px !important;
+  min-height: 320px;
+}
+.setup-wizard-dialog .el-dialog__footer {
+  padding: 16px 24px !important;
+  border-top: 1px solid rgba(91, 163, 197, 0.12) !important;
+  background: rgba(248, 250, 252, 0.7);
+}
+
+.setup-wizard-header {
+  padding: 24px 28px 16px;
+  background: linear-gradient(135deg, rgba(91, 163, 197, 0.10), rgba(91, 163, 197, 0.04));
+}
+.setup-wizard-header__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.setup-wizard-header__title i {
+  font-size: 22px;
+  color: #5BA3C5;
+}
+.setup-wizard-header__title h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1E293B;
+  letter-spacing: -0.01em;
+}
+.setup-wizard-header__subtitle {
+  margin: 0 0 16px;
+  color: #64748B;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.setup-wizard-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.setup-wizard-stepper__dot {
+  flex: 1 1 0;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.25);
+  position: relative;
+  transition: background 220ms ease;
+}
+.setup-wizard-stepper__dot span { display: none; }
+.setup-wizard-stepper__dot.is-active {
+  background: linear-gradient(90deg, #5BA3C5, #7BB8D4);
+  box-shadow: 0 0 0 3px rgba(91, 163, 197, 0.18);
+}
+.setup-wizard-stepper__dot.is-done {
+  background: #5BA3C5;
+}
+
+.setup-wizard-step {
+  animation: setupWizardFade 280ms ease both;
+}
+.setup-wizard-step h3 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #1E293B;
+}
+.setup-wizard-step__lead {
+  margin: 0 0 16px;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.setup-wizard-step__lead code {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(91, 163, 197, 0.10);
+  color: #4A93B8;
+}
+@keyframes setupWizardFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Step 1 feature list */
+.setup-wizard-feature-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  gap: 8px;
+}
+.setup-wizard-feature-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(91, 163, 197, 0.06);
+  border: 1px solid rgba(91, 163, 197, 0.12);
+  color: #1E293B;
+  font-size: 13px;
+}
+.setup-wizard-feature-list li i {
+  color: #5BA3C5;
+  width: 16px;
+  text-align: center;
+}
+
+/* Step 2 vendor grid */
+.setup-wizard-vendor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.setup-wizard-vendor-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 8px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(148, 163, 184, 0.25);
+  background: #FFFFFF;
+  cursor: pointer;
+  transition: all 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  font: 500 12px/1.3 var(--ox-font-sans, system-ui);
+  color: #475569;
+}
+.setup-wizard-vendor-card:hover {
+  border-color: rgba(91, 163, 197, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(91, 163, 197, 0.12);
+}
+.setup-wizard-vendor-card.is-selected {
+  border-color: #5BA3C5;
+  background: linear-gradient(135deg, rgba(91, 163, 197, 0.10), rgba(91, 163, 197, 0.04));
+  box-shadow: 0 0 0 3px rgba(91, 163, 197, 0.18);
+  color: #1E293B;
+}
+.setup-wizard-vendor-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.02);
+}
+.setup-wizard-vendor-logo--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #5BA3C5;
+  background: rgba(91, 163, 197, 0.10);
+}
+.setup-wizard-vendor-name {
+  font-weight: 600;
+  text-align: center;
+  word-break: break-word;
+}
+
+.setup-wizard-custom-url {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.setup-wizard-custom-url label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  letter-spacing: 0.02em;
+}
+
+.setup-wizard-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(91, 163, 197, 0.06);
+  border: 1px solid rgba(91, 163, 197, 0.18);
+  color: #4A93B8;
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin-top: 10px;
+}
+.setup-wizard-hint i {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.setup-wizard-hint code {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 11.5px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.6);
+}
+.setup-wizard-hint a {
+  color: #5BA3C5;
+  font-weight: 600;
+}
+.setup-wizard-hint--muted {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: rgba(148, 163, 184, 0.18);
+  color: #64748B;
+}
+
+/* Step 3 input */
+.setup-wizard-apikey-input {
+  margin-bottom: 4px;
+}
+
+/* Step 4 model row */
+.setup-wizard-model-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  margin-bottom: 12px;
+}
+.setup-wizard-model-select {
+  flex: 1 1 auto;
+}
+.setup-wizard-model-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.setup-wizard-model-chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(91, 163, 197, 0.28);
+  background: rgba(91, 163, 197, 0.06);
+  color: #4A93B8;
+  font: 500 11.5px/1 var(--ox-font-sans, system-ui);
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+.setup-wizard-model-chip:hover {
+  background: rgba(91, 163, 197, 0.14);
+}
+.setup-wizard-model-chip.is-active {
+  background: #5BA3C5;
+  color: #FFFFFF;
+  border-color: #5BA3C5;
+}
+
+/* Step 5 done */
+.setup-wizard-step--done {
+  text-align: center;
+  padding: 12px 0;
+}
+.setup-wizard-done-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.18), rgba(34, 197, 94, 0.08));
+  margin-bottom: 14px;
+  animation: setupWizardDonePulse 1.6s ease-in-out infinite;
+}
+.setup-wizard-done-icon i {
+  font-size: 36px;
+  color: #22C55E;
+}
+@keyframes setupWizardDonePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.30); }
+  50%      { box-shadow: 0 0 0 12px rgba(34, 197, 94, 0); }
+}
+.setup-wizard-step--done .setup-wizard-step__lead strong {
+  color: #5BA3C5;
+  font-weight: 700;
+}
+
+/* Footer 布局 */
+.setup-wizard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.setup-wizard-footer__main {
+  display: flex;
+  gap: 8px;
+}
+
+/* ─────── Dark / Midnight / Neon / Ink 主题适配 ─────── */
+html[data-theme="dark"] .el-dialog.setup-wizard-dialog,
+html[data-theme="midnight"] .el-dialog.setup-wizard-dialog,
+html[data-theme="neon"] .el-dialog.setup-wizard-dialog,
+html[data-theme="ink"] .el-dialog.setup-wizard-dialog {
+  background: linear-gradient(180deg, #0F172A 0%, #172033 100%) !important;
+  border: 1px solid rgba(71, 85, 105, 0.4) !important;
+}
+html[data-theme="dark"] .setup-wizard-dialog .el-dialog__header,
+html[data-theme="midnight"] .setup-wizard-dialog .el-dialog__header,
+html[data-theme="neon"] .setup-wizard-dialog .el-dialog__header,
+html[data-theme="ink"] .setup-wizard-dialog .el-dialog__header {
+  border-bottom-color: rgba(91, 163, 197, 0.25) !important;
+}
+html[data-theme="dark"] .setup-wizard-dialog .el-dialog__footer,
+html[data-theme="midnight"] .setup-wizard-dialog .el-dialog__footer,
+html[data-theme="neon"] .setup-wizard-dialog .el-dialog__footer,
+html[data-theme="ink"] .setup-wizard-dialog .el-dialog__footer {
+  background: rgba(15, 23, 42, 0.6) !important;
+  border-top-color: rgba(91, 163, 197, 0.2) !important;
+}
+html[data-theme="dark"] .setup-wizard-header,
+html[data-theme="midnight"] .setup-wizard-header,
+html[data-theme="neon"] .setup-wizard-header,
+html[data-theme="ink"] .setup-wizard-header {
+  background: linear-gradient(135deg, rgba(91, 163, 197, 0.18), rgba(91, 163, 197, 0.06));
+}
+html[data-theme="dark"] .setup-wizard-header__title h2,
+html[data-theme="midnight"] .setup-wizard-header__title h2,
+html[data-theme="neon"] .setup-wizard-header__title h2,
+html[data-theme="ink"] .setup-wizard-header__title h2 { color: #E6EDF6; }
+html[data-theme="dark"] .setup-wizard-header__title i,
+html[data-theme="midnight"] .setup-wizard-header__title i { color: #93C5FD; }
+html[data-theme="dark"] .setup-wizard-header__subtitle,
+html[data-theme="midnight"] .setup-wizard-header__subtitle,
+html[data-theme="neon"] .setup-wizard-header__subtitle,
+html[data-theme="ink"] .setup-wizard-header__subtitle { color: #94A3B8; }
+html[data-theme="dark"] .setup-wizard-step h3,
+html[data-theme="midnight"] .setup-wizard-step h3,
+html[data-theme="neon"] .setup-wizard-step h3,
+html[data-theme="ink"] .setup-wizard-step h3 { color: #E6EDF6; }
+html[data-theme="dark"] .setup-wizard-step__lead,
+html[data-theme="midnight"] .setup-wizard-step__lead,
+html[data-theme="neon"] .setup-wizard-step__lead,
+html[data-theme="ink"] .setup-wizard-step__lead { color: #CBD5E1; }
+html[data-theme="dark"] .setup-wizard-step__lead code,
+html[data-theme="midnight"] .setup-wizard-step__lead code {
+  background: rgba(91, 163, 197, 0.20);
+  color: #93C5FD;
+}
+html[data-theme="dark"] .setup-wizard-feature-list li,
+html[data-theme="midnight"] .setup-wizard-feature-list li {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(71, 85, 105, 0.4);
+  color: #E6EDF6;
+}
+html[data-theme="dark"] .setup-wizard-feature-list li i,
+html[data-theme="midnight"] .setup-wizard-feature-list li i { color: #93C5FD; }
+html[data-theme="dark"] .setup-wizard-vendor-card,
+html[data-theme="midnight"] .setup-wizard-vendor-card,
+html[data-theme="neon"] .setup-wizard-vendor-card,
+html[data-theme="ink"] .setup-wizard-vendor-card {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(71, 85, 105, 0.4);
+  color: #CBD5E1;
+}
+html[data-theme="dark"] .setup-wizard-vendor-card.is-selected,
+html[data-theme="midnight"] .setup-wizard-vendor-card.is-selected {
+  background: linear-gradient(135deg, rgba(91, 163, 197, 0.22), rgba(91, 163, 197, 0.08));
+  border-color: #93C5FD;
+  color: #E6EDF6;
+}
+html[data-theme="dark"] .setup-wizard-vendor-logo--icon,
+html[data-theme="midnight"] .setup-wizard-vendor-logo--icon {
+  background: rgba(91, 163, 197, 0.20);
+  color: #93C5FD;
+}
+html[data-theme="dark"] .setup-wizard-hint,
+html[data-theme="midnight"] .setup-wizard-hint,
+html[data-theme="neon"] .setup-wizard-hint,
+html[data-theme="ink"] .setup-wizard-hint {
+  background: rgba(91, 163, 197, 0.15);
+  border-color: rgba(91, 163, 197, 0.3);
+  color: #93C5FD;
+}
+html[data-theme="dark"] .setup-wizard-hint code,
+html[data-theme="midnight"] .setup-wizard-hint code {
+  background: rgba(15, 23, 42, 0.5);
+  color: #BFDBFE;
+}
+html[data-theme="dark"] .setup-wizard-hint--muted,
+html[data-theme="midnight"] .setup-wizard-hint--muted,
+html[data-theme="neon"] .setup-wizard-hint--muted,
+html[data-theme="ink"] .setup-wizard-hint--muted {
+  background: rgba(71, 85, 105, 0.25);
+  border-color: rgba(71, 85, 105, 0.35);
+  color: #94A3B8;
+}
+html[data-theme="dark"] .setup-wizard-model-chip,
+html[data-theme="midnight"] .setup-wizard-model-chip {
+  background: rgba(91, 163, 197, 0.14);
+  border-color: rgba(91, 163, 197, 0.3);
+  color: #93C5FD;
+}
+html[data-theme="dark"] .setup-wizard-model-chip.is-active,
+html[data-theme="midnight"] .setup-wizard-model-chip.is-active {
+  background: #5BA3C5;
+  color: #FFFFFF;
+}
+html[data-theme="dark"] .setup-wizard-step--done .setup-wizard-step__lead strong,
+html[data-theme="midnight"] .setup-wizard-step--done .setup-wizard-step__lead strong { color: #93C5FD; }
+
+/* ════════ 信息浏览版新增元素 ════════ */
+.setup-wizard-slide-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, rgba(91, 163, 197, 0.16), rgba(91, 163, 197, 0.06));
+  color: #5BA3C5;
+  font-size: 24px;
+  box-shadow: 0 4px 16px rgba(91, 163, 197, 0.18);
+}
+.setup-wizard-nav-groups {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.setup-wizard-nav-group {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(91, 163, 197, 0.06);
+  border: 1px solid rgba(91, 163, 197, 0.14);
+}
+.setup-wizard-nav-group strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1E293B;
+}
+.setup-wizard-nav-group strong i {
+  color: #5BA3C5;
+  width: 14px;
+  text-align: center;
+}
+.setup-wizard-nav-group span {
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.5;
+}
+.setup-wizard-jump-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.setup-wizard-jump-hint {
+  font-size: 11.5px;
+  color: #94A3B8;
+}
+.setup-wizard-step__lead--muted {
+  color: #64748B;
+  font-size: 12.5px;
+}
+
+/* 暗色适配 */
+html[data-theme="dark"] .setup-wizard-slide-icon,
+html[data-theme="midnight"] .setup-wizard-slide-icon,
+html[data-theme="neon"] .setup-wizard-slide-icon,
+html[data-theme="ink"] .setup-wizard-slide-icon {
+  background: linear-gradient(135deg, rgba(91, 163, 197, 0.25), rgba(91, 163, 197, 0.10));
+  color: #93C5FD;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32);
+}
+html[data-theme="dark"] .setup-wizard-nav-group,
+html[data-theme="midnight"] .setup-wizard-nav-group,
+html[data-theme="neon"] .setup-wizard-nav-group,
+html[data-theme="ink"] .setup-wizard-nav-group {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: rgba(91, 163, 197, 0.25);
+}
+html[data-theme="dark"] .setup-wizard-nav-group strong,
+html[data-theme="midnight"] .setup-wizard-nav-group strong { color: #E6EDF6; }
+html[data-theme="dark"] .setup-wizard-nav-group strong i,
+html[data-theme="midnight"] .setup-wizard-nav-group strong i { color: #93C5FD; }
+html[data-theme="dark"] .setup-wizard-nav-group span,
+html[data-theme="midnight"] .setup-wizard-nav-group span { color: #CBD5E1; }
+html[data-theme="dark"] .setup-wizard-jump-hint,
+html[data-theme="midnight"] .setup-wizard-jump-hint { color: #64748B; }
+html[data-theme="dark"] .setup-wizard-step__lead--muted,
+html[data-theme="midnight"] .setup-wizard-step__lead--muted,
+html[data-theme="neon"] .setup-wizard-step__lead--muted,
+html[data-theme="ink"] .setup-wizard-step__lead--muted { color: #94A3B8; }

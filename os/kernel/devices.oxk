@@ -1,0 +1,421 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Device Abstraction Layer
+-- LLM endpoints, tool registries, MCP servers, hot-plug
+
+module Devices {|
+
+  requires :: [:ipc, :policy, :signals]
+  version :: "0.1.0"
+
+  -- Device categories
+  enum DeviceCategory {|
+    :LLMEndpoint     -- language model API (Claude, GPT, local)
+    :ToolRegistry    -- external tool providers
+    :MCPServer       -- Model Context Protocol servers
+    :StorageBackend  -- file/object storage
+    :NetworkAdapter  -- HTTP, WebSocket, SSE adapters
+    :Sensor          -- input devices (clipboard, screen, mic)
+    :Actuator        -- output devices (display, notifications)
+  |}
+
+  -- Device lifecycle states
+  enum DeviceState {|
+    :Discovered    -- detected but not initialized
+    :Initializing  -- driver loading / handshake
+    :Ready         -- available for use
+    :Busy          -- currently processing a request
+    :Degraded      -- operational but with reduced capability
+    :Error         -- failed, may recover
+    :Disconnected  -- removed or unreachable
+    :Suspended     -- manually paused
+  |}
+
+  -- Device health
+  enum HealthStatus {|
+    :Healthy
+    :Warning
+    :Critical
+    :Unknown
+  |}
+
+  -- Device descriptor
+  struct Device {|
+    id :: DeviceId
+    name :: String
+    category :: DeviceCategory
+    state :: DeviceState
+    health :: HealthStatus
+    driver :: Symbol               -- handler module
+    endpoint :: String             -- connection URI
+    capabilities :: List[String]   -- what the device can do
+    config :: Map[String, Any]
+    last_heartbeat :: Timestamp
+    latency_ms :: Float64          -- average response time
+    error_count :: UInt32
+    total_invocations :: UInt64
+    registered_at :: Timestamp
+    version :: String
+    metadata :: Map[String, Any]
+  |}
+
+  -- Device invocation request
+  struct DeviceRequest {|
+    id :: UInt64
+    device_id :: DeviceId
+    caller_pid :: UInt32
+    method :: String
+    params :: Map[String, Any]
+    timeout :: Duration
+    priority :: UInt8
+    timestamp :: Timestamp
+  |}
+
+  -- Device invocation response
+  struct DeviceResponse {|
+    request_id :: UInt64
+    device_id :: DeviceId
+    status :: Symbol             -- :ok, :error, :timeout
+    result :: Option[Any]
+    error :: Option[String]
+    latency :: Duration
+    timestamp :: Timestamp
+  |}
+
+  -- Configuration
+  config DeviceConfig {|
+    max_devices :: 256
+    heartbeat_interval :: 10s
+    heartbeat_timeout :: 30s
+    max_retries :: 3
+    retry_backoff :: 1s
+    request_timeout_default :: 30s
+    max_concurrent_requests :: 64
+    hot_plug_scan_interval :: 5s
+    health_check_interval :: 15s
+    error_threshold :: 5           -- errors before marking :Error
+    latency_window :: 100          -- samples for avg latency
+  |}
+
+  -- State
+  state device_registry :: Map[DeviceId, Device] = Map.empty()
+  state next_device_id :: DeviceId = 1
+  state next_request_id :: UInt64 = 1
+  state pending_requests :: Map[UInt64, DeviceRequest] = Map.empty()
+  state device_queues :: Map[DeviceId, Queue[DeviceRequest]] = Map.empty()
+  state hot_plug_listeners :: List[UInt32] = []
+
+  -- Register a new device
+  syscall register_device(name :: String, category :: DeviceCategory,
+                          endpoint :: String,
+                          config :: Map[String, Any]) -> Result[DeviceId, Error] {|
+    if Map.size(device_registry) >= DeviceConfig.max_devices {|
+      return Err(:DeviceLimitReached)
+    |}
+
+    let id = next_device_id
+    next_device_id = next_device_id + 1
+
+    let device = Device {|
+      id :: id
+      name :: name
+      category :: category
+      state :: :Discovered
+      health :: :Unknown
+      driver :: resolve_driver(category)
+      endpoint :: endpoint
+      capabilities :: []
+      config :: config
+      last_heartbeat :: now()
+      latency_ms :: 0.0
+      error_count :: 0
+      total_invocations :: 0
+      registered_at :: now()
+      version :: "unknown"
+      metadata :: Map.empty()
+    |}
+
+    device_registry = Map.insert(device_registry, id, device)
+    device_queues = Map.insert(device_queues, id, Queue.empty())
+
+    emit :DeviceRegistered with {| id :: id, name :: name, category :: category |}
+
+    -- Begin initialization
+    invoke initialize_device(id)
+    return Ok(id)
+  |}
+
+  -- Initialize a device (handshake, capability discovery)
+  service initialize_device(device_id :: DeviceId) -> Void {|
+    match Map.get(device_registry, device_id) {|
+      Some(dev) -> {|
+        let updated = dev with {| state :: :Initializing |}
+        device_registry = Map.insert(device_registry, device_id, updated)
+
+        -- Attempt connection and capability discovery
+        let init_result = match dev.category {|
+          :LLMEndpoint -> invoke init_llm_endpoint(dev)
+          :MCPServer   -> invoke init_mcp_server(dev)
+          :ToolRegistry -> invoke init_tool_registry(dev)
+          _            -> invoke init_generic_device(dev)
+        |}
+
+        match init_result {|
+          Ok(capabilities, version) -> {|
+            let ready = updated with {|
+              state :: :Ready
+              health :: :Healthy
+              capabilities :: capabilities
+              version :: version
+              last_heartbeat :: now()
+            |}
+            device_registry = Map.insert(device_registry, device_id, ready)
+            emit :DeviceReady with {| id :: device_id, capabilities :: capabilities |}
+
+            -- Notify hot-plug listeners
+            for listener_pid in hot_plug_listeners {|
+              signal :SIGIO to listener_pid with {|
+                event :: :device_ready, device_id :: device_id
+              |}
+            |}
+          |}
+          Err(reason) -> {|
+            let errored = updated with {|
+              state :: :Error
+              health :: :Critical
+              error_count :: dev.error_count + 1
+            |}
+            device_registry = Map.insert(device_registry, device_id, errored)
+            emit :DeviceInitFailed with {| id :: device_id, reason :: reason |}
+          |}
+        |}
+      |}
+      None -> ()
+    |}
+  |}
+
+  -- Invoke a method on a device
+  syscall invoke_device(device_id :: DeviceId, method :: String,
+                        params :: Map[String, Any]) -> Result[DeviceResponse, Error] {|
+    match Map.get(device_registry, device_id) {|
+      Some(dev) -> {|
+        if dev.state != :Ready and dev.state != :Degraded {|
+          return Err(:DeviceNotReady)
+        |}
+
+        let caller = get_current_pid()
+
+        -- Check capability
+        let has_cap = invoke Policy.check_capability(caller, :device_use)
+        if not has_cap {|
+          return Err(:PermissionDenied)
+        |}
+
+        let req_id = next_request_id
+        next_request_id = next_request_id + 1
+
+        let request = DeviceRequest {|
+          id :: req_id
+          device_id :: device_id
+          caller_pid :: caller
+          method :: method
+          params :: params
+          timeout :: DeviceConfig.request_timeout_default
+          priority :: 5
+          timestamp :: now()
+        |}
+
+        -- Mark device busy if not already handling requests
+        if dev.state == :Ready {|
+          let busy = dev with {| state :: :Busy |}
+          device_registry = Map.insert(device_registry, device_id, busy)
+        |}
+
+        pending_requests = Map.insert(pending_requests, req_id, request)
+
+        -- Dispatch to driver
+        let response = invoke dispatch_to_driver(dev, request)
+
+        -- Update device stats
+        let completed_dev = Map.get(device_registry, device_id).unwrap_or(dev)
+        let new_latency = (completed_dev.latency_ms * 0.9) + (response.latency as Float64 * 0.1)
+        let after_invoke = completed_dev with {|
+          state :: :Ready
+          total_invocations :: completed_dev.total_invocations + 1
+          latency_ms :: new_latency
+          last_heartbeat :: now()
+        |}
+
+        match response.status {|
+          :error -> {|
+            after_invoke = after_invoke with {|
+              error_count :: after_invoke.error_count + 1
+            |}
+            if after_invoke.error_count >= DeviceConfig.error_threshold {|
+              after_invoke = after_invoke with {|
+                state :: :Error
+                health :: :Critical
+              |}
+            |}
+          |}
+          _ -> ()
+        |}
+
+        device_registry = Map.insert(device_registry, device_id, after_invoke)
+        pending_requests = Map.remove(pending_requests, req_id)
+
+        return Ok(response)
+      |}
+      None -> return Err(:NoSuchDevice)
+    |}
+  |}
+
+  -- Remove a device (graceful disconnect)
+  syscall remove_device(device_id :: DeviceId) -> Result[Void, Error] {|
+    match Map.get(device_registry, device_id) {|
+      Some(dev) -> {|
+        -- Drain pending requests
+        let queue = device_queues.get(device_id).unwrap_or(Queue.empty())
+        for req in Queue.to_list(queue) {|
+          -- Cancel with error
+          let cancel_response = DeviceResponse {|
+            request_id :: req.id
+            device_id :: device_id
+            status :: :error
+            result :: None
+            error :: Some("device removed")
+            latency :: 0ms
+            timestamp :: now()
+          |}
+          invoke deliver_response(req.caller_pid, cancel_response)
+        |}
+
+        let disconnected = dev with {| state :: :Disconnected |}
+        device_registry = Map.insert(device_registry, device_id, disconnected)
+        device_queues = Map.remove(device_queues, device_id)
+
+        emit :DeviceRemoved with {| id :: device_id, name :: dev.name |}
+
+        -- Notify hot-plug listeners
+        for listener_pid in hot_plug_listeners {|
+          signal :SIGIO to listener_pid with {|
+            event :: :device_removed, device_id :: device_id
+          |}
+        |}
+
+        return Ok(())
+      |}
+      None -> return Err(:NoSuchDevice)
+    |}
+  |}
+
+  -- List all registered devices
+  syscall list_devices() -> List[Device] {|
+    let result = []
+    for id, dev in device_registry where dev.state != :Disconnected {|
+      result = List.append(result, dev)
+    |}
+    return result
+  |}
+
+  -- Get device status
+  syscall get_status(device_id :: DeviceId) -> Result[Device, Error] {|
+    match Map.get(device_registry, device_id) {|
+      Some(dev) -> return Ok(dev)
+      None -> return Err(:NoSuchDevice)
+    |}
+  |}
+
+  -- Register for hot-plug notifications
+  service register_hotplug_listener(pid :: UInt32) -> Void {|
+    if not List.contains(hot_plug_listeners, pid) {|
+      hot_plug_listeners = List.append(hot_plug_listeners, pid)
+    |}
+  |}
+
+  -- Driver resolution by category
+  service resolve_driver(category :: DeviceCategory) -> Symbol {|
+    match category {|
+      :LLMEndpoint   -> :driver_llm
+      :MCPServer     -> :driver_mcp
+      :ToolRegistry  -> :driver_tools
+      :StorageBackend -> :driver_storage
+      :NetworkAdapter -> :driver_network
+      :Sensor        -> :driver_sensor
+      :Actuator      -> :driver_actuator
+    |}
+  |}
+
+  -- LLM endpoint initialization
+  service init_llm_endpoint(dev :: Device) -> Result[(List[String], String), Error] {|
+    let model = dev.config.get("model").unwrap_or("unknown")
+    let api_key_present = dev.config.contains_key("api_key")
+
+    if not api_key_present {|
+      return Err("missing api_key in device config")
+    |}
+
+    -- Probe the endpoint
+    let probe = invoke net_probe(dev.endpoint, 5s)
+    match probe {|
+      Ok(info) -> {|
+        let caps = ["chat", "completion"]
+        if info.supports_streaming {| caps = List.append(caps, "streaming") |}
+        if info.supports_tools {| caps = List.append(caps, "tool_use") |}
+        if info.supports_vision {| caps = List.append(caps, "vision") |}
+        return Ok((caps, info.version))
+      |}
+      Err(e) -> return Err(e)
+    |}
+  |}
+
+  -- MCP server initialization
+  service init_mcp_server(dev :: Device) -> Result[(List[String], String), Error] {|
+    let transport = dev.config.get("transport").unwrap_or("stdio")
+
+    let handshake = invoke mcp_handshake(dev.endpoint, transport, 10s)
+    match handshake {|
+      Ok(server_info) -> {|
+        let caps = server_info.capabilities
+        return Ok((caps, server_info.version))
+      |}
+      Err(e) -> return Err(e)
+    |}
+  |}
+
+  -- Device health check loop
+  service device_loop() -> Void {|
+    on :HealthCheckTick {|
+      for id, dev in device_registry where dev.state == :Ready or dev.state == :Degraded {|
+        let elapsed = elapsed_since(dev.last_heartbeat)
+
+        if elapsed > DeviceConfig.heartbeat_timeout {|
+          -- Device missed heartbeat
+          let degraded = dev with {|
+            state :: :Degraded
+            health :: :Warning
+          |}
+          device_registry = Map.insert(device_registry, id, degraded)
+          emit :DeviceDegraded with {| id :: id, reason :: "heartbeat timeout" |}
+        |}
+
+        if elapsed > DeviceConfig.heartbeat_timeout * 3 {|
+          -- Device considered dead
+          let errored = dev with {|
+            state :: :Error
+            health :: :Critical
+          |}
+          device_registry = Map.insert(device_registry, id, errored)
+          emit :DeviceError with {| id :: id, reason :: "unresponsive" |}
+        |}
+      |}
+
+      -- Attempt recovery for errored devices
+      for id, dev in device_registry where dev.state == :Error {|
+        if dev.error_count < DeviceConfig.max_retries * 2 {|
+          invoke initialize_device(id)
+        |}
+      |}
+    |}
+  |}
+
+|}

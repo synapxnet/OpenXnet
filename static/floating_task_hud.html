@@ -1,0 +1,1456 @@
+<!doctype html>
+<!--
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+
+File: floating_task_hud.html
+Purpose: OpenXnet floating desktop HUD for live task delivery tracking, observation flow console, and recall navigation.
+Author: OpenAI Codex
+Date: 2026-04-18
+Version: 1.0.3
+Security Level: INTERNAL
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenXnet Floating Task HUD</title>
+  <script>
+    (function bootstrapOpenXnetHudTheme() {
+      try {
+        const theme = window.localStorage ? (window.localStorage.getItem('openxnet-theme') || 'light') : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (error) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: rgba(10, 14, 24, .92);
+      --panel: rgba(20, 28, 44, .82);
+      --card: rgba(28, 38, 59, .72);
+      --line: rgba(255,255,255,.12);
+      --text: #f6fbff;
+      --muted: rgba(228,236,246,.72);
+      --dim: rgba(189,202,219,.56);
+      --teal: #65e4d8;
+      --amber: #ffba75;
+      --red: #fb7185;
+      --green: #4ade80;
+      --yellow: #fbbf24;
+      --radius: 26px;
+      --radius-md: 16px;
+      --font: "Bahnschrift","Segoe UI Variable Display","SF Pro Display","HarmonyOS Sans SC","Microsoft YaHei UI",sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; color: var(--text); font-family: var(--font); }
+    body {
+      background:
+        radial-gradient(circle at 100% 0%, rgba(101,228,216,.18), transparent 34%),
+        radial-gradient(circle at 0% 100%, rgba(255,123,156,.14), transparent 36%),
+        transparent;
+    }
+    .shell { width: 100%; height: 100%; display: flex; justify-content: flex-end; padding: 10px; }
+    .panel {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+      width: min(430px, calc(100vw - 20px));
+      height: calc(100vh - 20px);
+      display: grid;
+      grid-template-rows: auto auto auto auto auto minmax(0,1fr);
+      gap: 12px;
+      padding: 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0)), var(--bg);
+      box-shadow:
+        0 26px 90px rgba(0,0,0,.45),
+        inset 0 1px 0 rgba(255,255,255,.05);
+      backdrop-filter: blur(20px) saturate(130%);
+      overflow: hidden;
+      animation: hud-panel-float 620ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+    .panel::before,
+    .panel::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .panel::before {
+      width: 220px;
+      height: 220px;
+      top: -104px;
+      right: -72px;
+      background: radial-gradient(circle, rgba(101,228,216,.16), rgba(101,228,216,0));
+      animation: hud-shimmer-sweep 14s ease-in-out infinite;
+    }
+    .panel::after {
+      width: 180px;
+      height: 180px;
+      left: -58px;
+      bottom: -98px;
+      background: radial-gradient(circle, rgba(255,186,117,.16), rgba(255,186,117,0));
+      animation: hud-shimmer-sweep 16s ease-in-out infinite reverse;
+    }
+    .pulse { animation: pulse .8s ease; }
+    @keyframes pulse { from { box-shadow: 0 20px 70px rgba(0,0,0,.35), 0 0 0 0 rgba(101,228,216,.28); } to { box-shadow: 0 26px 90px rgba(0,0,0,.45), 0 0 0 24px rgba(101,228,216,0); } }
+    .header, .hero, .tools, .intel, .stats, .feed { position: relative; z-index: 1; }
+    .kicker { font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: var(--teal); }
+    h1 { margin: 6px 0 0; font-size: 28px; line-height: 1; }
+    .subtitle { margin-top: 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .chip, .tag {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line);
+      background: rgba(255,255,255,.05); font-size: 12px; color: var(--text);
+    }
+    .chip::before, .tag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .95; }
+    .online { color: var(--green); }
+    .offline { color: var(--red); }
+    .follow { color: var(--teal); }
+    .freeze { color: var(--amber); }
+    .hero, .tools, .intel, .feed, .stat, .pin, .item, .observation-item {
+      border-radius: 20px; border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
+      box-shadow: 0 16px 34px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.04);
+      transition: transform .18s cubic-bezier(.22, 1, .36, 1), border-color .18s ease, background .18s ease, box-shadow .18s ease;
+      animation: hud-panel-float 560ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+      padding: 16px;
+      background: linear-gradient(145deg, rgba(101,228,216,.09), rgba(255,186,117,.05) 50%, rgba(255,123,156,.05)), var(--panel);
+      display: grid; gap: 10px;
+      animation-delay: 40ms;
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      width: 180px;
+      height: 180px;
+      top: -84px;
+      right: -52px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(101,228,216,.16), rgba(101,228,216,0));
+      pointer-events: none;
+      z-index: 0;
+      animation: hud-shimmer-sweep 13s ease-in-out infinite;
+    }
+    .hero > * { position: relative; z-index: 1; }
+    .hero-title { font-size: 18px; font-weight: 700; }
+    .hero-summary { font-size: 13px; line-height: 1.55; color: var(--muted); }
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; }
+    .meta span { padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.04); border: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    button, select { font: inherit; color: inherit; }
+    .btn {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+      padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line);
+      background: rgba(255,255,255,.06); cursor: pointer; transition: transform .18s cubic-bezier(.22, 1, .36, 1), border-color .18s ease, background .18s ease, box-shadow .18s ease;
+      box-shadow: 0 12px 22px rgba(0,0,0,.16);
+    }
+    .btn::after {
+      content: "";
+      position: absolute;
+      inset: 1px auto 1px -24%;
+      width: 42%;
+      background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.46), rgba(255,255,255,0));
+      opacity: 0;
+      transform: skewX(-20deg) translateX(0);
+      transition: transform .32s ease, opacity .24s ease;
+      pointer-events: none;
+    }
+    .btn:hover, .item:hover, .pin:hover { transform: translateY(-2px); border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.1); box-shadow: 0 18px 32px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.05); }
+    .btn:hover::after { opacity: .92; transform: skewX(-20deg) translateX(290%); }
+    .btn.primary { background: rgba(101,228,216,.14); border-color: rgba(101,228,216,.3); }
+    .btn.warning { background: rgba(255,186,117,.12); border-color: rgba(255,186,117,.28); }
+    .tools, .intel, .feed { padding: 14px; background: var(--panel); }
+    .tools { animation-delay: 90ms; }
+    .intel { animation-delay: 140ms; }
+    .feed { animation-delay: 190ms; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
+    .stat { padding: 12px; min-height: 82px; display: grid; gap: 6px; background: var(--card); }
+    .stat:nth-child(1) { animation-delay: 70ms; }
+    .stat:nth-child(2) { animation-delay: 120ms; }
+    .stat:nth-child(3) { animation-delay: 170ms; }
+    .stat:nth-child(4) { animation-delay: 220ms; }
+    .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--dim); }
+    .stat-value { font-size: 22px; font-weight: 700; }
+    .stat-note { font-size: 11px; color: var(--muted); }
+    .filters { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-top: 12px; }
+    .filters label { display: grid; gap: 6px; }
+    .filters span { font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--dim); }
+    select { width: 100%; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,.06); }
+    .pins { display: flex; gap: 10px; overflow-x: auto; margin: 12px 0 0; padding-bottom: 2px; }
+    .feed-list { display: grid; gap: 10px; overflow: auto; min-height: 0; margin-top: 12px; padding-right: 2px; }
+    .observation-console-panel { display: grid; gap: 12px; }
+    .observation-console-shell { display: grid; gap: 12px; }
+    .observation-console-hero {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 22px;
+      border: 1px solid rgba(101,228,216,.16);
+      background:
+        radial-gradient(circle at top right, rgba(101,228,216,.14), transparent 34%),
+        linear-gradient(145deg, rgba(255,255,255,.06), rgba(255,255,255,.02)),
+        var(--card);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+      animation: hud-panel-float 620ms cubic-bezier(.22, 1, .36, 1) both;
+      animation-delay: 120ms;
+    }
+    .observation-console-hero::before {
+      content: "";
+      position: absolute;
+      width: 170px;
+      height: 170px;
+      top: -80px;
+      right: -46px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(101,228,216,.18), rgba(101,228,216,0));
+      pointer-events: none;
+      z-index: 0;
+      animation: hud-shimmer-sweep 12s ease-in-out infinite;
+    }
+    .observation-console-hero > * { position: relative; z-index: 1; }
+    .observation-console-kicker {
+      width: fit-content;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(101,228,216,.18);
+      background: rgba(101,228,216,.08);
+      color: var(--teal);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .observation-console-summary {
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+    .observation-console-meta.meta {
+      gap: 8px;
+      margin-top: 0;
+    }
+    .observation-console-meta.meta span {
+      font-size: 10px;
+      color: var(--muted);
+      background: rgba(255,255,255,.03);
+    }
+    .observation-console-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .observation-console-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.05);
+      font-size: 10px;
+      line-height: 1;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .observation-console-badge::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: .95;
+    }
+    .observation-console-badge.tone-info { color: var(--teal); border-color: rgba(101,228,216,.24); }
+    .observation-console-badge.tone-success { color: var(--green); border-color: rgba(74,222,128,.24); }
+    .observation-console-badge.tone-warning { color: var(--amber); border-color: rgba(255,186,117,.26); }
+    .observation-console-badge.tone-danger { color: var(--red); border-color: rgba(251,113,133,.28); }
+    .observation-console-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 10px;
+    }
+    .observation-metric {
+      position: relative;
+      overflow: hidden;
+      min-height: 96px;
+      padding: 12px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--card);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+      display: grid;
+      gap: 6px;
+      animation: hud-panel-float 580ms cubic-bezier(.22, 1, .36, 1) both;
+      transition: transform .18s cubic-bezier(.22, 1, .36, 1), border-color .18s ease, box-shadow .18s ease;
+    }
+    .observation-metric:nth-child(1) { animation-delay: 90ms; }
+    .observation-metric:nth-child(2) { animation-delay: 150ms; }
+    .observation-metric:nth-child(3) { animation-delay: 210ms; }
+    .observation-metric:nth-child(4) { animation-delay: 270ms; }
+    .observation-metric:hover {
+      transform: translateY(-2px);
+      border-color: rgba(101,228,216,.16);
+      box-shadow: 0 16px 28px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.05);
+    }
+    .observation-metric-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+    .observation-metric-value {
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--text);
+    }
+    .observation-metric-note {
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--muted);
+      word-break: break-word;
+    }
+    .observation-list {
+      display: grid;
+      gap: 10px;
+      max-height: 250px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .pins::-webkit-scrollbar, .feed-list::-webkit-scrollbar, .observation-list::-webkit-scrollbar { width: 7px; height: 7px; }
+    .pins::-webkit-scrollbar-thumb, .feed-list::-webkit-scrollbar-thumb, .observation-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 999px; }
+    .pin, .item { padding: 12px; background: var(--card); cursor: pointer; }
+    .pin { min-width: 186px; max-width: 220px; display: grid; gap: 8px; }
+    .active { border-color: rgba(101,228,216,.4); }
+    .item { display: grid; gap: 9px; }
+    .observation-item {
+      position: relative;
+      overflow: hidden;
+      padding: 12px;
+      background: var(--card);
+      display: grid;
+      gap: 8px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+      animation: hud-panel-float 520ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+    .observation-item::before {
+      content: "";
+      position: absolute;
+      inset: 12px auto 12px 0;
+      width: 4px;
+      border-radius: 999px;
+      background: linear-gradient(180deg, rgba(101,228,216,.96), rgba(101,228,216,0));
+    }
+    .observation-item.is-latest {
+      border-color: rgba(101,228,216,.24);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 14px 28px rgba(6,10,18,.18);
+    }
+    .observation-item:hover {
+      transform: translateY(-2px);
+      border-color: rgba(101,228,216,.18);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 18px 32px rgba(6,10,18,.22);
+    }
+    .observation-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .observation-title { font-size: 12px; font-weight: 700; line-height: 1.5; }
+    .observation-detail { font-size: 12px; line-height: 1.55; color: var(--muted); }
+    .observation-detail-secondary { color: var(--dim); }
+    .observation-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+    .observation-badges span { padding: 5px 8px; border-radius: 999px; background: rgba(255,255,255,.05); border: 1px solid var(--line); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+    .observation-note {
+      padding: 9px 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.03);
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--muted);
+      white-space: pre-wrap;
+    }
+    .observation-note.warning {
+      border-color: rgba(255,186,117,.24);
+      background: rgba(255,186,117,.08);
+      color: #ffd8b0;
+    }
+    .observation-meta-row {
+      font-size: 11px;
+      line-height: 1.55;
+      color: var(--dim);
+    }
+    .status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 5px rgba(255,255,255,.05); }
+    .completed { background: var(--green); color: var(--green); }
+    .failed { background: var(--red); color: var(--red); }
+    .running, .pending { background: var(--yellow); color: var(--yellow); }
+    .default { background: var(--teal); color: var(--teal); }
+    .item-title { font-size: 13px; font-weight: 700; line-height: 1.4; }
+    .item-summary { font-size: 12px; line-height: 1.55; color: var(--muted); }
+    .mini { padding: 7px 10px; font-size: 11px; border-radius: 12px; }
+    .empty { border: 1px dashed rgba(255,255,255,.18); border-radius: 18px; padding: 16px; text-align: center; font-size: 12px; line-height: 1.6; color: var(--muted); background: rgba(255,255,255,.03); }
+    @media (max-width: 560px) {
+      .panel { width: calc(100vw - 16px); height: calc(100vh - 16px); padding: 14px; border-radius: 22px; }
+      .stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .observation-console-metrics { grid-template-columns: minmax(0,1fr); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .panel,
+      .hero,
+      .tools,
+      .intel,
+      .feed,
+      .stat,
+      .pin,
+      .item,
+      .observation-console-hero,
+      .observation-metric,
+      .observation-item {
+        animation: none !important;
+        transition-duration: 0s !important;
+      }
+
+      .panel::before,
+      .panel::after,
+      .hero::before,
+      .observation-console-hero::before {
+        animation: none !important;
+        transform: none !important;
+      }
+
+      .btn::after {
+        display: none !important;
+      }
+    }
+
+    @keyframes hud-panel-float {
+      from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.986);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes hud-shimmer-sweep {
+      0%,
+      100% {
+        transform: translate3d(-18px, 0, 0) scale(1);
+        opacity: 0.22;
+      }
+      50% {
+        transform: translate3d(18px, -6px, 0) scale(1.04);
+        opacity: 0.46;
+      }
+    }
+
+    :root {
+      color-scheme: light;
+      --bg: rgba(255,255,255,.96);
+      --panel: rgba(248,250,252,.92);
+      --card: rgba(255,255,255,.94);
+      --line: rgba(15,23,42,.1);
+      --text: #1e293b;
+      --muted: rgba(30,41,59,.72);
+      --dim: rgba(71,85,105,.58);
+      --teal: #5ba3c5;
+      --amber: #d97706;
+      --red: #ef4444;
+      --green: #22c55e;
+      --yellow: #ca8a04;
+      --radius: 20px;
+      --radius-md: 14px;
+    }
+
+    html[data-theme="dark"],
+    html[data-theme="midnight"],
+    html[data-theme="neon"],
+    html[data-theme="ink"] {
+      color-scheme: dark;
+      --bg: rgba(15,23,42,.96);
+      --panel: rgba(30,41,59,.76);
+      --card: rgba(15,23,42,.56);
+      --line: rgba(255,255,255,.1);
+      --text: #f8fafc;
+      --muted: rgba(226,232,240,.74);
+      --dim: rgba(148,163,184,.68);
+      --teal: #65c7e8;
+      --amber: #fbbf24;
+      --red: #fb7185;
+      --green: #4ade80;
+      --yellow: #facc15;
+    }
+
+    body {
+      background: transparent;
+    }
+
+    .shell {
+      padding: 8px;
+    }
+
+    .panel {
+      width: min(400px, calc(100vw - 16px));
+      height: calc(100vh - 16px);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      border-radius: var(--radius);
+      background: var(--bg);
+      border-color: var(--line);
+      box-shadow: 0 22px 58px rgba(15,23,42,.18), 0 0 0 1px rgba(255,255,255,.34) inset;
+      overflow-x: hidden;
+      overflow-y: auto;
+      animation: none;
+    }
+
+    html[data-theme="dark"] .panel,
+    html[data-theme="midnight"] .panel,
+    html[data-theme="neon"] .panel,
+    html[data-theme="ink"] .panel {
+      box-shadow: 0 24px 70px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.06);
+    }
+
+    .panel::before,
+    .panel::after,
+    .hero::before,
+    .observation-console-hero::before {
+      display: none;
+    }
+
+    .header-bar {
+      position: relative;
+      display: block;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      margin-top: 8px;
+      flex: 0 0 auto;
+      flex-wrap: wrap;
+    }
+
+    .header-bar > div:first-child {
+      padding-right: 38px;
+    }
+
+    .icon-btn {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 30px;
+      height: 30px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255,255,255,.56);
+      color: var(--dim);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      transition: background .16s ease, color .16s ease, border-color .16s ease, transform .16s ease;
+    }
+
+    .icon-btn:hover {
+      transform: translateY(-1px);
+      color: var(--red);
+      border-color: rgba(239,68,68,.28);
+      background: rgba(239,68,68,.08);
+    }
+
+    html[data-theme="dark"] .icon-btn,
+    html[data-theme="midnight"] .icon-btn,
+    html[data-theme="neon"] .icon-btn,
+    html[data-theme="ink"] .icon-btn {
+      background: rgba(255,255,255,.06);
+    }
+
+    .kicker {
+      color: var(--teal);
+      font-size: 10px;
+      letter-spacing: .08em;
+      white-space: nowrap;
+    }
+
+    h1 {
+      margin-top: 4px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    .subtitle,
+    .hero-summary,
+    .item-summary,
+    .observation-detail,
+    .observation-note,
+    .observation-metric-note {
+      color: var(--muted);
+    }
+
+    .hero,
+    .tools,
+    .intel,
+    .feed,
+    .stat,
+    .pin,
+    .item,
+    .observation-console-hero,
+    .observation-metric,
+    .observation-item {
+      border-radius: var(--radius-md);
+      border-color: var(--line);
+      background: var(--card);
+      box-shadow: none;
+      animation: none;
+    }
+
+    .hero,
+    .tools,
+    .intel,
+    .feed {
+      padding: 12px;
+      flex: 0 0 auto;
+    }
+
+    .stats {
+      flex: 0 0 auto;
+    }
+
+    .hero {
+      gap: 8px;
+    }
+
+    .hero-title {
+      font-size: 16px;
+      color: var(--text);
+    }
+
+    .hero-summary {
+      color: var(--muted);
+    }
+
+    .stats {
+      gap: 8px;
+    }
+
+    .stat {
+      min-height: 66px;
+      padding: 10px;
+      gap: 4px;
+    }
+
+    .stat-value,
+    .observation-metric-value {
+      font-size: 18px;
+    }
+
+    .observation-console-hero,
+    .observation-metric,
+    .observation-item,
+    .pin,
+    .item {
+      background: var(--panel);
+    }
+
+    .observation-list {
+      max-height: 150px;
+    }
+
+    .feed-list {
+      max-height: 220px;
+    }
+
+    .btn {
+      border-radius: 12px;
+      background: rgba(91,163,197,.08);
+      box-shadow: none;
+    }
+
+    .btn.primary {
+      color: var(--text);
+      background: rgba(91,163,197,.14);
+      border-color: rgba(91,163,197,.26);
+    }
+
+    .btn.warning {
+      background: rgba(217,119,6,.1);
+      border-color: rgba(217,119,6,.22);
+    }
+
+    .btn::after {
+      display: none;
+    }
+
+    .btn:hover,
+    .item:hover,
+    .pin:hover,
+    .observation-metric:hover,
+    .observation-item:hover {
+      transform: translateY(-1px);
+      background: rgba(91,163,197,.12);
+      border-color: rgba(91,163,197,.24);
+      box-shadow: none;
+    }
+
+    .empty {
+      border-radius: 14px;
+      background: rgba(91,163,197,.06);
+      border-color: rgba(91,163,197,.18);
+    }
+
+    .tag.completed {
+      color: var(--green);
+      background: rgba(34,197,94,.11);
+      border-color: rgba(34,197,94,.22);
+    }
+
+    .tag.failed {
+      color: var(--red);
+      background: rgba(239,68,68,.1);
+      border-color: rgba(239,68,68,.22);
+    }
+
+    .tag.running,
+    .tag.pending {
+      color: var(--yellow);
+      background: rgba(202,138,4,.12);
+      border-color: rgba(202,138,4,.24);
+    }
+
+    .tag.default {
+      color: var(--teal);
+      background: rgba(91,163,197,.1);
+      border-color: rgba(91,163,197,.22);
+    }
+
+    .panel::-webkit-scrollbar,
+    .pins::-webkit-scrollbar,
+    .feed-list::-webkit-scrollbar,
+    .observation-list::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+
+    .panel::-webkit-scrollbar-track,
+    .pins::-webkit-scrollbar-track,
+    .feed-list::-webkit-scrollbar-track,
+    .observation-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .panel::-webkit-scrollbar-thumb,
+    .pins::-webkit-scrollbar-thumb,
+    .feed-list::-webkit-scrollbar-thumb,
+    .observation-list::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: rgba(100,116,139,.34);
+    }
+
+    html[data-theme="dark"] .panel::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] .pins::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] .feed-list::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] .observation-list::-webkit-scrollbar-thumb,
+    html[data-theme="midnight"] .panel::-webkit-scrollbar-thumb,
+    html[data-theme="midnight"] .pins::-webkit-scrollbar-thumb,
+    html[data-theme="midnight"] .feed-list::-webkit-scrollbar-thumb,
+    html[data-theme="midnight"] .observation-list::-webkit-scrollbar-thumb,
+    html[data-theme="neon"] .panel::-webkit-scrollbar-thumb,
+    html[data-theme="neon"] .pins::-webkit-scrollbar-thumb,
+    html[data-theme="neon"] .feed-list::-webkit-scrollbar-thumb,
+    html[data-theme="neon"] .observation-list::-webkit-scrollbar-thumb,
+    html[data-theme="ink"] .panel::-webkit-scrollbar-thumb,
+    html[data-theme="ink"] .pins::-webkit-scrollbar-thumb,
+    html[data-theme="ink"] .feed-list::-webkit-scrollbar-thumb,
+    html[data-theme="ink"] .observation-list::-webkit-scrollbar-thumb {
+      background: rgba(148,163,184,.5);
+    }
+
+    /* Final HUD layout guard: the route is used both by the Electron floating
+       window and by the local browser preview, so keep one natural scroll flow. */
+    html,
+    body {
+      min-width: 0 !important;
+      min-height: 100% !important;
+      overflow: hidden !important;
+      background: transparent !important;
+    }
+
+    .shell {
+      width: 100% !important;
+      height: 100% !important;
+      min-width: 0 !important;
+      display: block !important;
+      padding: 8px !important;
+    }
+
+    .panel {
+      width: min(560px, calc(100vw - 16px)) !important;
+      height: calc(100vh - 16px) !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      display: block !important;
+      padding: 12px !important;
+      overflow-x: hidden !important;
+      overflow-y: auto !important;
+      scroll-padding: 12px !important;
+    }
+
+    .header,
+    .hero,
+    .tools,
+    .intel,
+    .stats,
+    .feed {
+      display: block !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      min-height: auto !important;
+      margin: 0 0 10px !important;
+      flex: none !important;
+      transform: none !important;
+    }
+
+    .feed {
+      margin-bottom: 0 !important;
+    }
+
+    .header-bar,
+    .row {
+      min-width: 0 !important;
+    }
+
+    .hero > .row,
+    .feed > .row,
+    .intel > .row,
+    .tools > .row {
+      display: flex !important;
+      align-items: flex-start !important;
+      gap: 8px !important;
+    }
+
+    .stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 8px !important;
+    }
+
+    .observation-console-shell {
+      display: block !important;
+    }
+
+    .observation-console-hero,
+    .observation-console-metrics,
+    .observation-list,
+    .pins,
+    .feed-list {
+      width: 100% !important;
+      min-width: 0 !important;
+      max-height: none !important;
+      overflow: visible !important;
+    }
+
+    .observation-console-metrics {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 8px !important;
+      margin-top: 10px !important;
+    }
+
+    .pins {
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) !important;
+      margin-top: 10px !important;
+      padding-bottom: 0 !important;
+    }
+
+    .pin {
+      min-width: 0 !important;
+      max-width: none !important;
+    }
+
+    .feed-list {
+      display: grid !important;
+      gap: 10px !important;
+    }
+
+    .empty,
+    .item,
+    .pin,
+    .stat,
+    .observation-item,
+    .observation-metric {
+      min-width: 0 !important;
+      overflow-wrap: anywhere !important;
+    }
+
+    @media (max-width: 460px) {
+      .panel {
+        width: calc(100vw - 12px) !important;
+        height: calc(100vh - 12px) !important;
+        padding: 10px !important;
+      }
+
+      .shell {
+        padding: 6px !important;
+      }
+
+      .stats,
+      .observation-console-metrics {
+        grid-template-columns: minmax(0, 1fr) !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <main id="panel" class="panel">
+      <header class="header">
+        <div class="row header-bar">
+          <div>
+            <div class="kicker">OPENXNET HUD</div>
+            <h1>任务 HUD</h1>
+            <div id="subtitle" class="subtitle">实时查看任务投递、桌面控制反馈和已固定的关键节点。</div>
+          </div>
+          <div class="header-actions">
+            <span id="conn" class="chip offline">Offline</span>
+            <span id="mode" class="chip follow">Follow Latest</span>
+            <button id="closeHud" type="button" class="icon-btn" aria-label="关闭任务 HUD" title="关闭任务 HUD">&times;</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="row">
+          <div class="row">
+            <span id="heroStatus" class="tag running">Standby</span>
+            <span id="heroChannel" class="tag default">Overlay Bus</span>
+          </div>
+          <span id="heroTime" class="subtitle" style="margin:0">暂无任务投递</span>
+        </div>
+        <div id="heroTitle" class="hero-title">等待新的任务投递</div>
+        <div id="heroSummary" class="hero-summary">调度器、任务中心或桌面控制流程发布任务后，会立即同步到这里。</div>
+        <div id="heroMeta" class="meta"></div>
+        <div class="actions">
+          <button id="toggleFollow" type="button" class="btn primary">冻结选择</button>
+          <button id="pinCurrent" type="button" class="btn warning">固定当前</button>
+          <button id="hideHud" type="button" class="btn">关闭 HUD</button>
+        </div>
+      </section>
+
+      <section class="tools">
+        <div class="row">
+          <div>
+            <div class="item-title">快捷浮层控制</div>
+            <div class="subtitle" style="margin-top:4px">保持 HUD 跟踪任务，也可以快速切到灵动岛进行更轻量的桌面交互。</div>
+          </div>
+        </div>
+        <div class="actions" style="margin-top:10px">
+          <button id="openIsland" type="button" class="btn primary">打开灵动岛</button>
+          <button id="clearHud" type="button" class="btn">清空 HUD</button>
+        </div>
+      </section>
+
+      <section class="intel observation-console-panel" data-hud-observation-console="true">
+        <div class="row">
+          <div>
+            <div class="item-title">观察流控制台</div>
+            <div id="observationStatus" class="subtitle" style="margin-top:4px">选择带任务 ID 的投递后，可在 HUD 中查看当前工作区观察流。</div>
+          </div>
+          <div class="actions">
+            <button id="openHomeFlow" type="button" class="btn mini">首页流</button>
+            <button id="openTaskDetail" type="button" class="btn mini">任务详情</button>
+            <button id="openRecallCenter" type="button" class="btn mini">召回中心</button>
+            <button id="refreshObservations" type="button" class="btn mini">刷新</button>
+          </div>
+        </div>
+        <div class="observation-console-shell">
+          <section class="observation-console-hero">
+            <div class="observation-console-kicker">工作区当前流</div>
+            <div id="observationSummary" class="observation-console-summary">选择关联任务的投递后，这里会显示恢复线索、隐私裁剪和最新观察阶段。</div>
+            <div id="observationBadges" class="observation-console-badges"></div>
+            <div id="observationMeta" class="meta observation-console-meta"></div>
+          </section>
+          <section id="observationMetrics" class="observation-console-metrics"></section>
+        </div>
+        <div id="observationList" class="observation-list" style="margin-top:12px">
+          <div class="empty">当前投递关联任务记忆后，会在这里显示观察预览。</div>
+        </div>
+      </section>
+
+      <section id="stats" class="stats"></section>
+
+      <section class="feed" style="display:grid;grid-template-rows:auto auto auto minmax(0,1fr);min-height:0">
+        <div class="row">
+          <div>
+            <div class="item-title">任务流</div>
+            <div class="subtitle" style="margin-top:4px">固定项会保持在上方，实时队列继续在下方更新。</div>
+          </div>
+        </div>
+        <div class="filters">
+          <label><span>状态</span><select id="statusFilter"><option value="all">全部状态</option><option value="running">运行中 / 等待中</option><option value="completed">已完成</option><option value="failed">失败</option></select></label>
+          <label><span>通道</span><select id="channelFilter"><option value="all">全部通道</option><option value="dynamic_island">灵动岛</option><option value="desktop_notification">桌面通知</option><option value="task_center">任务中心</option><option value="im_bot">IM 机器人</option></select></label>
+        </div>
+        <div id="pins" class="pins"><div class="empty">固定的投递会显示在这里，便于持续查看关键节点。</div></div>
+        <div id="feedList" class="feed-list"><div class="empty">暂无任务投递。保持 HUD 打开，触发任务或桌面动作后会开始同步。</div></div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const HOME_CURRENT_FLOW_LAUNCH_STORAGE_KEY = 'openxnet-home-current-flow-launch';
+    const RECALL_LAUNCH_STORAGE_KEY = 'openxnet-recall-center-launch';
+    const TASK_DETAIL_LAUNCH_STORAGE_KEY = 'openxnet-task-detail-launch';
+    const MAX_HISTORY = 24, MAX_PINS = 6, STORAGE_KEY = 'openxnet-floating-task-hud';
+    const $ = (id) => document.getElementById(id);
+    const panel = $('panel'), conn = $('conn'), mode = $('mode'), subtitle = $('subtitle');
+    const heroStatus = $('heroStatus'), heroChannel = $('heroChannel'), heroTime = $('heroTime'), heroTitle = $('heroTitle'), heroSummary = $('heroSummary'), heroMeta = $('heroMeta');
+    const observationStatus = $('observationStatus'), observationSummary = $('observationSummary'), observationBadges = $('observationBadges'), observationMeta = $('observationMeta'), observationMetrics = $('observationMetrics'), observationList = $('observationList');
+    const stats = $('stats'), pins = $('pins'), feedList = $('feedList'), statusFilter = $('statusFilter'), channelFilter = $('channelFilter');
+    let socket = null, heartbeat = null, reconnect = null, seq = 0, historyItems = [], pinnedItems = [], selectedId = '', followLatest = true;
+    let linkedObservationTarget = null;
+    let observationItems = [];
+    let observationState = { taskId: '', title: '', loading: false, error: '', loadedAt: '' };
+    const observationCache = new Map();
+
+    const esc = (v) => String(v || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    const txt = (v, f='') => { const s = String(v || '').trim(); return s || f; };
+    const idOf = (d) => d && typeof d === 'object' ? String(d.history_delivery_id || '') : '';
+    const statusOf = (s) => txt(s, 'completed').toLowerCase();
+    const readStatus = (s) => ({ completed:'已完成', failed:'失败', running:'运行中', pending:'等待中' }[statusOf(s)] || statusOf(s).replace(/_/g,' '));
+    const readChannel = (c) => ({ dynamic_island:'灵动岛', desktop_notification:'桌面通知', task_center:'任务中心', im_bot:'IM 机器人', recall_center:'召回中心', overlay:'任务总线' }[txt(c,'overlay').toLowerCase()] || txt(c,'overlay').replace(/_/g,' '));
+    const cls = (s) => ['completed','failed','running','pending'].includes(statusOf(s)) ? statusOf(s) : 'default';
+    const clone = (d) => JSON.parse(JSON.stringify(d || {}));
+    function observationSyncBadgeLabel(delivery){
+      const route = txt(delivery && (delivery.focus_source || delivery.target || delivery.channel)).toLowerCase();
+      if (route === 'task_center') return 'Task Center Flow Synced';
+      if (route === 'recall_center') return 'Recall Flow Synced';
+      if (route === 'dynamic_island') return 'Dynamic Island Flow Synced';
+      if (route === 'floating_task_hud') return 'Task HUD Flow Synced';
+      return 'Current Flow Synced';
+    }
+    function titleCaseLabel(value, fallback=''){
+      const normalized = txt(value, fallback).replace(/_/g, ' ');
+      if (!normalized) return fallback;
+      return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+    function formatObservationCount(value){
+      const numeric = Number(value);
+      const count = Number.isFinite(numeric) && numeric >= 0 ? Math.floor(numeric) : 0;
+      return `观察 ${count}`;
+    }
+    function ensureId(d){ if (!d.history_delivery_id) d.history_delivery_id = `hud-${++seq}`; return d.history_delivery_id; }
+    function relTime(ts){ const d = new Date(ts); if (Number.isNaN(d.getTime())) return txt(ts,'Unknown time'); const s = Math.round((Date.now()-d.getTime())/1000), a=Math.abs(s); if (a<45) return s>=0?'Just now':'Incoming'; if (a<3600) { const m=Math.round(a/60); return s>=0?`${m} min ago`:`in ${m} min`; } if (a<86400) { const h=Math.round(a/3600); return s>=0?`${h} hr ago`:`in ${h} hr`; } const day=Math.round(a/86400); return s>=0?`${day} day${day===1?'':'s'} ago`:`in ${day} days`; }
+    function fmtTime(ts){ const d = new Date(ts); return Number.isNaN(d.getTime()) ? txt(ts,'Unknown time') : d.toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
+    function desktopMeta(d){ return d && d.desktop_control && typeof d.desktop_control === 'object' ? d.desktop_control : null; }
+    function metaList(d){ const meta=[]; if (!d) return meta; if (d.task_id) meta.push(`Task ${d.task_id}`); if (d.schedule_type) meta.push(d.schedule_type.replace(/_/g,' ')); const dc=desktopMeta(d); if (dc) { const action=txt(dc.last_action_label || dc.action_label || dc.action); const title=txt(dc.window && dc.window.title); const monitor=txt(dc.monitor && dc.monitor.label); if (action) meta.push(action); if (title) meta.push(title); if (monitor) meta.push(monitor); if (dc.window && dc.window.always_on_top) meta.push('TopMost enabled'); } return meta.slice(0,6); }
+    function humanize(v, fallback=''){ const text = txt(v, fallback); return text ? text.replace(/_/g,' ') : fallback; }
+    function normalizeObservationConsoleTarget(payload, fallbackSource='recall_center'){
+      if (!payload || typeof payload !== 'object') return null;
+      const taskId = txt(payload.task_id);
+      const sessionId = txt(payload.session_id);
+      const digest = txt(payload.digest);
+      if (!taskId && !sessionId && !digest) return null;
+      const title = txt(payload.title || payload.task_title, taskId ? `Task ${taskId}` : 'Observation Flow');
+      return {
+        kind: txt(payload.kind, 'observation_focus'),
+        title,
+        summary: txt(payload.summary),
+        status: txt(payload.status, 'running'),
+        schedule_type: txt(payload.schedule_type, 'live'),
+        task_id: taskId,
+        session_id: sessionId,
+        digest,
+        timestamp: txt(payload.timestamp, new Date().toISOString()),
+        target: txt(payload.target || payload.channel, fallbackSource).toLowerCase(),
+        channel: txt(payload.channel || payload.target, fallbackSource).toLowerCase(),
+        focus_source: txt(payload.focus_source || payload.source, fallbackSource),
+        observation_focus: true,
+      };
+    }
+    function getObservationConsoleTarget(delivery = activeDelivery()){ return linkedObservationTarget || delivery || null; }
+    function clearLinkedObservationTarget(){ linkedObservationTarget = null; }
+    function mergeObservationPayloadIntoDelivery(targetDelivery, payload){
+      if (!targetDelivery || typeof targetDelivery !== 'object' || !payload || typeof payload !== 'object') return false;
+      if (payload.title) targetDelivery.title = txt(payload.title, targetDelivery.title);
+      if (payload.summary) targetDelivery.summary = txt(payload.summary, targetDelivery.summary);
+      if (payload.status) targetDelivery.status = txt(payload.status, targetDelivery.status);
+      if (payload.timestamp) targetDelivery.timestamp = txt(payload.timestamp, targetDelivery.timestamp);
+      if (payload.task_id && !targetDelivery.task_id) targetDelivery.task_id = txt(payload.task_id);
+      return true;
+    }
+    function hydrateObservationSnapshotFromPayload(payload, target = null){
+      const normalizedTarget = target || normalizeObservationConsoleTarget(payload, txt(payload && (payload.focus_source || payload.source), 'workspace_memory'));
+      const taskId = txt(normalizedTarget && normalizedTarget.task_id);
+      if (!taskId || !payload || typeof payload !== 'object') return false;
+      const normalizedItems = Array.isArray(payload.observations) ? payload.observations.filter((item)=>item && typeof item === 'object').slice(0, 6) : [];
+      const nextState = { taskId, title: txt(normalizedTarget && normalizedTarget.title), loading: false, error: '', loadedAt: txt(payload.timestamp, new Date().toISOString()) };
+      observationCache.set(taskId, { items: clone(normalizedItems), state: { ...nextState } });
+      if (observationState.taskId === taskId || txt(getObservationConsoleTarget() && getObservationConsoleTarget().task_id) === taskId) {
+        observationItems = clone(normalizedItems);
+        observationState = { ...nextState };
+      }
+      return true;
+    }
+    function homeCurrentFlowTargetForDelivery(delivery){ const taskId = txt(delivery && delivery.task_id); const sessionId = txt(delivery && delivery.session_id); const digest = txt(delivery && delivery.digest); if (!taskId && !sessionId && !digest) return null; const title = txt(delivery && delivery.title, taskId ? `Task ${taskId}` : 'Observation Flow'); return { task_id: taskId, session_id: sessionId, digest, title, task_title: title, status: txt(delivery && delivery.status), summary: txt(delivery && delivery.summary), source: txt(delivery && (delivery.focus_source || delivery.target), 'floating_task_hud') }; }
+    function queueHomeCurrentFlowLaunch(delivery){ const target = homeCurrentFlowTargetForDelivery(delivery); if (!target) return null; const request = { id: `home-current-flow-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`, created_at: new Date().toISOString(), target }; try { localStorage.setItem(HOME_CURRENT_FLOW_LAUNCH_STORAGE_KEY, JSON.stringify(request)); return request; } catch (error) { console.error('Queue home current flow launch failed from HUD:', error); return null; } }
+    async function broadcastHomeCurrentFlowLaunch(request){ if (!request || typeof BroadcastChannel !== 'function') return false; return await new Promise((resolve) => { const channel = new BroadcastChannel(HOME_CURRENT_FLOW_LAUNCH_STORAGE_KEY); const timer = setTimeout(() => { channel.close(); resolve(false); }, 360); channel.onmessage = (event) => { if (event && event.data && event.data.type === 'ack' && event.data.id === request.id) { clearTimeout(timer); channel.close(); resolve(true); } }; channel.postMessage(request); }); }
+    function recallTargetForDelivery(delivery){ const taskId = txt(delivery && delivery.task_id); if (!taskId) return null; const title = txt(delivery && delivery.title, `Task ${taskId}`); return { task_id: taskId, session_id: txt(delivery && delivery.session_id), digest: txt(delivery && delivery.digest), title, task_title: title, item_type: txt(delivery && delivery.kind, 'task_delivery'), source: txt(delivery && (delivery.focus_source || delivery.target), 'floating_task_hud') }; }
+    function queueRecallCenterLaunch(delivery){ const target = recallTargetForDelivery(delivery); if (!target) return null; const request = { id: `recall-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`, created_at: new Date().toISOString(), target }; try { localStorage.setItem(RECALL_LAUNCH_STORAGE_KEY, JSON.stringify(request)); return request; } catch (error) { console.error('Queue recall center launch failed from HUD:', error); return null; } }
+    async function broadcastRecallCenterLaunch(request){ if (!request || typeof BroadcastChannel !== 'function') return false; return await new Promise((resolve) => { const channel = new BroadcastChannel(RECALL_LAUNCH_STORAGE_KEY); const timer = setTimeout(() => { channel.close(); resolve(false); }, 360); channel.onmessage = (event) => { if (event && event.data && event.data.type === 'ack' && event.data.id === request.id) { clearTimeout(timer); channel.close(); resolve(true); } }; channel.postMessage(request); }); }
+    function taskDetailTargetForDelivery(delivery){ const target = recallTargetForDelivery(delivery); if (!target) return null; return { ...target, summary: txt(delivery && delivery.summary), status: txt(delivery && delivery.status) }; }
+    function queueTaskDetailLaunch(delivery){ const target = taskDetailTargetForDelivery(delivery); if (!target) return null; const request = { id: `task-detail-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`, created_at: new Date().toISOString(), target }; try { localStorage.setItem(TASK_DETAIL_LAUNCH_STORAGE_KEY, JSON.stringify(request)); return request; } catch (error) { console.error('Queue task detail launch failed from HUD:', error); return null; } }
+    async function broadcastTaskDetailLaunch(request){ if (!request || typeof BroadcastChannel !== 'function') return false; return await new Promise((resolve) => { const channel = new BroadcastChannel(TASK_DETAIL_LAUNCH_STORAGE_KEY); const timer = setTimeout(() => { channel.close(); resolve(false); }, 360); channel.onmessage = (event) => { if (event && event.data && event.data.type === 'ack' && event.data.id === request.id) { clearTimeout(timer); channel.close(); resolve(true); } }; channel.postMessage(request); }); }
+    function latestObservationItem(items=observationItems){ return Array.isArray(items) ? items.find((item)=>item && typeof item === 'object') || null : null; }
+    function observationLatestStageLabel(items=observationItems){ const latest = latestObservationItem(items); if (latest && latest.stage) return titleCaseLabel(latest.stage); if (latest && latest.status) return titleCaseLabel(latest.status); return '等待观察流'; }
+    function observationLatestEventLabel(items=observationItems){ const latest = latestObservationItem(items); return latest && latest.event_type ? titleCaseLabel(latest.event_type) : ''; }
+    function observationLatestTime(items=observationItems){ const latest = latestObservationItem(items); return txt(latest && (latest.timestamp || latest.created_at)); }
+    function observationUniqueStageCount(items=observationItems){ return new Set((Array.isArray(items) ? items : []).map((item)=>txt(item && item.stage).toLowerCase()).filter(Boolean)).size; }
+    function formatObservationGuardDetails(item){
+      if (!item || typeof item !== 'object') return '';
+      const parts = [];
+      if (item.current_status) parts.push(`Current: ${titleCaseLabel(item.current_status)}`);
+      if (item.interrupted_reason) parts.push(`Interruption: ${item.interrupted_reason}`);
+      if (item.interrupted_origin) parts.push(`Origin: ${titleCaseLabel(item.interrupted_origin)}`);
+      if (item.last_active_status) parts.push(`Last active: ${titleCaseLabel(item.last_active_status)}`);
+      if (item.last_active_progress !== null && item.last_active_progress !== undefined && item.last_active_progress !== '') parts.push(`Last progress: ${item.last_active_progress}%`);
+      if (item.last_active_at) parts.push(`Last active at: ${fmtTime(item.last_active_at)}`);
+      if (item.terminal_reason) parts.push(`Terminal: ${titleCaseLabel(item.terminal_reason)}`);
+      if (item.post_cancel_error) parts.push(`Post-cancel error: ${item.post_cancel_error}`);
+      else if (item.last_error && String(item.event_type || '').toLowerCase() === 'ignored_stale_update') parts.push(`Ignored error: ${item.last_error}`);
+      if (item.result_preview && String(item.event_type || '').toLowerCase() === 'ignored_stale_update') parts.push(`Ignored result: ${item.result_preview}`);
+      return parts.join(' | ');
+    }
+    function observationRecoveryLeadCount(items=observationItems){
+      return (Array.isArray(items) ? items : []).filter((item)=>Boolean(
+        txt(item && item.failure_label)
+        || txt(item && item.recovery_action)
+        || txt(item && item.interrupted_reason)
+        || txt(formatObservationGuardDetails(item))
+      )).length;
+    }
+    function observationLatestRecoveryLead(items=observationItems){
+      const lead = (Array.isArray(items) ? items : []).find((item)=>Boolean(txt(item && item.recovery_action) || txt(item && item.failure_label)));
+      if (!lead) return '暂无恢复线索';
+      return txt(lead.recovery_action || lead.failure_label, '暂无恢复线索');
+    }
+    function observationRedactedCount(items=observationItems){
+      return (Array.isArray(items) ? items : []).reduce((total, item) => {
+        if (txt(item && item.privacy_mode).toLowerCase() !== 'redacted') return total;
+        const privateCount = Number(item && item.private_segment_count);
+        return total + (Number.isFinite(privateCount) && privateCount > 0 ? Math.floor(privateCount) : 1);
+      }, 0);
+    }
+    function observationHeroSummary(delivery, items, state, sameTask){
+      const taskId = txt(delivery && delivery.task_id);
+      if (!taskId) return '选择关联任务的投递后，会显示工作区观察流、恢复线索和隐私裁剪状态。';
+      if (!sameTask) return `已选择任务 ${taskId}，HUD 可切换到该投递的当前流预览。`;
+      if (state.loading) return `正在从工作区记忆同步任务 ${taskId} 的当前流。`;
+      if (state.error) return state.error;
+      const latest = latestObservationItem(items);
+      if (!latest) return `任务 ${taskId} 已关联工作区记忆，但暂时还没有写入观察节点。`;
+      if (latest.failure_label || latest.recovery_action) {
+        const parts = [];
+        if (latest.failure_label) parts.push(`Failure: ${latest.failure_label}`);
+        if (latest.recovery_action) parts.push(`Recovery: ${latest.recovery_action}`);
+        return parts.join(' | ');
+      }
+      const guardDetails = formatObservationGuardDetails(latest);
+      if (guardDetails) return guardDetails;
+      if (latest.summary) return latest.summary;
+      if (latest.detail) return latest.detail;
+      return `Task ${taskId} is connected to the current flow, but the latest observation does not include a summary yet.`;
+    }
+    function renderObservationMeta(delivery, items, state){
+      const meta = [];
+      if (delivery) {
+        const route = txt(delivery.channel || delivery.target);
+        if (route) meta.push(`${readChannel(route)} surface`);
+        const deliveryMeta = metaList(delivery).filter((item)=>!/^Task\s+/i.test(item));
+        meta.push(...deliveryMeta.slice(0, 3));
+      }
+      if (items.length) meta.push(formatObservationCount(items.length));
+      if (state.loadedAt) meta.push(`Refreshed ${relTime(state.loadedAt)}`);
+      if (state.error) meta.push('Review latest sync');
+      if (!meta.length) meta.push('Task-aware delivery required');
+      observationMeta.innerHTML = meta.slice(0, 5).map((item)=>`<span>${esc(item)}</span>`).join('');
+    }
+    function renderObservationBadges(delivery, items, state, sameTask){
+      const taskId = txt(delivery && delivery.task_id);
+      const badges = [{ tone: 'info', text: 'Workspace Current Flow' }];
+      if (taskId) badges.push({ tone: 'danger', text: `Task ${taskId}` });
+      else badges.push({ tone: 'warning', text: 'Task Link Required' });
+      if (taskId) {
+        if (!sameTask) badges.push({ tone: 'warning', text: 'Flow Ready to Sync' });
+        else if (state.loading) badges.push({ tone: 'warning', text: 'Syncing Flow' });
+        else if (state.error) badges.push({ tone: 'warning', text: 'Sync Needs Attention' });
+        else if (items.length) badges.push({ tone: 'success', text: observationSyncBadgeLabel(delivery) });
+      }
+      const latestEvent = observationLatestEventLabel(items);
+      if (latestEvent) badges.push({ tone: 'default', text: `最新事件：${latestEvent}` });
+      if (items.length) badges.push({ tone: 'default', text: `阶段：${observationLatestStageLabel(items)}` });
+      const lastTime = observationLatestTime(items) || (sameTask ? txt(state.loadedAt) : '');
+      if (lastTime) badges.push({ tone: 'default', text: `最近更新：${fmtTime(lastTime)}` });
+      observationBadges.innerHTML = badges.slice(0, 6).map((badge)=>`<span class="observation-console-badge tone-${esc(badge.tone || 'default')}">${esc(badge.text)}</span>`).join('');
+    }
+    function renderObservationMetrics(delivery, items, state, sameTask){
+      const taskId = txt(delivery && delivery.task_id);
+      const waitingForSync = Boolean(taskId && !sameTask);
+      const syncing = Boolean(taskId && sameTask && state.loading);
+      const needsAttention = Boolean(taskId && sameTask && state.error && !items.length);
+      const redactedCount = observationRedactedCount(items);
+      const cards = [
+        {
+          label: '观察',
+          value: items.length,
+          note: !taskId ? '需要任务关联' : (waitingForSync ? '准备当前流' : (syncing ? '同步工作区记忆' : formatObservationCount(items.length))),
+        },
+        {
+          label: '阶段覆盖',
+          value: observationUniqueStageCount(items),
+          note: !taskId ? '等待任务关联' : (waitingForSync ? '切换活动流' : (syncing ? '加载最新阶段' : observationLatestStageLabel(items))),
+        },
+        {
+          label: '恢复线索',
+          value: observationRecoveryLeadCount(items),
+          note: !taskId ? '等待当前流' : (waitingForSync ? '等待恢复信号' : (syncing ? '加载恢复线索' : observationLatestRecoveryLead(items))),
+        },
+        {
+          label: '隐私裁剪',
+          value: redactedCount,
+          note: needsAttention ? '同步需要处理' : (redactedCount ? '敏感片段已保护' : (!taskId ? '暂无观察流' : (waitingForSync ? '等待当前流' : (syncing ? '检查隐私裁剪' : '暂无隐私裁剪')))),
+        },
+      ];
+      observationMetrics.innerHTML = cards.map((card)=>`<article class="observation-metric" data-hud-observation-metric="true"><div class="observation-metric-label">${esc(card.label)}</div><div class="observation-metric-value">${esc(String(card.value))}</div><div class="observation-metric-note">${esc(card.note)}</div></article>`).join('');
+    }
+    function renderObservationItem(item, index){
+      const summary = txt(item.summary || item.detail, 'No summary provided.');
+      const detail = txt(item.detail);
+      const issueParts = [];
+      if (item.failure_label) issueParts.push(`Failure: ${item.failure_label}`);
+      if (item.recovery_action) issueParts.push(`Recovery: ${item.recovery_action}`);
+      const issueNote = issueParts.join(' | ');
+      const guardDetails = formatObservationGuardDetails(item);
+      const isRedacted = txt(item.privacy_mode).toLowerCase() === 'redacted';
+      const privateCount = Number(item.private_segment_count);
+      const privacyLabel = isRedacted
+        ? `Private Trimmed${Number.isFinite(privateCount) && privateCount > 0 ? ` x${Math.floor(privateCount)}` : ''}`
+        : '';
+      return `<article class="observation-item ${index === 0 ? 'is-latest' : ''}" data-hud-observation-item="true"><div class="observation-head"><div class="observation-title">${esc(txt(item.title || item.task_title,'Observation'))}</div><div class="subtitle" style="margin:0">${esc(fmtTime(item.timestamp || item.created_at))}</div></div><div class="observation-badges"><span>${esc(titleCaseLabel(item.item_type,'Observation'))}</span>${item.stage ? `<span>${esc(titleCaseLabel(item.stage))}</span>` : ''}${item.source ? `<span>${esc(item.source)}</span>` : ''}${item.event_type ? `<span>${esc(titleCaseLabel(item.event_type))}</span>` : ''}${item.status ? `<span>${esc(titleCaseLabel(item.status))}</span>` : ''}${privacyLabel ? `<span>${esc(privacyLabel)}</span>` : ''}${item.derived ? '<span>Derived</span>' : ''}${index === 0 ? '<span>Latest Signal</span>' : ''}</div><div class="observation-detail">${esc(summary)}</div>${isRedacted ? `<div class="observation-note warning">${esc(privacyLabel || 'Private Trimmed')}</div>` : ''}${issueNote ? `<div class="observation-note">${esc(issueNote)}</div>` : ''}${guardDetails ? `<div class="observation-note">${esc(guardDetails)}</div>` : ''}${detail && detail !== summary ? `<div class="observation-detail observation-detail-secondary">${esc(detail)}</div>` : ''}${item.ignored_at ? `<div class="observation-meta-row">Ignored at: ${esc(fmtTime(item.ignored_at))}</div>` : ''}</article>`;
+    }
+    function renderObservations(delivery){
+      const activeTaskId = txt(delivery && delivery.task_id);
+      const sameTask = Boolean(activeTaskId && observationState.taskId === activeTaskId);
+      const scopedItems = sameTask ? observationItems : [];
+      const scopedState = sameTask
+        ? observationState
+        : { taskId: activeTaskId, title: txt(delivery && delivery.title), loading: false, error: '', loadedAt: '' };
+      $('openHomeFlow').disabled = !homeCurrentFlowTargetForDelivery(delivery);
+      $('openTaskDetail').disabled = !activeTaskId;
+      $('openRecallCenter').disabled = !activeTaskId;
+      $('refreshObservations').disabled = !activeTaskId || scopedState.loading;
+      observationSummary.textContent = observationHeroSummary(delivery, scopedItems, scopedState, sameTask);
+      renderObservationMeta(delivery, scopedItems, scopedState);
+      renderObservationBadges(delivery, scopedItems, scopedState, sameTask);
+      renderObservationMetrics(delivery, scopedItems, scopedState, sameTask);
+
+      if (!activeTaskId) {
+        observationStatus.textContent = '当前投递没有任务 ID，暂时无法关联工作区观察轨迹。';
+        observationList.innerHTML = '<div class="empty">请选择来自任务中心或其他任务感知界面的投递，以预览当前观察流。</div>';
+        return;
+      }
+      if (!sameTask) {
+        observationStatus.textContent = `任务 ${activeTaskId} 的观察流已准备同步。`;
+        observationList.innerHTML = '<div class="empty">当前流控制台正在切换到新选择的投递。</div>';
+        return;
+      }
+      if (scopedState.loading) {
+        observationStatus.textContent = `正在加载任务 ${activeTaskId} 的观察流...`;
+        observationList.innerHTML = '<div class="empty">正在从工作区记忆拉取最新观察轨迹、恢复线索和隐私裁剪。</div>';
+        return;
+      }
+      if (scopedState.error) {
+        observationStatus.textContent = `任务 ${activeTaskId} 的观察同步需要处理。`;
+        observationList.innerHTML = `<div class="empty">${esc(scopedState.error)}</div>`;
+        return;
+      }
+      observationStatus.textContent = scopedItems.length
+        ? `${txt(scopedState.title, `任务 ${activeTaskId}`)} 的工作区当前流已同步。`
+        : `任务 ${activeTaskId} 已关联，但暂时没有观察节点。`;
+      if (!scopedItems.length) {
+        observationList.innerHTML = '<div class="empty">该任务已关联，但工作区记忆中暂时没有观察节点。</div>';
+        return;
+      }
+      observationList.innerHTML = scopedItems.map((item, index)=>renderObservationItem(item, index)).join('');
+    }
+    async function syncObservationsForDelivery(delivery, force=false){
+      const taskId = txt(delivery && delivery.task_id);
+      if (!taskId) {
+        observationItems = [];
+        observationState = { taskId: '', title: '', loading: false, error: '', loadedAt: '' };
+        renderObservations(delivery);
+        return;
+      }
+      if (!force && observationCache.has(taskId)) {
+        const cached = observationCache.get(taskId);
+        observationItems = clone(cached.items || []);
+        observationState = { ...cached.state };
+        renderObservations(delivery);
+        return;
+      }
+      observationItems = [];
+      observationState = {
+        taskId,
+        title: txt(delivery && delivery.title),
+        loading: true,
+        error: '',
+        loadedAt: '',
+      };
+      renderObservations(delivery);
+      try {
+        const response = await fetch(`/v1/memory/observations?task_id=${encodeURIComponent(taskId)}&limit=6`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(txt(data.error,'Failed to load observation flow.'));
+        observationItems = Array.isArray(data.observations) ? data.observations.slice(0, 6) : [];
+        observationState = {
+          taskId,
+          title: txt(delivery && delivery.title),
+          loading: false,
+          error: '',
+          loadedAt: new Date().toISOString(),
+        };
+        observationCache.set(taskId, { items: clone(observationItems), state: { ...observationState } });
+      } catch (error) {
+        observationItems = [];
+        observationState = {
+          taskId,
+          title: txt(delivery && delivery.title),
+          loading: false,
+          error: txt(error && error.message, 'Failed to load observation flow.'),
+          loadedAt: '',
+        };
+        observationCache.delete(taskId);
+      }
+      renderObservations(delivery);
+    }
+    function savePrefs(){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ followLatest, statusFilter: statusFilter.value, channelFilter: channelFilter.value })); } catch {} }
+    function loadPrefs(){ try { const p = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); if (typeof p.followLatest === 'boolean') followLatest = p.followLatest; if (p.statusFilter) statusFilter.value = p.statusFilter; if (p.channelFilter) channelFilter.value = p.channelFilter; } catch {} }
+    function activeDelivery(){ if (followLatest) { const d = historyItems[0] || pinnedItems[0] || null; if (d) selectedId = idOf(d); return d; } return historyItems.find((i)=>idOf(i)===selectedId) || pinnedItems.find((i)=>idOf(i)===selectedId) || historyItems[0] || pinnedItems[0] || null; }
+    function filteredItems(){ const sf = txt(statusFilter.value,'all').toLowerCase(), cf = txt(channelFilter.value,'all').toLowerCase(); return historyItems.filter((i)=>{ const st=statusOf(i.status), ch=txt(i.channel || i.target,'overlay').toLowerCase(); const okStatus = sf==='all' || (sf==='running' && ['running','pending'].includes(st)) || sf===st; const okChannel = cf==='all' || cf===ch; return okStatus && okChannel; }); }
+    function setConn(online){ conn.className = `chip ${online ? 'online' : 'offline'}`; conn.textContent = online ? '在线' : '离线'; if (!historyItems.length) subtitle.textContent = online ? '任务通道已连接，新的任务投递会实时显示在这里。' : '任务通道正在重连，恢复后会自动继续同步。'; }
+    function pulse(){ panel.classList.remove('pulse'); void panel.offsetWidth; panel.classList.add('pulse'); setTimeout(()=>panel.classList.remove('pulse'), 820); }
+    function renderMode(){ mode.className = `chip ${followLatest ? 'follow' : 'freeze'}`; mode.textContent = followLatest ? '跟随最新' : '已冻结'; $('toggleFollow').textContent = followLatest ? '冻结选择' : '恢复跟随'; savePrefs(); }
+    function renderHero(d){
+      const active = d || linkedObservationTarget || null;
+      if (!active) { heroStatus.className='tag running'; heroStatus.textContent='待命'; heroChannel.className='tag default'; heroChannel.textContent='任务总线'; heroTime.textContent='暂无任务投递'; heroTitle.textContent='等待新的任务投递'; heroSummary.textContent='调度器、任务中心或桌面控制流程发布任务后，会立即同步到这里。'; heroMeta.innerHTML=''; $('pinCurrent').disabled=true; return; }
+      heroStatus.className=`tag ${cls(active.status)}`; heroStatus.textContent=readStatus(active.status); heroChannel.className='tag default'; heroChannel.textContent=readChannel(active.channel || active.target); heroTime.textContent=`${fmtTime(active.timestamp)} · ${relTime(active.timestamp)}`; heroTitle.textContent=txt(active.title,'Untitled delivery'); heroSummary.textContent=txt(active.summary,'No summary provided.'); heroMeta.innerHTML=metaList(active).map((m)=>`<span>${esc(m)}</span>`).join(''); $('pinCurrent').disabled=!idOf(active);
+    }
+    function renderStats(){ const total=historyItems.length, done=historyItems.filter((i)=>statusOf(i.status)==='completed').length, fail=historyItems.filter((i)=>statusOf(i.status)==='failed').length, desk=historyItems.filter((i)=>!!desktopMeta(i)).length; const cards=[['任务流', total, total ? `${done} 个已完成` : '等待事件'],['失败', fail, fail ? '查看并重试' : '暂无失败'],['桌面', desk, desk ? '已跟踪窗口动作' : '暂无桌面动作'],['固定', pinnedItems.length, pinnedItems.length ? '关键节点已固定' : '可固定重要任务']]; stats.innerHTML = cards.map(([l,v,n])=>`<article class="stat"><div class="stat-label">${esc(l)}</div><div class="stat-value">${esc(String(v))}</div><div class="stat-note">${esc(n)}</div></article>`).join(''); }
+    function renderPins(){ if (!pinnedItems.length) { pins.innerHTML = '<div class="empty">固定的投递会显示在这里，便于持续查看关键节点。</div>'; return; } pins.innerHTML = pinnedItems.map((i)=>`<article class="pin ${idOf(i)===selectedId?'active':''}" data-id="${esc(idOf(i))}"><div class="status"><span class="dot ${cls(i.status)}"></span><span class="item-title">${esc(txt(i.title,'未命名投递'))}</span></div><div class="item-summary">${esc(txt(i.summary,'暂无摘要。'))}</div><div class="subtitle" style="margin:0">${esc(readChannel(i.channel || i.target))} · ${esc(relTime(i.timestamp))}</div><div class="actions"><button type="button" class="btn mini" data-review="${esc(idOf(i))}">查看</button><button type="button" class="btn mini" data-unpin="${esc(idOf(i))}">取消固定</button></div></article>`).join(''); }
+    function renderFeed(){ const items = filteredItems(); if (!items.length) { feedList.innerHTML = '<div class="empty">当前筛选条件下没有任务。可以切回全部状态或全部通道。</div>'; return; } feedList.innerHTML = items.map((i)=>{ const pinned = pinnedItems.some((p)=>idOf(p)===idOf(i)); const dc = desktopMeta(i); const hint = txt(dc && (dc.last_action_label || dc.action_label || dc.action)); return `<article class="item ${idOf(i)===selectedId?'active':''}" data-id="${esc(idOf(i))}"><div class="row"><div class="status"><span class="dot ${cls(i.status)}"></span><div><div class="item-title">${esc(txt(i.title,'未命名投递'))}</div><div class="subtitle" style="margin:2px 0 0">${esc(readStatus(i.status))} · ${esc(readChannel(i.channel || i.target))} · ${esc(fmtTime(i.timestamp))}</div></div></div><button type="button" class="btn mini" data-pin="${esc(idOf(i))}">${pinned?'取消固定':'固定'}</button></div><div class="item-summary">${esc(txt(i.summary,'暂无摘要。'))}</div><div class="row"><div class="subtitle" style="margin:0">${esc(hint || txt(i.schedule_type,'实时投递').replace(/_/g,' '))}</div><button type="button" class="btn mini" data-review="${esc(idOf(i))}">查看</button></div></article>`; }).join(''); }
+    function handleObservationFocus(msg){
+      const payload = msg && msg.data && typeof msg.data === 'object' ? msg.data : {};
+      if (payload.clear) {
+        clearLinkedObservationTarget();
+        renderAll();
+        return;
+      }
+      const normalizedTarget = normalizeObservationConsoleTarget(payload, 'recall_center');
+      if (!normalizedTarget) return;
+      linkedObservationTarget = normalizedTarget;
+      const hydrated = hydrateObservationSnapshotFromPayload(payload, normalizedTarget);
+      const current = activeDelivery();
+      if (current && txt(current.task_id) === txt(normalizedTarget.task_id)) mergeObservationPayloadIntoDelivery(current, payload);
+      pulse();
+      renderAll();
+      void syncObservationsForDelivery(getObservationConsoleTarget(), !hydrated);
+    }
+    /** 订阅 Electron Main 的 Recall 焦点；无输入，无返回，Browser 环境保持 WebSocket fallback。 */
+    function subscribeApplicationRecallObservationFocus(){
+      if (!window.electronAPI || typeof window.electronAPI.onApplicationRecallObservationFocus !== 'function') return;
+      window.electronAPI.onApplicationRecallObservationFocus((payload)=>{
+        handleObservationFocus({ action: 'observation_focus', data: payload });
+      });
+    }
+    function handleObservationUpdate(msg){
+      const payload = msg && msg.data && typeof msg.data === 'object' ? msg.data : {};
+      const normalizedTarget = normalizeObservationConsoleTarget(payload, txt(payload && (payload.focus_source || payload.source), 'workspace_memory'));
+      if (!normalizedTarget) return;
+      const taskId = txt(normalizedTarget.task_id);
+      if (!taskId) return;
+      if (!linkedObservationTarget && !activeDelivery() && !historyItems.length) linkedObservationTarget = normalizedTarget;
+      else if (linkedObservationTarget && txt(linkedObservationTarget.task_id) === taskId) linkedObservationTarget = { ...linkedObservationTarget, ...normalizedTarget, summary: normalizedTarget.summary || linkedObservationTarget.summary, timestamp: normalizedTarget.timestamp || linkedObservationTarget.timestamp };
+      const current = activeDelivery();
+      if (current && txt(current.task_id) === taskId) mergeObservationPayloadIntoDelivery(current, payload);
+      const historyMatch = historyItems.find((item)=>txt(item.task_id) === taskId);
+      if (historyMatch) mergeObservationPayloadIntoDelivery(historyMatch, payload);
+      const pinMatch = pinnedItems.find((item)=>txt(item.task_id) === taskId);
+      if (pinMatch) mergeObservationPayloadIntoDelivery(pinMatch, payload);
+      hydrateObservationSnapshotFromPayload(payload, linkedObservationTarget && txt(linkedObservationTarget.task_id) === taskId ? linkedObservationTarget : (historyMatch || current || normalizedTarget));
+      renderAll();
+    }
+    function renderAll(){ const active = activeDelivery(); renderMode(); renderHero(active); renderObservations(getObservationConsoleTarget(active)); renderStats(); renderPins(); renderFeed(); }
+    function selectDelivery(id, freeze=true){ if (!txt(id)) return; selectedId = txt(id); if (freeze) followLatest = false; clearLinkedObservationTarget(); renderAll(); void syncObservationsForDelivery(activeDelivery(), false); }
+    function syncPin(delivery){ const id = idOf(delivery); pinnedItems = pinnedItems.map((p)=>idOf(p)===id ? clone(delivery) : p); }
+    function addDelivery(delivery){ ensureId(delivery); historyItems = historyItems.filter((i)=>idOf(i)!==idOf(delivery)); historyItems.unshift(delivery); if (historyItems.length>MAX_HISTORY) historyItems.length = MAX_HISTORY; syncPin(delivery); if (followLatest || !selectedId) selectedId = idOf(delivery); subtitle.textContent = 'Live task deliveries are flowing through the overlay bus. Pin what matters and freeze the feed when you want to inspect details.'; pulse(); renderAll(); if (!linkedObservationTarget || txt(linkedObservationTarget.task_id) === txt(delivery.task_id)) void syncObservationsForDelivery(getObservationConsoleTarget(activeDelivery()), false); }
+    function togglePin(id){ const idx = pinnedItems.findIndex((p)=>idOf(p)===txt(id)); if (idx >= 0) { pinnedItems.splice(idx,1); pinnedItems = [...pinnedItems]; renderAll(); return; } const src = historyItems.find((i)=>idOf(i)===txt(id)); if (!src) return; pinnedItems.unshift(clone(src)); if (pinnedItems.length>MAX_PINS) pinnedItems.length = MAX_PINS; renderAll(); }
+    function clearHud(){ historyItems = []; pinnedItems = []; selectedId = ''; clearLinkedObservationTarget(); observationItems = []; observationState = { taskId: '', title: '', loading: false, error: '', loadedAt: '' }; renderAll(); }
+    async function closeHud(){
+      if (window.electronAPI && typeof window.electronAPI.closeFloatingTaskHudWindow === 'function') {
+        try { await window.electronAPI.closeFloatingTaskHudWindow(); return; } catch (e) { console.error('Close task HUD failed:', e); }
+      }
+      if (window.electronAPI && typeof window.electronAPI.windowAction === 'function') {
+        try { await window.electronAPI.windowAction('hide'); return; } catch (e) { console.error('Hide task HUD failed:', e); }
+      }
+      window.close();
+    }
+    async function openIsland(){ if (window.electronAPI && typeof window.electronAPI.openDynamicIslandWindow === 'function') { try { await window.electronAPI.openDynamicIslandWindow(); return; } catch (e) { console.error('Open dynamic island window failed from HUD:', e); } } window.open('/dynamic_island', '_blank', 'noopener'); }
+    async function openHomeFlow(){ const delivery = getObservationConsoleTarget(activeDelivery()); const request = queueHomeCurrentFlowLaunch(delivery); if (!request) return; const acknowledged = await broadcastHomeCurrentFlowLaunch(request); if (window.electronAPI && typeof window.electronAPI.windowAction === 'function') { try { await window.electronAPI.windowAction('show'); return; } catch (e) { console.error('Open home current flow failed from HUD:', e); } } if (!acknowledged) window.open('/', '_blank', 'noopener'); }
+    async function openTaskDetail(){ const delivery = getObservationConsoleTarget(activeDelivery()); const request = queueTaskDetailLaunch(delivery); if (!request) return; const acknowledged = await broadcastTaskDetailLaunch(request); if (window.electronAPI && typeof window.electronAPI.windowAction === 'function') { try { await window.electronAPI.windowAction('show'); return; } catch (e) { console.error('Open task detail failed from HUD:', e); } } if (!acknowledged) window.open('/', '_blank', 'noopener'); }
+    async function openRecallCenter(){ const delivery = getObservationConsoleTarget(activeDelivery()); const request = queueRecallCenterLaunch(delivery); if (!request) return; const acknowledged = await broadcastRecallCenterLaunch(request); if (window.electronAPI && typeof window.electronAPI.windowAction === 'function') { try { await window.electronAPI.windowAction('show'); return; } catch (e) { console.error('Open recall center failed from HUD:', e); } } if (!acknowledged) window.open('/', '_blank', 'noopener'); }
+    function onDelivery(msg){ const p = msg && msg.data && typeof msg.data === 'object' ? msg.data : {}; addDelivery({ kind: txt(p.kind,'task_delivery'), title: txt(p.title,'Task Delivery Received'), summary: txt(p.summary,'No summary provided'), status: txt(p.status,'completed'), schedule_type: txt(p.schedule_type), task_id: txt(p.task_id), timestamp: txt(p.timestamp, new Date().toISOString()), target: txt(p.target || msg.channel, 'overlay'), channel: txt(msg.channel || p.target, 'overlay').toLowerCase(), presentation: txt(p.presentation), desktop_control: p.desktop_control && typeof p.desktop_control === 'object' ? p.desktop_control : null }); }
+    function connect(){ clearTimeout(reconnect); const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'; socket = new WebSocket(`${protocol}//${location.host}/ws/overlay`); socket.addEventListener('open', ()=>{ setConn(true); clearInterval(heartbeat); heartbeat = setInterval(()=>{ if (socket && socket.readyState === WebSocket.OPEN) socket.send('ping'); }, 12000); }); socket.addEventListener('message', (event)=>{ try { const data = JSON.parse(event.data); if (data.action === 'task_delivery') onDelivery(data); if (data.action === 'observation_focus') handleObservationFocus(data); if (data.action === 'observation_update') handleObservationUpdate(data); if (data.action === 'clear') clearHud(); } catch (e) { console.error('HUD message parse failed:', e); } }); socket.addEventListener('close', ()=>{ setConn(false); clearInterval(heartbeat); reconnect = setTimeout(connect, 1600); }); socket.addEventListener('error', ()=>setConn(false)); }
+    pins.addEventListener('click', (e)=>{ const review=e.target.closest('[data-review]'), unpin=e.target.closest('[data-unpin]'), pin=e.target.closest('[data-id]'); if (review) return void selectDelivery(review.dataset.review, true); if (unpin) return void togglePin(unpin.dataset.unpin); if (pin) selectDelivery(pin.dataset.id, true); });
+    feedList.addEventListener('click', (e)=>{ const pin=e.target.closest('[data-pin]'), review=e.target.closest('[data-review]'), item=e.target.closest('[data-id]'); if (pin) { e.stopPropagation(); return void togglePin(pin.dataset.pin); } if (review) { e.stopPropagation(); return void selectDelivery(review.dataset.review, true); } if (item) selectDelivery(item.dataset.id, true); });
+    statusFilter.addEventListener('change', ()=>{ savePrefs(); renderFeed(); });
+    channelFilter.addEventListener('change', ()=>{ savePrefs(); renderFeed(); });
+    $('toggleFollow').addEventListener('click', ()=>{ followLatest = !followLatest; if (followLatest && historyItems[0]) selectedId = idOf(historyItems[0]); renderAll(); void syncObservationsForDelivery(getObservationConsoleTarget(activeDelivery()), false); });
+    $('pinCurrent').addEventListener('click', ()=>{ const d = activeDelivery(); if (d) togglePin(idOf(d)); });
+    $('openHomeFlow').addEventListener('click', ()=>void openHomeFlow());
+    $('openTaskDetail').addEventListener('click', ()=>void openTaskDetail());
+    $('openRecallCenter').addEventListener('click', ()=>void openRecallCenter());
+    $('refreshObservations').addEventListener('click', ()=>void syncObservationsForDelivery(getObservationConsoleTarget(activeDelivery()), true));
+    $('closeHud').addEventListener('click', ()=>void closeHud());
+    $('hideHud').addEventListener('click', ()=>void closeHud());
+    $('openIsland').addEventListener('click', ()=>void openIsland());
+    $('clearHud').addEventListener('click', clearHud);
+    window.addEventListener('beforeunload', ()=>{ clearInterval(heartbeat); clearTimeout(reconnect); if (socket) socket.close(); });
+    subscribeApplicationRecallObservationFocus(); loadPrefs(); renderAll(); void syncObservationsForDelivery(getObservationConsoleTarget(activeDelivery()), false); connect();
+  </script>
+</body>
+</html>

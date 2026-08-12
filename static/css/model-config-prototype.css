@@ -1,0 +1,556 @@
+/* =========================================================
+   model-config-prototype.css
+   ---------------------------------------------------------
+   1:1 实现 D:/OpenXnet/UIPlan/pages/model-config.html。
+   provider 卡片网格 + 展开 API Key 行 + 模型表格（含
+   能力 tag、上下文长度、状态开关）。
+   ========================================================= */
+
+body.openxnet-ui-redesign-body .ox-mc-page {
+  background: var(--ox-bg-base, #f3f5f9) !important;
+  padding: 24px 28px !important;
+  overflow-y: auto !important;
+}
+
+body.openxnet-ui-redesign-body .ox-mc {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ── Header ── */
+body.openxnet-ui-redesign-body .ox-mc__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+body.openxnet-ui-redesign-body .ox-mc__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+  line-height: 1.2;
+}
+
+body.openxnet-ui-redesign-body .ox-mc__subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ox-text-muted, #64748b);
+  line-height: 1.5;
+}
+
+/* ── Tabs ── */
+body.openxnet-ui-redesign-body .ox-mc__tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: rgba(15, 23, 42, 0.04);
+  border-radius: 12px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+  align-self: flex-start;
+}
+
+body.openxnet-ui-redesign-body .ox-mc__tabs::-webkit-scrollbar { display: none; }
+
+body.openxnet-ui-redesign-body .ox-mc-tab {
+  padding: 7px 16px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ox-text-secondary, #475569);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-tab:hover {
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-tab--active {
+  background: var(--ox-bg-surface, #fff);
+  color: #5BA3C5;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  font-weight: 600;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ── Provider grid (3 columns) ── */
+body.openxnet-ui-redesign-body .ox-mc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card:hover {
+  border-color: rgba(91, 163, 197, 0.4);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card.is-active {
+  border-color: rgba(91, 163, 197, 0.6);
+  box-shadow:
+    0 0 0 3px rgba(91, 163, 197, 0.10),
+    0 8px 18px rgba(91, 163, 197, 0.10);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card.is-template {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.92));
+  border-style: dashed;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: rgba(241, 245, 249, 0.7);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__icon img {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+  display: block;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ox-text-secondary, #475569);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__dot--on {
+  background: #22C55E;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.16);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__dot--off {
+  background: #94A3B8;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__badge--main {
+  background: rgba(34, 197, 94, 0.14);
+  color: #16A34A;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__badge--template {
+  background: rgba(148, 163, 184, 0.18);
+  color: #64748B;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ox-border, rgba(15, 23, 42, 0.06));
+  font-size: 12px;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-card__foot i {
+  font-size: 11px;
+  color: var(--ox-accent, #5BA3C5);
+}
+
+/* ── Expanded provider section ── */
+body.openxnet-ui-redesign-body .ox-mc-expanded {
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+  animation: ox-mc-fade-in 320ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
+}
+
+@keyframes ox-mc-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+body.openxnet-ui-redesign-body .ox-mc-expanded__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  background: rgba(241, 245, 249, 0.45);
+  flex-wrap: wrap;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-expanded__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-expanded__title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  overflow: hidden;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-expanded__title-icon img {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+  display: block;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-api-key-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-api-key-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ox-text-secondary, #475569);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-api-key-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  border-radius: 8px;
+  background: var(--ox-bg-surface, #fff);
+  color: var(--ox-text-primary, #1e293b);
+  transition: border-color 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-input:focus {
+  outline: none;
+  border-color: #5BA3C5;
+  box-shadow: 0 0 0 3px rgba(91, 163, 197, 0.12);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-input--mono {
+  font-family: var(--ox-font-mono, 'JetBrains Mono', 'Consolas', monospace);
+  font-size: 12px;
+  width: 280px;
+  padding-right: 38px;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-api-key-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--ox-text-muted, #94a3b8);
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 13px;
+  transition: color 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-api-key-toggle:hover {
+  color: var(--ox-text-primary, #1e293b);
+}
+
+/* ── Model table ── */
+body.openxnet-ui-redesign-body .ox-mc-table-wrap {
+  overflow-x: auto;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-table th {
+  text-align: left;
+  padding: 11px 20px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ox-text-muted, #94a3b8);
+  border-bottom: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  background: rgba(241, 245, 249, 0.45);
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-table td {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--ox-border, rgba(15, 23, 42, 0.06));
+  color: var(--ox-text-secondary, #475569);
+  vertical-align: middle;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-table tbody tr:hover td {
+  background: rgba(241, 245, 249, 0.5);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-model-name {
+  font-weight: 500;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-model-context {
+  font-family: var(--ox-font-mono, 'JetBrains Mono', monospace);
+  font-size: 12px;
+  color: var(--ox-text-secondary, #475569);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-table-empty {
+  text-align: center !important;
+  padding: 28px 16px !important;
+  color: var(--ox-text-muted, #94a3b8) !important;
+  font-size: 12px !important;
+}
+
+/* ── Capability tags ── */
+body.openxnet-ui-redesign-body .ox-mc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-tag--chat { background: rgba(91, 163, 197, 0.10); color: #5BA3C5; }
+body.openxnet-ui-redesign-body .ox-mc-tag--code { background: rgba(34, 197, 94, 0.10); color: #16A34A; }
+body.openxnet-ui-redesign-body .ox-mc-tag--vision { background: rgba(59, 130, 246, 0.10); color: #3B82F6; }
+body.openxnet-ui-redesign-body .ox-mc-tag--reasoning { background: rgba(245, 158, 11, 0.10); color: #D97706; }
+body.openxnet-ui-redesign-body .ox-mc-tag--image-gen { background: rgba(168, 85, 247, 0.10); color: #9333EA; }
+body.openxnet-ui-redesign-body .ox-mc-tag--embedding { background: rgba(236, 72, 153, 0.10); color: #EC4899; }
+
+/* ── Empty tab placeholder ── */
+body.openxnet-ui-redesign-body .ox-mc-empty-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 56px 32px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px dashed rgba(148, 163, 184, 0.32);
+  text-align: center;
+}
+
+body.openxnet-ui-redesign-body .ox-mc-empty-tab i {
+  font-size: 28px;
+  color: var(--ox-accent, #5BA3C5);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-empty-tab h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-mc-empty-tab p {
+  margin: 0;
+  max-width: 480px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ox-text-secondary, #64748b);
+}
+
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+  body.openxnet-ui-redesign-body .ox-mc-grid { grid-template-columns: repeat(2, 1fr); }
+  body.openxnet-ui-redesign-body .ox-mc-input--mono { width: 220px; }
+}
+@media (max-width: 720px) {
+  body.openxnet-ui-redesign-body .ox-mc-grid { grid-template-columns: 1fr; }
+  body.openxnet-ui-redesign-body .ox-mc-expanded__head { flex-direction: column; align-items: flex-start; }
+  body.openxnet-ui-redesign-body .ox-mc-input--mono { width: 100%; }
+}
+
+/* ── Dark theme ── */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-page,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-page,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-mc-page,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-mc-page {
+  background: #0f172a !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc__title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc__title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-card__name,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-card__name,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-expanded__title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-expanded__title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-model-name,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-model-name,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-empty-tab h3,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-empty-tab h3 {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-card,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-expanded,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-expanded,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-empty-tab,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-empty-tab,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-input,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-input {
+  background: rgba(30, 41, 59, 0.78) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-card.is-template,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-card.is-template {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.86), rgba(15, 23, 42, 0.78)) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-card__icon,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-card__icon {
+  background: rgba(15, 23, 42, 0.5) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-table th,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-table th,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-expanded__head,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-expanded__head {
+  background: rgba(15, 23, 42, 0.4) !important;
+  color: #94a3b8 !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-table td,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-table td {
+  color: #cbd5e1 !important;
+  border-color: rgba(148, 163, 184, 0.1) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-table tbody tr:hover td,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-table tbody tr:hover td {
+  background: rgba(51, 65, 85, 0.4) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc__tabs,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc__tabs {
+  background: rgba(15, 23, 42, 0.5) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-tab,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-tab {
+  color: #94a3b8 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-mc-tab--active,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-mc-tab--active {
+  background: rgba(30, 41, 59, 0.94) !important;
+  color: #93c5fd !important;
+}

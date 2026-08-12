@@ -1,0 +1,97 @@
+[project]
+name = "super-agent-party"
+version = "v0.3.9"
+description = "超级智能体派对v0.3.9 | 轻松链接一切!"
+license = "AGPL-3.0"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "aiohttp>=3.11.18",
+    "aiosqlite>=0.21.0",
+    "appdirs>=1.4.4",
+    "bs4>=0.0.2",
+    "fastapi>=0.115.12",
+    "openai>=1.76.0",
+    "Pillow>=11,<13",
+    "python-multipart>=0.0.20",
+    "requests>=2.32.3",
+    "shortuuid>=1.0.13",
+    "tavily-python>=0.7.0",
+    "tzlocal>=5.3.1",
+    "uvicorn[standard]>=0.34.2",
+    "e2b-code-interpreter>=1.5.0",
+    "ollama>=0.5.1",
+    "wikipedia-api>=0.8.1",
+    "arxiv>=2.2.0",
+    "anyio>=4.9.0",
+    "httpcore>=1.0.9",
+    "httpx>=0.28.1",
+    "ddgs>=9.5.4",
+    "aiofiles>=25.1.0",
+    "pip-licenses>=5.5.0",
+    "pyinstaller>=6.17.0",
+]
+
+[project.optional-dependencies]
+connectors = [
+    "qq-botpy>=1.2.1",
+    "lark-oapi>=1.4.24",
+    "discord-py>=2.6.4",
+    "slack-sdk>=3.39.0",
+    "dingtalk-stream>=0.24.3",
+]
+desktop-control = [
+    "pywin32>=310 ; sys_platform == 'win32'",
+]
+documents = [
+    "pypdf>=5.0",
+    "python-docx>=1.1.2",
+    "openpyxl>=3.1.5",
+    "xlrd>=2.0.2",
+    "striprtf>=0.0.29",
+    "odfpy>=1.4.1",
+    "python-pptx>=1.0.2",
+    "pywin32>=310 ; sys_platform == 'win32'",
+]
+memory = [
+    "mem0ai==1.0.0",
+]
+mcp = [
+    "anyio>=4.12.0",
+    "fastapi-mcp>=0.3.4",
+    "httpx>=0.28.1",
+    "mcp==1.26.0",
+    "mcp-alchemy==2025.8.15.91819",
+    "oracledb==4.0.2",
+    "psycopg2-binary==2.9.12",
+    "pydantic>=2.11.0",
+    "pymssql==2.3.13",
+    "PyMySQL==1.2.0",
+    "SQLAlchemy==2.0.51",
+]
+live = [
+    "aiohttp>=3.11.18",
+    "brotli>=1.1.0",
+    "pydantic>=2.11.0",
+    "yarl>=1.18.0",
+]
+voice = [
+    "edge-tts>=7,<8",
+    "elevenlabs>=2,<3",
+    "httpx>=0.28.1,<0.29",
+    "imageio-ffmpeg>=0.6,<0.7",
+    "sherpa-onnx==1.12.40",
+    "soundfile>=0.13.1",
+    "numpy>=2.0",
+    "openai>=2.0,<3",
+    "pydub>=0.25.1,<0.26",
+    "pyttsx3>=2.90,<3",
+    "tetos>=0.4,<0.5",
+    "websockets>=14,<17",
+]
+vector = [
+    "faiss-cpu>=1.10.0",
+    "numpy>=2.0",
+    "onnxruntime==1.23.2",
+    "tokenizers>=0.22.0",
+]

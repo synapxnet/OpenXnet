@@ -1,0 +1,10 @@
+anyio>=4.12.0
+httpx>=0.28.1
+mcp==1.26.0
+mcp-alchemy==2025.8.15.91819
+oracledb==4.0.2
+psycopg2-binary==2.9.12
+pydantic>=2.11.0
+PyMySQL==1.2.0
+pymssql==2.3.13
+SQLAlchemy==2.0.51

@@ -1,0 +1,146 @@
+/*
+ * scrollbar-style.css
+ * Global macOS-like scrollbar:
+ * - moderately narrow total rail
+ * - rounded pill thumb with transparent inset
+ * - transparent track
+ * - consistent across legacy pages, Vite pages, and teleported dialogs
+ */
+
+:root {
+  --ox-scrollbar-size: 10px;
+  --ox-scrollbar-radius: 999px;
+  --ox-scrollbar-inset: 2px;
+  --ox-scrollbar-thumb: rgba(148, 163, 184, 0.56);
+  --ox-scrollbar-thumb-hover: rgba(100, 116, 139, 0.78);
+  --ox-scrollbar-thumb-active: rgba(71, 85, 105, 0.92);
+  --ox-scrollbar-track: transparent;
+}
+
+html[data-theme="dark"],
+html[data-theme="midnight"],
+html[data-theme="neon"],
+html[data-theme="ink"] {
+  --ox-scrollbar-thumb: rgba(148, 163, 184, 0.46);
+  --ox-scrollbar-thumb-hover: rgba(203, 213, 225, 0.68);
+  --ox-scrollbar-thumb-active: rgba(226, 232, 240, 0.82);
+}
+
+body.openxnet-ui-redesign-body,
+body.openxnet-ui-redesign-body #app *,
+body.openxnet-ui-redesign-body .openxnet-redesign-app *,
+body.openxnet-ui-redesign-body .el-dialog *,
+body.openxnet-ui-redesign-body .el-drawer *,
+body.openxnet-ui-redesign-body .el-message-box *,
+body.openxnet-ui-redesign-body .el-popper * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ox-scrollbar-thumb) transparent;
+}
+
+body.openxnet-ui-redesign-body::-webkit-scrollbar,
+body.openxnet-ui-redesign-body #app *::-webkit-scrollbar,
+body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar,
+body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar,
+body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar,
+body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar,
+body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar {
+  width: var(--ox-scrollbar-size) !important;
+  height: var(--ox-scrollbar-size) !important;
+  background: transparent !important;
+}
+
+body.openxnet-ui-redesign-body::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body::-webkit-scrollbar-corner,
+body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-corner,
+body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-corner,
+body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-corner,
+body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-corner,
+body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-corner,
+body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-corner {
+  background: var(--ox-scrollbar-track) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-thumb {
+  background-color: var(--ox-scrollbar-thumb) !important;
+  border: var(--ox-scrollbar-inset) solid transparent !important;
+  border-radius: var(--ox-scrollbar-radius) !important;
+  background-clip: padding-box !important;
+  min-height: 36px !important;
+  min-width: 36px !important;
+  box-shadow: none !important;
+  transition: background-color 160ms ease !important;
+}
+
+body.openxnet-ui-redesign-body::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body #app *:hover::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .openxnet-redesign-app *:hover::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-dialog *:hover::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-drawer *:hover::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-message-box *:hover::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-popper *:hover::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body #app *:focus-within::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .openxnet-redesign-app *:focus-within::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-dialog *:focus-within::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-drawer *:focus-within::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-message-box *:focus-within::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .el-popper *:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--ox-scrollbar-thumb-hover) !important;
+}
+
+body.openxnet-ui-redesign-body::-webkit-scrollbar-thumb:active,
+body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-thumb:active,
+body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-thumb:active,
+body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-thumb:active,
+body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-thumb:active,
+body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-thumb:active,
+body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-thumb:active {
+  background-color: var(--ox-scrollbar-thumb-active) !important;
+}
+
+body.openxnet-ui-redesign-body::-webkit-scrollbar-button,
+body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-button,
+body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-button,
+body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-button,
+body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-button,
+body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-button,
+body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+/* keep utility tab rails hidden */
+.ox-rail-stack::-webkit-scrollbar,
+.ox-dev-subnav::-webkit-scrollbar,
+.ox-mc__tabs::-webkit-scrollbar,
+.oxd-tabs::-webkit-scrollbar {
+  display: none !important;
+}
+
+.ox-rail-stack,
+.ox-dev-subnav,
+.ox-mc__tabs,
+.oxd-tabs {
+  scrollbar-width: none !important;
+}

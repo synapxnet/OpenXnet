@@ -1,0 +1,105 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""PyInstaller specification for the dependency-isolated OpenXnet Memory Worker."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+PROJECT_ROOT = Path(SPECPATH).resolve()
+
+analysis = Analysis(
+    [str(PROJECT_ROOT / "py" / "workers" / "memory_worker.py")],
+    pathex=[str(PROJECT_ROOT)],
+    binaries=[],
+    datas=[],
+    hiddenimports=[
+        "py.memory.vector_worker_store",
+        "py.memory.recall_runtime",
+        "py.memory.observation_store",
+        "py.memory.provider",
+        "py.memory.session_store",
+        "py.engine.checkpoint",
+        "py.git_shadow",
+        "py.neuro_temporal_kg",
+        "py.memory_worker_client",
+        "py.vector_worker_client",
+        "py.workers.memory_worker",
+        "py.workers.protocol",
+        "py.workers.runtime",
+        "mem0.configs.vector_stores.faiss",
+        "mem0.configs.vector_stores.qdrant",
+        "mem0.embeddings.openai",
+        "mem0.llms.openai",
+        "numpy",
+        "qdrant_client",
+        "grpc",
+        "aiosqlite",
+        "appdirs",
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        "aiohttp",
+        "boto3",
+        "botocore",
+        "cv2",
+        "datasets",
+        "faiss",
+        "fastapi",
+        "googleapiclient",
+        "huggingface_hub",
+        "IPython",
+        "PyQt5",
+        "PyQt6",
+        "tkinter",
+        "_tkinter",
+        "zmq",
+        "langchain",
+        "lxml",
+        "matplotlib",
+        "onnxruntime",
+        "PIL",
+        "pytest",
+        "_pytest",
+        "astroid",
+        "pylint",
+        "rank_bm25",
+        "scipy",
+        "selenium",
+        "sherpa_onnx",
+        "soundfile",
+        "tensorflow",
+        "tokenizers",
+        "torch",
+        "torchvision",
+        "transformers",
+    ],
+    noarchive=False,
+    optimize=1,
+)
+
+python_archive = PYZ(analysis.pure)
+
+executable = EXE(
+    python_archive,
+    analysis.scripts,
+    [],
+    exclude_binaries=True,
+    name="memory-worker",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+    disable_windowed_traceback=False,
+)
+
+collection = COLLECT(
+    executable,
+    analysis.binaries,
+    analysis.datas,
+    strip=False,
+    upx=False,
+    name="memory-worker",
+)

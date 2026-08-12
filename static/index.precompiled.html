@@ -1,0 +1,650 @@
+<!DOCTYPE html><html><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenXnet</title>
+  <script>
+    window.normalizeOpenXnetThemeForDom = function normalizeOpenXnetThemeForDom(theme) {
+      const normalized = String(theme || 'party').trim().toLowerCase();
+      return normalized === 'party' ? 'light' : normalized;
+    };
+
+    (function bootstrapOpenXnetTheme() {
+      const storageKey = 'openxnet-theme';
+      let theme = 'party';
+      try {
+        const stored = window.localStorage ? window.localStorage.getItem(storageKey) : null;
+        if (stored && typeof stored === 'string') {
+          theme = stored;
+        }
+      } catch (error) {
+        console.warn('Failed to restore boot theme:', error);
+      }
+      document.documentElement.setAttribute('data-theme', window.normalizeOpenXnetThemeForDom(theme));
+      document.documentElement.setAttribute('data-theme-choice', theme);
+    })();
+  </script>
+  <script src="js/startup-bootstrap.js"></script>
+  <style>
+    html, body {
+      background: #0b1220;
+      min-height: 100%;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    #boot-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483646;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(168, 237, 234, 0.7), transparent 38%),
+        radial-gradient(circle at 80% 80%, rgba(254, 214, 227, 0.72), transparent 34%),
+        linear-gradient(180deg, #ffffff 0%, #f7f8fb 100%);
+      transition: opacity 240ms ease, visibility 240ms ease;
+    }
+
+    html[data-theme="light"],
+    html[data-theme="light"] body {
+      background: #eef3fb;
+    }
+
+    html[data-theme="light"] #boot-splash {
+      background:
+        radial-gradient(circle at 20% 20%, rgba(168, 237, 234, 0.7), transparent 38%),
+        radial-gradient(circle at 80% 80%, rgba(254, 214, 227, 0.72), transparent 34%),
+        linear-gradient(180deg, #ffffff 0%, #f7f8fb 100%);
+    }
+
+    html[data-theme="light"] .boot-splash__content {
+      color: #111111;
+    }
+
+    html[data-theme="light"] .boot-splash__mark {
+      background: rgba(255, 255, 255, 0.84);
+      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+    }
+
+    html[data-theme="light"] .boot-splash__subtitle {
+      color: rgba(17, 17, 17, 0.64);
+    }
+
+    html[data-theme="light"] .boot-splash__loader {
+      background: rgba(15, 23, 42, 0.08);
+    }
+
+    html:not([data-theme="light"]) #boot-splash {
+      background:
+        radial-gradient(circle at 18% 18%, rgba(94, 234, 212, 0.14), transparent 36%),
+        radial-gradient(circle at 82% 16%, rgba(96, 165, 250, 0.18), transparent 32%),
+        radial-gradient(circle at 52% 82%, rgba(167, 139, 250, 0.14), transparent 36%),
+        linear-gradient(180deg, #08101d 0%, #090f1a 48%, #070b14 100%);
+    }
+
+    html:not([data-theme="light"]) .boot-splash__content {
+      color: #f8fafc;
+    }
+
+    html:not([data-theme="light"]) .boot-splash__mark {
+      background: rgba(9, 15, 28, 0.78);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      box-shadow: 0 18px 48px rgba(2, 8, 23, 0.28);
+    }
+
+    html:not([data-theme="light"]) .boot-splash__subtitle {
+      color: rgba(226, 232, 240, 0.68);
+    }
+
+    html:not([data-theme="light"]) .boot-splash__loader {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    #boot-splash::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .boot-splash__content {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      color: #111111;
+      text-align: center;
+      padding: 24px;
+    }
+
+    .boot-splash__mark {
+      width: 68px;
+      height: 68px;
+      border-radius: 22px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.84);
+      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+      overflow: hidden;
+    }
+
+    .boot-splash__mark img {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+    }
+
+    .boot-splash__title {
+      font: 700 28px/1.05 "Segoe UI", sans-serif;
+      letter-spacing: -0.03em;
+    }
+
+    .boot-splash__subtitle {
+      font: 500 13px/1.5 "Segoe UI", sans-serif;
+      color: rgba(17, 17, 17, 0.64);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .boot-splash__loader {
+      width: 120px;
+      height: 4px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(15, 23, 42, 0.08);
+    }
+
+    .boot-splash__loader::after {
+      content: "";
+      display: block;
+      width: 42%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #4ecdc4 0%, #5562ea 100%);
+      animation: bootSplashPulse 1.15s ease-in-out infinite;
+      transform-origin: left center;
+    }
+
+    body.app-hydrated #boot-splash,
+    #boot-splash.is-dismissed {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    @keyframes bootSplashPulse {
+      0% {
+        transform: translateX(-110%) scaleX(0.88);
+      }
+      55% {
+        transform: translateX(138%) scaleX(1.05);
+      }
+      100% {
+        transform: translateX(230%) scaleX(0.92);
+      }
+    }
+  </style>
+
+  <link rel="manifest" href="manifest.json">
+                    <link rel="stylesheet" href="css/styles.css?v=20260515-default-theme">
+  <link rel="stylesheet" href="css/transition.css?v=20260510-avatar-ring-thick">
+  <!-- GitHub Markdown CSS for styling -->
+  <link rel="stylesheet" href="css/github-markdown.min.css">
+  <!-- Highlight.js CSS for code highlighting -->
+  <link rel="stylesheet" href="css/github.min.css">
+  <script src="libs/clipboard.min.js"></script>
+  <!--引入html2canvas-->
+  <script src="libs/html2canvas.min.js"></script>
+  <!-- 引入Element Plus样式 -->
+  <link rel="stylesheet" href="libs/element-plus.css">
+  <link rel="stylesheet" href="fontawesome/css/all.min.css">
+  <!-- Neuro Design System (v0.5.9 baseline unification + Toast + Chips) -->
+  <link rel="stylesheet" href="css/neuro-design-system.css">
+                    <link rel="stylesheet" href="css/openxnet-ui-redesign.css?v=20260517-sandbox-fullscreen-overscan7">
+  <link rel="stylesheet" href="css/openxnet-chat-composer-fix.css?v=20260510-chat-legacy-ui-cut1">
+  <link rel="stylesheet" href="css/uiplan-tokens.css?v=20260515-theme-runtime3">
+  <link rel="stylesheet" href="css/uiplan-animations.css?v=20260510-avatar-ring-thick">
+  <link rel="stylesheet" href="css/openxnet-uiplan-adapter.css?v=20260515-theme-runtime3">
+  <link rel="stylesheet" href="css/access-ui-from-h.css?v=20260510-access-dark-dialog-fix">
+  <link rel="stylesheet" href="chat-vite/openxnet-chat.css?v=20260515-chat-stream-smooth">
+  <link rel="stylesheet" href="role-vite/openxnet-role.css?v=20260513-role-name-center">
+  <link rel="stylesheet" href="model-vite/openxnet-model.css?v=20260512-provider-scroll">
+  <link rel="stylesheet" href="toolkit-vite/openxnet-toolkit.css?v=20260513-toolkit-overview-scrollhide">
+  <link rel="stylesheet" href="skills-vite/openxnet-skills.css?v=20260510-avatar-ring-thick">
+  <link rel="stylesheet" href="browser-vite/openxnet-browser.css?v=20260510-avatar-ring-thick">
+  <link rel="stylesheet" href="ops-vite/openxnet-ops.css?v=20260515-theme-runtime3">
+  <link rel="stylesheet" href="css/vite-ui.css?v=20260513-role-name-center">
+  <link rel="stylesheet" href="css/dialog-rebuild.css?v=20260511-tour-readonly">
+  <link rel="stylesheet" href="css/deploy-rebuild.css?v=20260511-deploy-no-double-scroll">
+  <link rel="stylesheet" href="css/enterprise-3d.css?v=20260512-sandbox-bodies">
+  <link rel="stylesheet" href="css/kernel-prototype.css?v=20260510-avatar-ring-thick">
+  <link rel="stylesheet" href="css/knowledge-base.css?v=20260510-avatar-ring-thick">
+  <link rel="stylesheet" href="css/dev-prototype.css?v=20260512-dev-workbench-connect2">
+  <link rel="stylesheet" href="css/about-prototype.css?v=20260510-about-logo-clean">
+  <link rel="stylesheet" href="css/model-config-prototype.css?v=20260510-avatar-ring-thick">
+  <link rel="stylesheet" href="css/scrollbar-style.css?v=20260510-scroll-mac-pill1">
+  <link rel="stylesheet" href="css/theme-runtime-overrides.css?v=20260731-brand-mask3">
+  <link rel="stylesheet" href="css/competition-workbench.css?v=20260808-goai2">
+  <link rel="stylesheet" href="css/competition-workbench-v2.css?v=20260808-kimi-k3-4">
+  <link rel="stylesheet" href="css/enterprise-team-templates.css?v=20260803-team1">
+  <link rel="stylesheet" href="css/staff-role-studio-compact.css?v=20260804-kimi15">
+  <script src="js/neuro-toast.js"></script>
+  <script src="js/runtime-loader.js"></script>
+  <link rel="icon" href="source/icon.png" type="image/png">
+  <!-- Optional runtimes are loaded through runtime-loader.js on first use. -->
+  <link rel="stylesheet" href="libs/driver.css">
+  <script>
+    console.log(`
+     _       ____   _____   _   _   _____
+    / \\     / ___| | ____| | \\ | | |_   _|
+   / _ \\   | |  _  |  _|   |  \\| |   | |
+  / ___ \\  | |_| | | |___  | |\\  |   | |
+ /_/   \\_\\  \\____| |_____| |_| \\_|   |_|
+
+  ____       _      ____    _____  __   __
+ |  _ \\     / \\    |  _ \\  |_   _| \\ \\ / /
+ | |_) |   / _ \\   | |_) |   | |    \\ V /
+ |  __/   / ___ \\  |  _ <    | |     | |
+ |_|     /_/   \\_\\ |_| \\_\\   |_|     |_|
+
+ github repo: https://github.com/heshengtao/openxnet
+`);
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    const serviceWorkerVersion = '20260515-theme-runtime3';
+
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      console.log('SW controller changed; keeping the current OpenXnet launch surface stable.');
+    });
+
+    navigator.serviceWorker.register(`/sw.js?v=${serviceWorkerVersion}`)
+      .then(registration => {
+        console.log('SW registered: ', registration);
+        return registration.update();
+      })
+      .catch(registrationError => {
+        console.log('SW registration failed: ', registrationError);
+      });
+  });
+}
+
+window.addEventListener('load', () => {
+  const dismissBootSplash = () => {
+    document.body.classList.add('content-loaded', 'app-hydrated');
+    const bootSplash = document.getElementById('boot-splash');
+    if (bootSplash) {
+      bootSplash.classList.add('is-dismissed');
+      window.setTimeout(() => bootSplash.remove(), 420);
+    }
+  };
+  window.setTimeout(dismissBootSplash, 1600);
+});
+// 2. 注册 Vue 自定义指令 (在您的 app.mount 之前或者组件 mixin 中)
+// 如果您用的是 Options API，可以直接放在 directives: { ... } 里，或者全局注册
+const StreamDirective = {
+  mounted(el, binding) {
+    el._markdownContent = '';
+    updateElement(el, binding.value, binding.arg); // binding.arg 可以传 formatMessage 函数
+  },
+  updated(el, binding) {
+    if (binding.value !== el._markdownContent) {
+      updateElement(el, binding.value, binding.arg);
+    }
+  }
+};
+
+// 核心渲染逻辑
+function updateElement(el, rawMarkdown, formatFn) {
+  el._markdownContent = rawMarkdown; // 缓存内容
+
+  // A. 表格补全逻辑 (防止解析抖动)
+  let contentToRender = rawMarkdown || '';
+  const lines = contentToRender.split('\n');
+  const lastLine = lines[lines.length - 1].trim();
+  // 如果最后一行看起来是未闭合的表格行，手动补全竖线
+  if (lastLine.startsWith('|') && !lastLine.endsWith('|') && !/^[|\s-:]+$/.test(lastLine)) {
+    contentToRender += ' |';
+  }
+
+  // B. 生成 HTML 字符串 (调用您原有的 formatMessage)
+  // 注意：这里假设 formatFn 是您组件里的 formatMessage 方法
+  // 如果 formatFn 不存在，退化为简单的 md.render
+  let newHtml = '';
+  if (typeof formatFn === 'function') {
+    newHtml = formatFn(contentToRender);
+  } else if (window.md) {
+    newHtml = window.md.render(contentToRender);
+  }
+
+  // C. 构造新 DOM 树容器
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = newHtml;
+
+  // D. 使用 morphdom 进行增量更新
+  // 这就是"丝滑"的关键：它只修改变动的部分，保留旧 DOM 的动画状态
+  morphdom(el, wrapper, {
+    childrenOnly: true, // 仅更新子节点
+
+    // 性能优化：跳过不需要更新的节点
+    onBeforeElUpdated: (fromEl, toEl) => {
+      // 1. 保护 MathJax 公式不被重绘 (防止公式闪烁)
+      if (fromEl.classList.contains('MathJax') || fromEl.tagName === 'MJX-CONTAINER') {
+        return false;
+      }
+      // 2. 保护代码块，如果内容没变就不动 (防止高亮丢失)
+      if (fromEl.tagName === 'PRE' && fromEl.isEqualNode(toEl)) {
+        return false;
+      }
+      return true;
+    },
+
+    // 节点添加后的回调
+    onNodeAdded: (node) => {
+      // 可以在这里触发 highlight.js 或 mathjax 对新节点的渲染
+      if (node.tagName === 'PRE' && window.hljs) {
+         // hljs.highlightElement(node); // 如果 formatMessage 里没做，可以在这做
+      }
+    }
+  });
+
+  // E. 触发 MathJax 渲染 (Debounced)
+  // 建议在组件 methods 里定义一个防抖的 queueMathJax，这里简单模拟
+  if (window.MathJax) {
+    // 使用 Promise 队列防止冲突，这里简化处理
+    setTimeout(() => {
+      window.MathJax.typesetPromise([el]).catch(()=>{});
+    }, 50);
+  }
+}
+  </script>
+  <!-- Include markdown-it and highlight.js scripts -->
+  <script src="libs/markdown-it.min.js"></script>
+  <script src="libs/markdown-it-task-lists.min.js"></script>
+  <script src="libs/markdown-it-footnote.min.js"></script>
+  <script src="libs/markdown-it-container.min.js"></script>
+  <script src="libs/morphdom-umd.min.js"></script>
+  <script src="libs/highlight.min.js"></script>
+                <script src="js/locales.js?v=20260515-default-theme"></script>
+  <script src="libs/uuid.min.js"></script>
+
+  <!-- ════════════════════════════════════════════════════════════
+       JS 注入滚动条样式：动态 append 到 <head> 末尾，每次启动重新插入，
+       保证排在所有 runtime CSS（element-plus / vite chunk）之后。
+       Electron HTML 缓存也无所谓——JS 一定执行。
+       ════════════════════════════════════════════════════════════ -->
+  <script>
+    (function () {
+      var SCROLLBAR_CSS = [
+        '::-webkit-scrollbar{width:6px!important;height:6px!important;background:transparent!important}',
+        '::-webkit-scrollbar-track{background:transparent!important;border:0!important}',
+        '::-webkit-scrollbar-corner{background:transparent!important}',
+        '::-webkit-scrollbar-thumb{background-color:rgba(148,163,184,.5)!important;border-radius:999px!important;min-height:36px!important;transition:background-color 200ms ease!important}',
+        '::-webkit-scrollbar-thumb:hover{background-color:rgba(100,116,139,.85)!important}',
+        '::-webkit-scrollbar-thumb:active{background-color:rgba(71,85,105,1)!important}',
+        '::-webkit-scrollbar-button,::-webkit-scrollbar-button:start,::-webkit-scrollbar-button:end,::-webkit-scrollbar-button:vertical:start:decrement,::-webkit-scrollbar-button:vertical:start:increment,::-webkit-scrollbar-button:vertical:end:decrement,::-webkit-scrollbar-button:vertical:end:increment,::-webkit-scrollbar-button:horizontal:start:decrement,::-webkit-scrollbar-button:horizontal:start:increment,::-webkit-scrollbar-button:horizontal:end:decrement,::-webkit-scrollbar-button:horizontal:end:increment,::-webkit-scrollbar-button:single-button,::-webkit-scrollbar-button:double-button{display:none!important;width:0!important;height:0!important;background:transparent!important;visibility:hidden!important}',
+        'html[data-theme="dark"] ::-webkit-scrollbar-thumb,html[data-theme="midnight"] ::-webkit-scrollbar-thumb,html[data-theme="neon"] ::-webkit-scrollbar-thumb,html[data-theme="ink"] ::-webkit-scrollbar-thumb{background-color:rgba(100,116,139,.6)!important}',
+        'html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover,html[data-theme="midnight"] ::-webkit-scrollbar-thumb:hover{background-color:rgba(148,163,184,.9)!important}',
+        '.content::-webkit-scrollbar,.content::-webkit-scrollbar-thumb,.content::-webkit-scrollbar-track,.openxnet-redesign-app *::-webkit-scrollbar,.openxnet-redesign-app *::-webkit-scrollbar-thumb,.openxnet-redesign-app *::-webkit-scrollbar-track{display:initial!important}',
+        '.content{scrollbar-width:thin!important}',
+        '.ox-rail-stack::-webkit-scrollbar,.ox-dev-subnav::-webkit-scrollbar,.ox-mc__tabs::-webkit-scrollbar,.oxd-tabs::-webkit-scrollbar{display:none!important}',
+        '.ox-rail-stack,.ox-dev-subnav,.ox-mc__tabs,.oxd-tabs{scrollbar-width:none!important}',
+        '*{scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.5) transparent}',
+        'html[data-theme="dark"] *,html[data-theme="midnight"] *{scrollbar-color:rgba(100,116,139,.6) transparent}'
+      ].join('\n');
+
+      function inject() {
+        try {
+          var prev = document.getElementById('oxn-scrollbar-runtime');
+          if (prev) prev.parentNode.removeChild(prev);
+          var style = document.createElement('style');
+          style.id = 'oxn-scrollbar-runtime';
+          style.textContent = SCROLLBAR_CSS;
+          (document.head || document.documentElement).appendChild(style);
+        } catch (e) { /* noop */ }
+      }
+      inject();
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', inject, { once: true });
+      } else {
+        setTimeout(inject, 0);
+      }
+      // 1.5s 后再注一次：等 vue/element 的 scoped 样式都加载完
+      window.setTimeout(inject, 1500);
+    })();
+  </script>
+
+  <!-- ════════════════════════════════════════════════════════════
+       内联滚动条样式：放在 head 最末，覆盖一切外部 CSS。
+       Electron 即使强缓存也得每次解析 index.html，所以这里 100% 生效。
+       ════════════════════════════════════════════════════════════ -->
+  <style id="oxn-scrollbar-inline">
+    :root {
+      --ox-scrollbar-size: 10px;
+      --ox-scrollbar-radius: 999px;
+      --ox-scrollbar-inset: 2px;
+      --ox-scrollbar-thumb: rgba(148, 163, 184, 0.56);
+      --ox-scrollbar-thumb-hover: rgba(100, 116, 139, 0.78);
+      --ox-scrollbar-thumb-active: rgba(71, 85, 105, 0.92);
+    }
+    html[data-theme="dark"],
+    html[data-theme="midnight"],
+    html[data-theme="neon"],
+    html[data-theme="ink"] {
+      --ox-scrollbar-thumb: rgba(148, 163, 184, 0.46);
+      --ox-scrollbar-thumb-hover: rgba(203, 213, 225, 0.68);
+      --ox-scrollbar-thumb-active: rgba(226, 232, 240, 0.82);
+    }
+    body.openxnet-ui-redesign-body,
+    body.openxnet-ui-redesign-body #app *,
+    body.openxnet-ui-redesign-body .openxnet-redesign-app *,
+    body.openxnet-ui-redesign-body .el-dialog *,
+    body.openxnet-ui-redesign-body .el-drawer *,
+    body.openxnet-ui-redesign-body .el-message-box *,
+    body.openxnet-ui-redesign-body .el-popper * {
+      scrollbar-width: thin !important;
+      scrollbar-color: var(--ox-scrollbar-thumb) transparent !important;
+    }
+    body.openxnet-ui-redesign-body::-webkit-scrollbar,
+    body.openxnet-ui-redesign-body #app *::-webkit-scrollbar,
+    body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar,
+    body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar,
+    body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar,
+    body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar,
+    body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar {
+      width: var(--ox-scrollbar-size) !important;
+      height: var(--ox-scrollbar-size) !important;
+      background: transparent !important;
+    }
+    body.openxnet-ui-redesign-body::-webkit-scrollbar-track,
+    body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-track,
+    body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-track,
+    body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-track,
+    body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-track,
+    body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-track,
+    body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-track,
+    body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__body::-webkit-scrollbar-track,
+    body.openxnet-ui-redesign-body::-webkit-scrollbar-corner,
+    body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-corner,
+    body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-corner,
+    body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-corner,
+    body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-corner,
+    body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-corner,
+    body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-corner,
+    body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__body::-webkit-scrollbar-corner {
+      background: transparent !important;
+      border: 0 !important;
+      box-shadow: none !important;
+    }
+    body.openxnet-ui-redesign-body::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__body::-webkit-scrollbar-thumb {
+      background-color: var(--ox-scrollbar-thumb) !important;
+      border: var(--ox-scrollbar-inset) solid transparent !important;
+      border-radius: var(--ox-scrollbar-radius) !important;
+      background-clip: padding-box !important;
+      min-height: 36px !important;
+      min-width: 36px !important;
+      box-shadow: none !important;
+      transition: background-color 160ms ease !important;
+    }
+    body.openxnet-ui-redesign-body::-webkit-scrollbar-thumb:hover,
+    body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-thumb:hover,
+    body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-thumb:hover,
+    body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-thumb:hover,
+    body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-thumb:hover,
+    body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-thumb:hover,
+    body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-thumb:hover,
+    body.openxnet-ui-redesign-body #app *:hover::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .openxnet-redesign-app *:hover::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-dialog *:hover::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-drawer *:hover::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-message-box *:hover::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-popper *:hover::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body #app *:focus-within::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .openxnet-redesign-app *:focus-within::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-dialog *:focus-within::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-drawer *:focus-within::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-message-box *:focus-within::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-popper *:focus-within::-webkit-scrollbar-thumb,
+    body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__body::-webkit-scrollbar-thumb:hover {
+      background-color: var(--ox-scrollbar-thumb-hover) !important;
+    }
+    body.openxnet-ui-redesign-body::-webkit-scrollbar-thumb:active,
+    body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-thumb:active,
+    body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-thumb:active,
+    body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-thumb:active,
+    body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-thumb:active,
+    body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-thumb:active,
+    body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-thumb:active,
+    body.openxnet-ui-redesign-body .el-dialog.unlock-dialog .el-dialog__body::-webkit-scrollbar-thumb:active {
+      background-color: var(--ox-scrollbar-thumb-active) !important;
+    }
+    body.openxnet-ui-redesign-body::-webkit-scrollbar-button,
+    body.openxnet-ui-redesign-body #app *::-webkit-scrollbar-button,
+    body.openxnet-ui-redesign-body .openxnet-redesign-app *::-webkit-scrollbar-button,
+    body.openxnet-ui-redesign-body .el-dialog *::-webkit-scrollbar-button,
+    body.openxnet-ui-redesign-body .el-drawer *::-webkit-scrollbar-button,
+    body.openxnet-ui-redesign-body .el-message-box *::-webkit-scrollbar-button,
+    body.openxnet-ui-redesign-body .el-popper *::-webkit-scrollbar-button {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      background: transparent !important;
+      visibility: hidden !important;
+    }
+    .ox-rail-stack::-webkit-scrollbar,
+    .ox-dev-subnav::-webkit-scrollbar,
+    .ox-mc__tabs::-webkit-scrollbar,
+    .oxd-tabs::-webkit-scrollbar {
+      display: none !important;
+    }
+    .ox-rail-stack,
+    .ox-dev-subnav,
+    .ox-mc__tabs,
+    .oxd-tabs {
+      scrollbar-width: none !important;
+    }
+    body.openxnet-ui-redesign-body .sidebar.el-aside:not(.mobile-sidebar),
+    body.openxnet-ui-redesign-body .sidebar.el-aside:not(.mobile-sidebar) .ox-prototype-rail-shell,
+    body.openxnet-ui-redesign-body .sidebar.el-aside:not(.mobile-sidebar) .ox-sidebar__nav,
+    body.openxnet-ui-redesign-body .sidebar.el-aside:not(.mobile-sidebar) .ox-sidebar__footer,
+    .openxnet-redesign-app .sidebar.el-aside:not(.mobile-sidebar),
+    .openxnet-redesign-app .sidebar.el-aside:not(.mobile-sidebar) .ox-prototype-rail-shell,
+    .openxnet-redesign-app .sidebar.el-aside:not(.mobile-sidebar) .ox-sidebar__nav,
+    .openxnet-redesign-app .sidebar.el-aside:not(.mobile-sidebar) .ox-sidebar__footer {
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+    }
+    body.openxnet-ui-redesign-body .sidebar.el-aside:not(.mobile-sidebar)::-webkit-scrollbar,
+    body.openxnet-ui-redesign-body .sidebar.el-aside:not(.mobile-sidebar) .ox-prototype-rail-shell::-webkit-scrollbar,
+    body.openxnet-ui-redesign-body .sidebar.el-aside:not(.mobile-sidebar) .ox-sidebar__nav::-webkit-scrollbar,
+    body.openxnet-ui-redesign-body .sidebar.el-aside:not(.mobile-sidebar) .ox-sidebar__footer::-webkit-scrollbar,
+    .openxnet-redesign-app .sidebar.el-aside:not(.mobile-sidebar)::-webkit-scrollbar,
+    .openxnet-redesign-app .sidebar.el-aside:not(.mobile-sidebar) .ox-prototype-rail-shell::-webkit-scrollbar,
+    .openxnet-redesign-app .sidebar.el-aside:not(.mobile-sidebar) .ox-sidebar__nav::-webkit-scrollbar,
+    .openxnet-redesign-app .sidebar.el-aside:not(.mobile-sidebar) .ox-sidebar__footer::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      background: transparent !important;
+    }
+  </style>
+</head>
+<body class="openxnet-ui-redesign-body">
+  <div id="boot-splash" aria-hidden="true">
+    <div class="boot-splash__shell">
+      <section class="boot-splash__brand">
+        <div class="boot-splash__brand-head">
+          <span class="boot-splash__kicker">OpenXnet Neural Workspace</span>
+          <span class="boot-splash__signal">启动通道 · 同步激活</span>
+        </div>
+        <div class="boot-splash__brand-main">
+          <div class="boot-splash__mark"><img src="source/icon.png" alt="OpenXnet"></div>
+          <div class="boot-splash__copy">
+            <div class="boot-splash__title">OpenXnet</div>
+            <div class="boot-splash__subtitle">将模型、记忆、工作区上下文与数字生命整合进同一套原生神经符号界面。</div>
+          </div>
+        </div>
+        <div class="boot-splash__tags">
+          <span><small>神经符号</small><strong>Neural-Symbolic OS</strong></span>
+          <span><small>认知核心</small><strong>模型与记忆协同</strong></span>
+          <span><small>数字生命</small><strong>VRM 与动态表面</strong></span>
+        </div>
+        <div class="boot-splash__footer">
+          <span>原生神经符号 OS 统一启动界面</span>
+          <code>kernel://workspace-sync</code>
+        </div>
+      </section>
+      <section class="boot-splash__telemetry">
+        <div class="boot-splash__telemetry-head">
+          <span>启动 OS 内核</span>
+          <strong>准备神经运行时</strong>
+        </div>
+        <div class="boot-splash__ring">
+          <strong>72%</strong>
+          <span>启动进度</span>
+        </div>
+        <div class="boot-splash__progress"><span></span></div>
+        <div class="boot-splash__status">
+          <strong>挂载工作区表面</strong>
+          <span>接入工作区、会话、服务商与工具链。</span>
+        </div>
+        <ol class="boot-splash__stages">
+          <li class="is-ready"><span>01</span><strong>初始化运行时</strong><em>完成</em></li>
+          <li class="is-ready"><span>02</span><strong>恢复认知核心</strong><em>完成</em></li>
+          <li class="is-active"><span>03</span><strong>挂载工作区表面</strong><em>同步</em></li>
+          <li><span>04</span><strong>同步数字生命</strong><em>待命</em></li>
+          <li><span>05</span><strong>进入工作区</strong><em>待命</em></li>
+        </ol>
+      </section></div>
+    </div>
+
+  <div id="app" class="openxnet-redesign-app" data-template-sha256="fa1d81592dc88892ad4cc3e24bb58224bc6064cce35d228e2f6eba8e54259606"></div>
+  <!-- 引入Vue和Element Plus -->
+  <script>window.openxnetStartup?.mark('vue-runtime-start');</script>
+  <script src="libs/vue.global.prod.js"></script><script src="js/openxnet-render.js"></script>
+  <script>window.openxnetStartup?.mark('vue-runtime-ready');</script>
+  <script src="libs/element-plus.js"></script>
+  <script src="libs/element-plus-icons.js"></script>
+  <script src="js/access_legal_documents.js"></script>
+  <script>window.openxnetStartup?.mark('legacy-state-start');</script>
+  <script src="js/desktop-chat-transport.js?v=20260726-typed-chat"></script>
+  <script src="js/vue_data.js?v=20260512-sandbox-bodies"></script>
+    <script src="js/vue_methods.js?v=20260512-sandbox-bodies"></script>
+  <script>window.openxnetStartup?.mark('legacy-state-ready');</script>
+  <script src="js/renderer.js?v=20260515-default-theme"></script>
+  <!-- Vite surfaces and Enterprise 3D load on first menu activation. -->
+
+
+</body></html>

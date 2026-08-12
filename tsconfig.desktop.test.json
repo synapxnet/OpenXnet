@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.desktop.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src/desktop/**/*.ts"],
+  "exclude": []
+}

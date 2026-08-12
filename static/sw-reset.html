@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenXnet Cache Reset</title>
+  <style>
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background: #eef3fb;
+      color: #111827;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+
+    main {
+      display: grid;
+      gap: 12px;
+      justify-items: center;
+    }
+
+    strong {
+      font-size: 18px;
+    }
+
+    span {
+      color: #64748b;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <strong>Refreshing OpenXnet</strong>
+    <span>Clearing the previous preview cache...</span>
+  </main>
+  <script>
+    (async function resetOpenXnetPreviewCache() {
+      try {
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map(registration => registration.unregister()));
+        }
+        if (window.caches) {
+          const cacheKeys = await caches.keys();
+          await Promise.all(cacheKeys.map(cacheKey => caches.delete(cacheKey)));
+        }
+      } catch (error) {
+        console.warn('OpenXnet cache reset failed:', error);
+      } finally {
+        const target = new URL('index.html?cache-reset=20260506-prod-audit-ui34', window.location.href);
+        window.location.replace(target.href);
+      }
+    })();
+  </script>
+</body>
+</html>
+
+
+
+
+

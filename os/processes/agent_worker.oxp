@@ -1,0 +1,269 @@
+-- OpenXnet Neuro-Symbolic OS
+-- Agent Worker: LLM-backed agent process template
+-- Context window management, token budget tracking, task execution
+
+process AgentWorker :: :worker {|
+
+  requires :: [:scheduler, :signals, :ipc, :memory, :syscall]
+  version :: "0.1.0"
+
+  enum AgentState {|
+    :Idle
+    :Thinking
+    :Acting
+    :Waiting
+    :Compacting
+  |}
+
+  struct TokenBudget {|
+    max_context :: UInt32
+    max_output :: UInt32
+    used_context :: UInt32
+    used_output :: UInt32
+    reserved :: UInt32
+  |}
+
+  struct AgentTask {|
+    id :: UInt64
+    instruction :: String
+    context :: List[Message]
+    constraints :: List[Symbol]
+    max_turns :: UInt32
+    requester_pid :: UInt32
+  |}
+
+  struct MemoryEntry {|
+    slot_id :: SlotId
+    content :: Any
+    relevance :: Float64
+    access_count :: UInt32
+  |}
+
+  config AgentConfig {|
+    default_max_context :: 128000
+    default_max_output :: 4096
+    system_prompt_reserve :: 2048
+    compaction_threshold :: 0.85
+    compaction_ratio :: 0.5
+    max_turns_default :: 50
+    thinking_timeout :: 120s
+    acting_timeout :: 60s
+    memory_slots_max :: 64
+    relevance_decay :: 0.02
+    idle_timeout :: 300s
+  |}
+
+  state agent_state :: AgentState = :Idle
+  state current_task :: Option[AgentTask] = None
+  state token_budget :: TokenBudget = TokenBudget {|
+    max_context :: AgentConfig.default_max_context,
+    max_output :: AgentConfig.default_max_output,
+    used_context :: 0, used_output :: 0,
+    reserved :: AgentConfig.system_prompt_reserve
+  |}
+  state conversation :: List[Message] = []
+  state turn_counter :: UInt32 = 0
+  state memory_slots :: List[MemoryEntry] = []
+  state tasks_completed :: UInt64 = 0
+  state total_tokens :: UInt64 = 0
+  state last_activity :: Timestamp = epoch()
+
+  channels {|
+    channel task_in :: Recv<AgentTask>
+    channel result_out :: Send<AgentResult>
+    channel memory_access :: Duplex<MemoryMessage>
+  |}
+
+  lifecycle {|
+    on init {|
+      invoke initialize_working_memory()
+      agent_state = :Idle
+      emit :AgentWorkerReady with {| memory_slots :: List.length(memory_slots) |}
+    |}
+
+    on suspend {|
+      if current_task != None {| invoke checkpoint_state() |}
+      agent_state = :Idle
+    |}
+
+    on resume {|
+      invoke restore_checkpoint()
+      last_activity = now()
+    |}
+
+    on terminate {|
+      for entry in memory_slots {| invoke Memory.free(entry.slot_id) |}
+      match current_task {|
+        Some(task) -> emit result_out <- AgentResult {|
+          task_id :: task.id, status :: :interrupted,
+          output :: None, turns_used :: turn_counter,
+          tokens_used :: token_budget.used_context + token_budget.used_output
+        |}
+        None -> ()
+      |}
+      emit :AgentWorkerTerminated with {| tasks :: tasks_completed, tokens :: total_tokens |}
+    |}
+  |}
+
+  behavior {|
+    on recv(task) from task_in {|
+      match agent_state {|
+        :Idle -> invoke begin_task(task)
+        _ -> emit result_out <- AgentResult {|
+          task_id :: task.id, status :: :rejected, output :: None,
+          turns_used :: 0, tokens_used :: 0
+        |}
+      |}
+    |}
+
+    on recv(msg) from memory_access {|
+      match msg.type {|
+        :retrieve -> {|
+          let results = invoke query_memory(msg.query, msg.top_k or 5)
+          emit memory_access <- MemoryMessage {| type :: :retrieve_result, entries :: results |}
+        |}
+        :store -> invoke store_memory(msg.content, msg.relevance or 1.0)
+        :flush -> invoke flush_memory()
+      |}
+    |}
+
+    on signal(:TICK) {|
+      match agent_state {|
+        :Thinking where elapsed_since(last_activity) >= AgentConfig.thinking_timeout ->
+          invoke complete_task(:thinking_timeout)
+        :Acting where elapsed_since(last_activity) >= AgentConfig.acting_timeout ->
+          invoke complete_task(:acting_timeout)
+        :Idle where elapsed_since(last_activity) >= AgentConfig.idle_timeout ->
+          invoke decay_memory()
+        _ -> ()
+      |}
+    |}
+
+    on signal(:SIGMEM) {| invoke compact_context() |}
+    on signal(:SIGTERM) {| invoke graceful_shutdown() |}
+  |}
+
+  service begin_task(task :: AgentTask) -> Void {|
+    current_task = Some(task)
+    turn_counter = 0
+    agent_state = :Thinking
+    last_activity = now()
+    token_budget = token_budget with {| used_context :: AgentConfig.system_prompt_reserve, used_output :: 0 |}
+    conversation = task.context
+    emit :AgentTaskStarted with {| task_id :: task.id |}
+    invoke execute_turn()
+  |}
+
+  service execute_turn() -> Void {|
+    match current_task {|
+      None -> return
+      Some(task) -> {|
+        if turn_counter >= (task.max_turns or AgentConfig.max_turns_default) {|
+          invoke complete_task(:max_turns_reached)
+          return
+        |}
+        let usage = token_budget.used_context as Float64 / token_budget.max_context as Float64
+        if usage >= AgentConfig.compaction_threshold {| invoke compact_context() |}
+
+        turn_counter = turn_counter + 1
+        agent_state = :Thinking
+        last_activity = now()
+
+        let result = invoke run_inference(conversation)
+        match result {|
+          Ok(response) -> {|
+            token_budget = token_budget with {|
+              used_context :: token_budget.used_context + response.input_tokens + response.output_tokens
+              used_output :: token_budget.used_output + response.output_tokens
+            |}
+            total_tokens = total_tokens + response.input_tokens + response.output_tokens
+            conversation = List.append(conversation, response.message)
+
+            if response.is_final {| invoke complete_task(:success) |}
+            else if List.length(response.tool_calls) > 0 {|
+              agent_state = :Acting
+              last_activity = now()
+              invoke execute_tool_calls(response.tool_calls)
+              invoke execute_turn()
+            |} else {| invoke execute_turn() |}
+          |}
+          Err(_) -> invoke complete_task(:inference_error)
+        |}
+      |}
+    |}
+  |}
+
+  service complete_task(reason :: Symbol) -> Void {|
+    match current_task {|
+      Some(task) -> {|
+        let status = if reason == :success {| :completed |} else {| :failed |}
+        emit result_out <- AgentResult {|
+          task_id :: task.id, status :: status,
+          output :: List.last(conversation), turns_used :: turn_counter,
+          tokens_used :: token_budget.used_context + token_budget.used_output
+        |}
+        tasks_completed = tasks_completed + 1
+        current_task = None
+        conversation = []
+        agent_state = :Idle
+        last_activity = now()
+      |}
+      None -> ()
+    |}
+  |}
+
+  service compact_context() -> Void {|
+    agent_state = :Compacting
+    let keep_recent = 6
+    let older = List.take(conversation, List.length(conversation) - keep_recent)
+    let recent = List.drop(conversation, List.length(conversation) - keep_recent)
+    let summary = invoke run_summarize(older)
+    conversation = List.concat([Message.system("Summary: " ++ summary)], recent)
+    token_budget = token_budget with {|
+      used_context :: invoke estimate_tokens(conversation) + token_budget.reserved
+    |}
+    agent_state = :Thinking
+  |}
+
+  service initialize_working_memory() -> Void {|
+    for _ in List.range(0, AgentConfig.memory_slots_max) {|
+      match invoke Memory.allocate(self.pid, :agent_memory, 1024) {|
+        Ok(slot_id) -> {|
+          invoke Memory.pin(slot_id)
+          memory_slots = List.append(memory_slots, MemoryEntry {|
+            slot_id :: slot_id, content :: None, relevance :: 0.0, access_count :: 0
+          |})
+        |}
+        Err(_) -> ()
+      |}
+    |}
+  |}
+
+  service query_memory(query :: String, top_k :: UInt32) -> List[MemoryEntry] {|
+    let filled = List.filter(memory_slots, e -> e.content != None)
+    return List.take(List.sort_by(filled, e -> e.relevance, :desc), top_k)
+  |}
+
+  service store_memory(content :: Any, relevance :: Float64) -> Void {|
+    let target = List.first(List.sort_by(memory_slots, e -> e.relevance, :asc))
+    match target {|
+      Some(entry) -> memory_slots = List.map(memory_slots, e ->
+        if e.slot_id == entry.slot_id {| e with {| content :: content, relevance :: relevance |} |}
+        else {| e |}
+      )
+      None -> ()
+    |}
+  |}
+
+  service decay_memory() -> Void {|
+    memory_slots = List.map(memory_slots, e -> e with {|
+      relevance :: clamp(e.relevance - AgentConfig.relevance_decay, 0.0, 1.0)
+    |})
+  |}
+
+  service graceful_shutdown() -> Void {|
+    if current_task != None {| invoke complete_task(:terminated) |}
+    invoke Scheduler.terminate(self.pid, :graceful)
+  |}
+
+|}

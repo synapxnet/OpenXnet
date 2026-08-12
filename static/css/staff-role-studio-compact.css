@@ -1,0 +1,1447 @@
+/* OpenXnet staff-role studio: compact enterprise layout designed with KIMI-K3. */
+
+body.openxnet-ui-redesign-body .staff-role-studio,
+.openxnet-redesign-app .staff-role-studio {
+  --staff-role-surface: var(--ox-bg-surface, #ffffff);
+  --staff-role-surface-muted: var(--ox-bg-surface-hover, #f4f6f8);
+  --staff-role-input: var(--ox-bg-input, #f7f8fa);
+  --staff-role-border: var(--ox-border, #e3e6ea);
+  --staff-role-border-strong: var(--ox-border-hover, #cbd2dc);
+  --staff-role-text: var(--ox-text-primary, #1a1d21);
+  --staff-role-text-secondary: var(--ox-text-secondary, #5b6470);
+  --staff-role-text-muted: var(--ox-text-muted, #7b8490);
+  --staff-role-accent: var(--ox-accent, #2563eb);
+  --staff-role-accent-soft: var(--ox-accent-softer, #ebf0fe);
+  container: staff-role-studio / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--staff-role-text);
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__hero,
+.openxnet-redesign-app .staff-role-studio__hero {
+  min-height: 64px;
+  display: grid !important;
+  grid-template-columns: minmax(150px, auto) auto minmax(320px, 1fr);
+  align-items: center !important;
+  gap: 18px !important;
+  padding: 10px 0 12px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--staff-role-border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__hero::before,
+body.openxnet-ui-redesign-body .staff-role-studio__hero::after,
+.openxnet-redesign-app .staff-role-studio__hero::before,
+.openxnet-redesign-app .staff-role-studio__hero::after {
+  display: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__hero-copy,
+.openxnet-redesign-app .staff-role-studio__hero-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__eyebrow,
+body.openxnet-ui-redesign-body .staff-role-section-eyebrow,
+.openxnet-redesign-app .staff-role-studio__eyebrow,
+.openxnet-redesign-app .staff-role-section-eyebrow {
+  color: var(--staff-role-text-muted) !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+  line-height: 14px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__title,
+.openxnet-redesign-app .staff-role-studio__title {
+  min-width: 0;
+  margin: 0 !important;
+  overflow: hidden;
+  color: var(--staff-role-text) !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  line-height: 24px !important;
+  letter-spacing: 0 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__stats,
+.openxnet-redesign-app .staff-role-studio__stats {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__stat,
+.openxnet-redesign-app .staff-role-studio__stat {
+  min-width: 66px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 5px;
+  padding: 0 12px !important;
+  border: 0 !important;
+  border-left: 1px solid var(--staff-role-border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__stat-value,
+.openxnet-redesign-app .staff-role-studio__stat-value {
+  color: var(--staff-role-text) !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  line-height: 22px !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__stat-label,
+.openxnet-redesign-app .staff-role-studio__stat-label {
+  color: var(--staff-role-text-muted) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  line-height: 16px !important;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__toolbar,
+.openxnet-redesign-app .staff-role-studio__toolbar {
+  min-width: 0;
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .oxe-staff-search,
+.openxnet-redesign-app .oxe-staff-search {
+  min-width: 180px;
+  max-width: 330px;
+  height: 34px;
+  flex: 1 1 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid var(--staff-role-border) !important;
+  border-radius: 6px !important;
+  background: var(--staff-role-input) !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .oxe-staff-search:focus-within,
+.openxnet-redesign-app .oxe-staff-search:focus-within {
+  border-color: var(--staff-role-accent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--staff-role-accent) 18%, transparent) !important;
+}
+
+body.openxnet-ui-redesign-body .oxe-staff-search i,
+.openxnet-redesign-app .oxe-staff-search i {
+  color: var(--staff-role-text-muted) !important;
+  font-size: 12px;
+}
+
+body.openxnet-ui-redesign-body .oxe-staff-search input,
+.openxnet-redesign-app .oxe-staff-search input {
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent !important;
+  color: var(--staff-role-text) !important;
+  font-size: 12px !important;
+  line-height: 18px !important;
+}
+
+body.openxnet-ui-redesign-body .oxe-staff-create,
+.openxnet-redesign-app .oxe-staff-create {
+  position: static !important;
+  height: 34px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px !important;
+  border: 1px solid var(--staff-role-accent) !important;
+  border-radius: 6px !important;
+  background: var(--staff-role-accent) !important;
+  background-image: none !important;
+  color: var(--ox-text-inverse, #ffffff) !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+  line-height: 1 !important;
+  white-space: nowrap;
+  box-shadow: none !important;
+  transform: none !important;
+  overflow: visible !important;
+}
+
+body.openxnet-ui-redesign-body .oxe-staff-create::after,
+.openxnet-redesign-app .oxe-staff-create::after {
+  display: none !important;
+}
+
+body.openxnet-ui-redesign-body .oxe-staff-create:hover,
+.openxnet-redesign-app .oxe-staff-create:hover {
+  border-color: var(--ox-accent-hover, var(--staff-role-accent)) !important;
+  background: var(--ox-accent-hover, var(--staff-role-accent)) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-category-strip,
+.openxnet-redesign-app .staff-role-category-strip {
+  box-sizing: border-box;
+  height: 40px;
+  min-height: 40px;
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 6px !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 0 !important;
+  border-bottom: 1px solid var(--staff-role-border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  scrollbar-width: thin;
+  scrollbar-color: var(--staff-role-border-strong) transparent;
+}
+
+body.openxnet-ui-redesign-body .staff-role-category-chip,
+.openxnet-redesign-app .staff-role-category-chip {
+  height: 28px;
+  min-height: 28px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px !important;
+  border: 1px solid transparent !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  color: var(--staff-role-text-secondary) !important;
+  font-size: 12px !important;
+  font-weight: 550 !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-category-chip strong,
+.openxnet-redesign-app .staff-role-category-chip strong {
+  min-width: 18px;
+  color: var(--staff-role-text-muted) !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+  text-align: center;
+}
+
+body.openxnet-ui-redesign-body .staff-role-category-chip:hover,
+.openxnet-redesign-app .staff-role-category-chip:hover {
+  border-color: var(--staff-role-border) !important;
+  background: var(--staff-role-surface-muted) !important;
+  color: var(--staff-role-text) !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-category-chip.is-active,
+.openxnet-redesign-app .staff-role-category-chip.is-active {
+  border-color: var(--ox-border-accent, var(--staff-role-accent)) !important;
+  background: var(--staff-role-accent-soft) !important;
+  color: var(--staff-role-accent) !important;
+  box-shadow: inset 0 -2px 0 var(--staff-role-accent) !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-studio__layout,
+.openxnet-redesign-app .staff-role-studio__layout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.42fr) !important;
+  align-items: start;
+  gap: 18px !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-panel,
+body.openxnet-ui-redesign-body .staff-role-spotlight,
+body.openxnet-ui-redesign-body .staff-role-library,
+.openxnet-redesign-app .staff-role-template-panel,
+.openxnet-redesign-app .staff-role-spotlight,
+.openxnet-redesign-app .staff-role-library {
+  min-width: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-section-head,
+.openxnet-redesign-app .staff-role-section-head {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 !important;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--staff-role-border);
+}
+
+body.openxnet-ui-redesign-body .staff-role-section-head h4,
+.openxnet-redesign-app .staff-role-section-head h4 {
+  margin: 1px 0 0 !important;
+  color: var(--staff-role-text) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  line-height: 20px !important;
+  letter-spacing: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-section-count,
+.openxnet-redesign-app .staff-role-section-count {
+  min-width: 24px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border: 1px solid var(--staff-role-border);
+  border-radius: 5px;
+  background: var(--staff-role-surface-muted);
+  color: var(--staff-role-text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+body.openxnet-ui-redesign-body .oxe-staff-grid,
+body.openxnet-ui-redesign-body .staff-role-template-grid,
+.openxnet-redesign-app .oxe-staff-grid,
+.openxnet-redesign-app .staff-role-template-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(240px, 1fr)) !important;
+  gap: 12px !important;
+  margin-top: 12px !important;
+  perspective: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card,
+.openxnet-redesign-app .staff-role-template-card {
+  position: relative;
+  min-width: 0;
+  height: 168px !important;
+  min-height: 168px !important;
+  display: grid !important;
+  grid-template-rows: 36px 36px 24px 28px;
+  gap: 6px !important;
+  padding: 12px 14px !important;
+  overflow: hidden;
+  border: 1px solid var(--staff-role-border) !important;
+  border-radius: 8px !important;
+  background: var(--staff-role-surface) !important;
+  background-image: none !important;
+  color: var(--staff-role-text) !important;
+  text-align: left;
+  box-shadow: none !important;
+  transform: none !important;
+  transform-style: flat !important;
+  animation: none !important;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card::before,
+body.openxnet-ui-redesign-body .staff-role-template-card::after,
+body.openxnet-ui-redesign-body .staff-role-template-card__glow,
+.openxnet-redesign-app .staff-role-template-card::before,
+.openxnet-redesign-app .staff-role-template-card::after,
+.openxnet-redesign-app .staff-role-template-card__glow {
+  display: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card:hover,
+.openxnet-redesign-app .staff-role-template-card:hover {
+  border-color: var(--staff-role-border-strong) !important;
+  background: var(--staff-role-surface) !important;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--staff-role-text) 8%, transparent) !important;
+  transform: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card:focus-visible,
+body.openxnet-ui-redesign-body .staff-role-spotlight__card:focus-visible,
+body.openxnet-ui-redesign-body .staff-role-goai-shortcut:focus-visible,
+.openxnet-redesign-app .staff-role-template-card:focus-visible,
+.openxnet-redesign-app .staff-role-spotlight__card:focus-visible,
+.openxnet-redesign-app .staff-role-goai-shortcut:focus-visible {
+  outline: 2px solid var(--staff-role-accent) !important;
+  outline-offset: 2px;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__header,
+.openxnet-redesign-app .staff-role-template-card__header {
+  min-width: 0;
+  display: grid !important;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center !important;
+  gap: 9px !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__icon,
+.openxnet-redesign-app .staff-role-template-card__icon {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--staff-template-accent-start) 30%, var(--staff-role-border)) !important;
+  border-radius: 7px !important;
+  background: color-mix(in srgb, var(--staff-template-accent-start) 10%, var(--staff-role-surface)) !important;
+  background-image: none !important;
+  color: var(--staff-template-accent-start, var(--staff-role-accent)) !important;
+  font-size: 14px !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__identity,
+.openxnet-redesign-app .staff-role-template-card__identity {
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__title,
+.openxnet-redesign-app .staff-role-template-card__title {
+  overflow: hidden;
+  color: var(--staff-role-text) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  line-height: 18px !important;
+  letter-spacing: 0 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__department,
+.openxnet-redesign-app .staff-role-template-card__department {
+  margin-top: 1px;
+  overflow: hidden;
+  color: var(--staff-role-text-muted) !important;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  line-height: 14px !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__category,
+.openxnet-redesign-app .staff-role-template-card__category {
+  max-width: 82px;
+  padding: 3px 6px !important;
+  overflow: hidden;
+  border: 1px solid var(--staff-role-border);
+  border-radius: 4px !important;
+  background: var(--staff-role-surface-muted) !important;
+  color: var(--staff-role-text-secondary) !important;
+  font-size: 9px !important;
+  font-weight: 650 !important;
+  line-height: 12px !important;
+  letter-spacing: 0 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__summary,
+.openxnet-redesign-app .staff-role-template-card__summary {
+  margin: 0 !important;
+  overflow: hidden;
+  color: var(--staff-role-text-secondary) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 18px !important;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__skills,
+.openxnet-redesign-app .staff-role-template-card__skills {
+  min-width: 0;
+  height: 24px;
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 5px !important;
+  margin: 0 !important;
+  overflow: hidden;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__skills span,
+.openxnet-redesign-app .staff-role-template-card__skills span {
+  max-width: 88px;
+  height: 22px;
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  padding: 0 7px !important;
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: var(--staff-role-surface-muted) !important;
+  color: var(--staff-role-text-secondary) !important;
+  font-size: 10px !important;
+  font-weight: 550 !important;
+  line-height: 1 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__skills .staff-role-template-card__skill-count,
+.openxnet-redesign-app .staff-role-template-card__skills .staff-role-template-card__skill-count {
+  flex: 0 0 auto;
+  color: var(--staff-role-accent) !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-template-card__footer,
+.openxnet-redesign-app .staff-role-template-card__footer {
+  min-width: 0;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 !important;
+  padding: 6px 0 0 !important;
+  border-top: 1px solid var(--staff-role-border) !important;
+  color: var(--staff-role-accent) !important;
+  font-size: 11px !important;
+  font-weight: 650 !important;
+  line-height: 16px !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-goai-shortcuts,
+.openxnet-redesign-app .staff-role-goai-shortcuts {
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .staff-role-goai-shortcuts__list,
+.openxnet-redesign-app .staff-role-goai-shortcuts__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  margin-top: 10px;
+}
+
+body.openxnet-ui-redesign-body .staff-role-goai-shortcut,
+.openxnet-redesign-app .staff-role-goai-shortcut {
+  min-width: 0;
+  min-height: 74px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--staff-role-border);
+  border-radius: 7px;
+  background: var(--staff-role-surface);
+  color: var(--staff-role-text);
+  text-align: left;
+  box-shadow: none;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+body.openxnet-ui-redesign-body .staff-role-goai-shortcut:hover,
+.openxnet-redesign-app .staff-role-goai-shortcut:hover {
+  border-color: color-mix(in srgb, var(--staff-template-accent-start) 46%, var(--staff-role-border));
+  background: color-mix(in srgb, var(--staff-template-accent-start) 5%, var(--staff-role-surface));
+}
+
+body.openxnet-ui-redesign-body .staff-role-goai-shortcut__icon,
+.openxnet-redesign-app .staff-role-goai-shortcut__icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--staff-template-accent-start) 28%, var(--staff-role-border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--staff-template-accent-start) 9%, var(--staff-role-surface));
+  color: var(--staff-template-accent-start);
+  font-size: 13px;
+}
+
+body.openxnet-ui-redesign-body .staff-role-goai-shortcut__body,
+.openxnet-redesign-app .staff-role-goai-shortcut__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+body.openxnet-ui-redesign-body .staff-role-goai-shortcut__body strong,
+.openxnet-redesign-app .staff-role-goai-shortcut__body strong {
+  overflow: hidden;
+  color: var(--staff-role-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-goai-shortcut__body small,
+.openxnet-redesign-app .staff-role-goai-shortcut__body small {
+  overflow: hidden;
+  color: var(--staff-role-text-secondary);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-goai-shortcut__action,
+.openxnet-redesign-app .staff-role-goai-shortcut__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--staff-template-accent-start, var(--staff-role-accent));
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-section-head--recommendations,
+.openxnet-redesign-app .staff-role-section-head--recommendations {
+  margin-top: 16px !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-spotlight__list,
+.openxnet-redesign-app .staff-role-spotlight__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  margin-top: 10px;
+}
+
+body.openxnet-ui-redesign-body .staff-role-spotlight__card,
+.openxnet-redesign-app .staff-role-spotlight__card {
+  position: relative;
+  min-width: 0;
+  min-height: 68px;
+  display: grid !important;
+  grid-template-columns: 32px minmax(0, 1fr) 14px;
+  align-items: center !important;
+  gap: 9px !important;
+  padding: 8px 10px !important;
+  overflow: hidden;
+  border: 1px solid var(--staff-role-border) !important;
+  border-radius: 7px !important;
+  background: var(--staff-role-surface) !important;
+  background-image: none !important;
+  color: var(--staff-role-text) !important;
+  text-align: left;
+  box-shadow: none !important;
+  transform: none !important;
+  animation: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-spotlight__card::before,
+body.openxnet-ui-redesign-body .staff-role-spotlight__card::after,
+.openxnet-redesign-app .staff-role-spotlight__card::before,
+.openxnet-redesign-app .staff-role-spotlight__card::after {
+  display: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-spotlight__card:hover,
+.openxnet-redesign-app .staff-role-spotlight__card:hover {
+  border-color: var(--staff-role-border-strong) !important;
+  background: var(--staff-role-surface-muted) !important;
+  transform: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-spotlight__icon,
+.openxnet-redesign-app .staff-role-spotlight__icon {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--staff-role-border) !important;
+  border-radius: 6px !important;
+  background: var(--staff-role-surface-muted) !important;
+  background-image: none !important;
+  color: var(--staff-template-accent-start, var(--staff-role-accent)) !important;
+  font-size: 12px !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-spotlight__body,
+.openxnet-redesign-app .staff-role-spotlight__body {
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .staff-role-spotlight__name,
+.openxnet-redesign-app .staff-role-spotlight__name {
+  overflow: hidden;
+  color: var(--staff-role-text) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 16px !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-spotlight__meta,
+.openxnet-redesign-app .staff-role-spotlight__meta {
+  margin: 1px 0 0 !important;
+  overflow: hidden;
+  color: var(--staff-role-text-muted) !important;
+  font-size: 10px !important;
+  line-height: 13px !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-spotlight__body p,
+.openxnet-redesign-app .staff-role-spotlight__body p {
+  margin: 1px 0 0 !important;
+  overflow: hidden;
+  color: var(--staff-role-text-secondary) !important;
+  font-size: 10px !important;
+  line-height: 13px !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .staff-role-spotlight__action,
+.openxnet-redesign-app .staff-role-spotlight__action {
+  color: var(--staff-role-text-muted);
+  font-size: 9px;
+}
+
+body.openxnet-ui-redesign-body .staff-role-library,
+.openxnet-redesign-app .staff-role-library {
+  margin-top: 4px;
+  padding-top: 4px !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-library__grid,
+.openxnet-redesign-app .staff-role-library__grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(220px, 1fr)) !important;
+  gap: 12px !important;
+  margin-top: 12px;
+}
+
+body.openxnet-ui-redesign-body .staff-role-library-card,
+.openxnet-redesign-app .staff-role-library-card {
+  min-width: 0;
+  min-height: 168px !important;
+  padding: 12px 14px !important;
+  border: 1px solid var(--staff-role-border) !important;
+  border-radius: 8px !important;
+  background: var(--staff-role-surface) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-library-card::before,
+body.openxnet-ui-redesign-body .staff-role-library-card::after,
+.openxnet-redesign-app .staff-role-library-card::before,
+.openxnet-redesign-app .staff-role-library-card::after {
+  display: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-library-card:hover,
+.openxnet-redesign-app .staff-role-library-card:hover {
+  border-color: var(--staff-role-border-strong) !important;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--staff-role-text) 8%, transparent) !important;
+  transform: none !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-library-card__summary,
+.openxnet-redesign-app .staff-role-library-card__summary {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--staff-role-text-secondary) !important;
+  font-size: 12px !important;
+  line-height: 18px !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-library-card--add,
+.openxnet-redesign-app .staff-role-library-card--add {
+  min-height: 168px !important;
+  border-style: dashed !important;
+  color: var(--staff-role-accent) !important;
+}
+
+body.openxnet-ui-redesign-body .staff-role-empty-state,
+.openxnet-redesign-app .staff-role-empty-state {
+  min-height: 168px;
+  padding: 24px !important;
+  border: 1px dashed var(--staff-role-border-strong) !important;
+  border-radius: 8px !important;
+  background: var(--staff-role-surface-muted) !important;
+  color: var(--staff-role-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .oxe-staff-pager,
+.openxnet-redesign-app .oxe-staff-pager {
+  min-height: 34px;
+  margin: 12px 0 0 !important;
+}
+
+body.openxnet-ui-redesign-body .oxe-staff-pager__btn,
+body.openxnet-ui-redesign-body .oxe-staff-pager__num,
+.openxnet-redesign-app .oxe-staff-pager__btn,
+.openxnet-redesign-app .oxe-staff-pager__num {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+@container staff-role-studio (max-width: 900px) {
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-studio__hero {
+    grid-template-columns: minmax(150px, 1fr) auto !important;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-studio__toolbar {
+    grid-column: 1 / -1;
+    justify-content: stretch !important;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .oxe-staff-search {
+    max-width: none !important;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-studio__layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-spotlight {
+    display: contents !important;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-goai-shortcuts {
+    grid-row: 1;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-template-panel {
+    grid-row: 2;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-section-head--recommendations {
+    grid-row: 3;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-spotlight__list {
+    grid-row: 4;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-goai-shortcuts__list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-goai-shortcut {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-goai-shortcut__action {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-spotlight__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-library__grid {
+    grid-template-columns: repeat(2, minmax(220px, 1fr)) !important;
+  }
+}
+
+@container staff-role-studio (max-width: 620px) {
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-studio__hero {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-studio__stats {
+    justify-content: flex-start;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-studio__stat:first-child {
+    padding-left: 0 !important;
+    border-left: 0 !important;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-studio__toolbar {
+    grid-column: auto;
+    flex-wrap: wrap;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .oxe-staff-search {
+    min-width: 100%;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .oxe-staff-create {
+    width: 100%;
+  }
+
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .oxe-staff-grid,
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-template-grid,
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-goai-shortcuts__list,
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-spotlight__list,
+  :is(body.openxnet-ui-redesign-body, .openxnet-redesign-app) .staff-role-library__grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.openxnet-ui-redesign-body .staff-role-studio *,
+  .openxnet-redesign-app .staff-role-studio * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+html .staff-role-dialog-modal.el-overlay {
+  overflow: hidden !important;
+  background: rgba(15, 23, 42, 0.52) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body.el-popup-parent--hidden > .staff-role-dialog-modal.el-overlay {
+  background: rgba(15, 23, 42, 0.52) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html:has(body.el-popup-parent--hidden),
+body.el-popup-parent--hidden {
+  overflow: hidden !important;
+  padding-right: 0 !important;
+}
+
+html .staff-role-dialog-modal .el-overlay-dialog {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: hidden !important;
+}
+
+html .el-dialog.staff-role-dialog {
+  width: min(900px, calc(100vw - 32px)) !important;
+  max-height: calc(100vh - 32px);
+  margin: 0 !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ox-border, #e3e6ea) !important;
+  border-radius: 8px !important;
+  background: var(--ox-bg-surface, #ffffff) !important;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28) !important;
+}
+
+html .staff-role-dialog .el-dialog__header {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--ox-border, #e3e6ea);
+  background: color-mix(in srgb, var(--ox-bg-surface-hover, #f4f6f8) 32%, var(--ox-bg-surface, #ffffff));
+}
+
+html .staff-role-dialog .el-dialog__title {
+  color: var(--ox-text-primary, #1a1d21);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+html .staff-role-dialog__titlebar {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+html .staff-role-dialog__title-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ox-border-accent, var(--ox-accent, #2563eb));
+  border-radius: 7px;
+  background: var(--ox-accent-softer, #ebf0fe);
+  color: var(--ox-accent, #2563eb);
+  font-size: 13px;
+}
+
+html .staff-role-dialog__title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html .staff-role-dialog .el-dialog__body {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 16px 20px 8px;
+  overflow: hidden;
+}
+
+html .staff-role-dialog .el-dialog__footer {
+  flex: 0 0 auto;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--ox-border, #e3e6ea);
+  background: color-mix(in srgb, var(--ox-bg-surface-hover, #f4f6f8) 24%, var(--ox-bg-surface, #ffffff));
+}
+
+html .staff-role-dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+html .staff-role-dialog__identity-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding-bottom: 4px;
+}
+
+html .staff-role-dialog .el-form-item {
+  min-width: 0;
+  margin-bottom: 10px;
+}
+
+html .staff-role-dialog .el-form-item__label {
+  margin-bottom: 5px;
+  color: var(--ox-text-primary, #1a1d21);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 18px;
+}
+
+html .staff-role-dialog__workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  border-top: 1px solid var(--ox-border, #e3e6ea);
+}
+
+html .staff-role-dialog__section {
+  min-width: 0;
+  padding-top: 14px;
+}
+
+html .staff-role-dialog__section--visual {
+  box-sizing: border-box;
+  padding: 14px 18px 14px 14px;
+  border-right: 1px solid var(--ox-border, #e3e6ea);
+  background: color-mix(in srgb, var(--ox-bg-surface-hover, #f4f6f8) 38%, var(--ox-bg-surface, #ffffff));
+}
+
+html .staff-role-dialog__section--capabilities {
+  padding-left: 18px;
+}
+
+html .staff-role-dialog__section-head {
+  height: 28px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--ox-text-primary, #1a1d21);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+html .staff-role-dialog__section-head i {
+  width: 16px;
+  color: var(--ox-accent, #2563eb);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+html .staff-role-dialog__icon-field {
+  margin-bottom: 0 !important;
+}
+
+html .staff-role-dialog .el-input__wrapper,
+html .staff-role-dialog .el-select__wrapper {
+  min-height: 38px;
+  border-radius: 6px !important;
+  background-color: color-mix(in srgb, var(--ox-bg-input, #f7f8fa) 58%, var(--ox-bg-surface, #ffffff)) !important;
+  box-shadow: 0 0 0 1px var(--ox-border, #e3e6ea) inset !important;
+  transition: background-color 150ms ease, box-shadow 150ms ease !important;
+}
+
+html .staff-role-dialog .el-input__wrapper:hover,
+html .staff-role-dialog .el-select__wrapper:hover {
+  background-color: color-mix(in srgb, var(--ox-bg-input-hover, #eef1f4) 68%, var(--ox-bg-surface, #ffffff)) !important;
+  box-shadow: 0 0 0 1px var(--ox-border-hover, #cbd2dc) inset !important;
+}
+
+html .staff-role-dialog .el-input__wrapper.is-focus,
+html .staff-role-dialog .el-select__wrapper.is-focused {
+  background-color: var(--ox-bg-surface, #ffffff) !important;
+  box-shadow: 0 0 0 1px var(--ox-accent, #2563eb) inset !important;
+}
+
+html .staff-role-dialog .el-textarea__inner {
+  height: 136px !important;
+  min-height: 136px !important;
+  padding: 10px 12px;
+  border-radius: 6px !important;
+  background-color: color-mix(in srgb, var(--ox-bg-input, #f7f8fa) 58%, var(--ox-bg-surface, #ffffff)) !important;
+  color: var(--ox-text-primary, #1a1d21);
+  line-height: 20px;
+  resize: none;
+  box-shadow: 0 0 0 1px var(--ox-border, #e3e6ea) inset !important;
+  transition: background-color 150ms ease, box-shadow 150ms ease !important;
+}
+
+html .staff-role-dialog .el-textarea__inner:hover {
+  background-color: color-mix(in srgb, var(--ox-bg-input-hover, #eef1f4) 68%, var(--ox-bg-surface, #ffffff)) !important;
+  box-shadow: 0 0 0 1px var(--ox-border-hover, #cbd2dc) inset !important;
+}
+
+html .staff-role-dialog .el-textarea__inner:focus {
+  background-color: var(--ox-bg-surface, #ffffff) !important;
+  box-shadow: 0 0 0 1px var(--ox-accent, #2563eb) inset !important;
+}
+
+html .staff-role-dialog .staff-role-icon-picker {
+  box-sizing: border-box;
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
+
+html .staff-role-dialog .staff-role-icon-picker-current {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ox-border, #e3e6ea) !important;
+  border-radius: 7px !important;
+  background: color-mix(in srgb, var(--ox-accent-softer, #ebf0fe) 72%, var(--ox-bg-surface, #ffffff)) !important;
+  background-image: none !important;
+  box-shadow: inset 3px 0 0 var(--ox-accent, #2563eb) !important;
+}
+
+html .staff-role-dialog .staff-role-icon-picker-current-badge {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ox-border-accent, var(--ox-accent, #2563eb));
+  border-radius: 7px !important;
+  background: var(--ox-accent-softer, #ebf0fe) !important;
+  background-image: none !important;
+  color: var(--ox-accent, #2563eb) !important;
+  font-size: 16px;
+  box-shadow: none !important;
+}
+
+html .staff-role-dialog .staff-role-icon-picker-current-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 2px;
+  text-align: left !important;
+}
+
+html .staff-role-dialog .staff-role-icon-picker-current-title {
+  overflow: hidden;
+  color: var(--ox-text-primary, #1a1d21) !important;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html .staff-role-dialog .staff-role-icon-picker-current-note {
+  overflow: hidden;
+  color: var(--ox-text-muted, #7b8490) !important;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html .staff-role-dialog .staff-role-icon-picker-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+html .staff-role-dialog .staff-role-icon-option {
+  min-width: 0;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--ox-border, #e3e6ea) !important;
+  border-radius: 7px !important;
+  background: var(--ox-bg-surface, #ffffff) !important;
+  background-image: none !important;
+  color: var(--ox-text-secondary, #5b6470) !important;
+  box-shadow: none !important;
+  transform: translateY(0) !important;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease, transform 100ms ease !important;
+}
+
+html .staff-role-dialog .staff-role-icon-option:hover {
+  border-color: var(--ox-border-hover, #cbd2dc) !important;
+  background: var(--ox-bg-surface-hover, #f4f6f8) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+html .staff-role-dialog .staff-role-icon-option.is-selected {
+  border-color: var(--ox-border-accent, var(--ox-accent, #2563eb)) !important;
+  background: var(--ox-accent-softer, #ebf0fe) !important;
+  background-image: none !important;
+  color: var(--ox-accent, #2563eb) !important;
+  box-shadow: inset 3px 0 0 var(--ox-accent, #2563eb) !important;
+}
+
+html .staff-role-dialog .staff-role-icon-option:active {
+  transform: translateY(1px) !important;
+}
+
+html .staff-role-dialog .staff-role-icon-option:focus-visible {
+  outline: 2px solid var(--ox-accent, #2563eb);
+  outline-offset: 2px;
+}
+
+html .staff-role-dialog .staff-role-icon-option-glyph {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px !important;
+  background: var(--ox-bg-surface-hover, #f4f6f8) !important;
+  background-image: none !important;
+  color: currentColor !important;
+  font-size: 12px;
+  box-shadow: none !important;
+}
+
+html .staff-role-dialog .staff-role-icon-option-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html .staff-role-dialog .staff-role-icon-option-check {
+  width: 14px;
+  color: var(--ox-accent, #2563eb);
+  font-size: 10px;
+  text-align: center;
+}
+
+html .staff-role-dialog .staff-role-form-skill-entry {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+html .staff-role-dialog .staff-role-form-skill-entry .el-button {
+  min-width: 64px;
+  height: 38px;
+  margin: 0;
+  border-radius: 6px !important;
+}
+
+html .staff-role-dialog .staff-role-dialog__action-icon {
+  width: 13px;
+  flex: 0 0 13px;
+  margin-right: 6px;
+  font-size: 11px;
+  text-align: center;
+}
+
+html body.openxnet-ui-redesign-body .el-dialog.staff-role-dialog .el-button--primary {
+  border-color: color-mix(in srgb, var(--ox-accent, #2563eb) 68%, #0f172a) !important;
+  background-color: color-mix(in srgb, var(--ox-accent, #2563eb) 68%, #0f172a) !important;
+  background-image: none !important;
+  color: #ffffff !important;
+}
+
+html body.openxnet-ui-redesign-body .el-dialog.staff-role-dialog .el-button--primary:hover:not(.is-disabled) {
+  border-color: color-mix(in srgb, var(--ox-accent, #2563eb) 62%, #0f172a) !important;
+  background-color: color-mix(in srgb, var(--ox-accent, #2563eb) 62%, #0f172a) !important;
+  background-image: none !important;
+}
+
+html body.openxnet-ui-redesign-body .el-dialog.staff-role-dialog .el-button--primary.is-disabled {
+  border-color: var(--ox-border, #e3e6ea) !important;
+  background: var(--ox-bg-surface-active, #e8ebf4) !important;
+  background-image: none !important;
+  color: var(--ox-text-muted, #7b8490) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+html .staff-role-dialog .staff-role-form-chips {
+  width: 100%;
+  min-height: 24px;
+  max-height: 52px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+html .staff-role-dialog .staff-role-form-chips.is-empty {
+  margin-top: 4px;
+  pointer-events: none;
+}
+
+html .staff-role-dialog .staff-role-form-chips .el-tag {
+  max-width: 160px;
+  border-radius: 4px !important;
+}
+
+html .staff-role-dialog .staff-role-form-chips .el-tag__content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html .staff-role-dialog .el-dialog__footer .el-button {
+  min-width: 76px;
+  height: 38px;
+  border-radius: 6px !important;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 100ms ease !important;
+}
+
+html .staff-role-dialog .el-dialog__footer .el-button--primary:not(.is-disabled) {
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ox-accent, #2563eb) 22%, transparent) !important;
+}
+
+html .staff-role-dialog .el-dialog__footer .el-button:active:not(.is-disabled) {
+  transform: translateY(1px);
+  box-shadow: none !important;
+}
+
+@media (max-width: 820px) {
+  html .staff-role-dialog .el-dialog__body {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  html .staff-role-dialog__form {
+    gap: 0;
+  }
+
+  html .staff-role-dialog__identity-row,
+  html .staff-role-dialog__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html .staff-role-dialog__identity-row {
+    gap: 0;
+  }
+
+  html .staff-role-dialog__section--visual {
+    padding: 14px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--ox-border, #e3e6ea);
+    background: transparent;
+  }
+
+  html .staff-role-dialog__section--capabilities {
+    padding-left: 0;
+  }
+
+  html .staff-role-dialog .staff-role-icon-picker-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  html .staff-role-dialog-modal .el-overlay-dialog {
+    padding: 8px;
+  }
+
+  html .el-dialog.staff-role-dialog {
+    width: calc(100vw - 16px) !important;
+    max-height: calc(100vh - 16px);
+  }
+
+  html .staff-role-dialog .el-dialog__header,
+  html .staff-role-dialog .el-dialog__body,
+  html .staff-role-dialog .el-dialog__footer {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  html .staff-role-dialog .staff-role-icon-picker-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-height: 640px) and (min-width: 821px) {
+  html .staff-role-dialog .el-dialog__body {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+}

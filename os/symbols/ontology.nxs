@@ -1,0 +1,214 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Core Ontology: Type hierarchy and concept taxonomy
+-- Defines foundational concepts, their relations, and subtype lattice
+
+{-- This ontology establishes the conceptual backbone for the kernel's
+    reasoning engine. All inference rules, bindings, and patterns
+    reference concepts defined here. --}
+
+ontology Core {|
+
+  -- ==================================================================
+  -- Base abstract concepts (top of the lattice)
+  -- ==================================================================
+
+  concept Entity :: {|
+    description :: "Root of all kernel-managed entities"
+    activation :: Float64
+    identity :: Symbol
+  |}
+
+  concept Temporal :: {|
+    description :: "Entities that exist within a time boundary"
+    created_at :: Timestamp
+    expires_at :: Option[Timestamp]
+  |}
+
+  -- ==================================================================
+  -- Primary kernel concepts
+  -- ==================================================================
+
+  concept Process <: Entity {|
+    description :: "An executing unit managed by the scheduler"
+    pid :: UInt32
+    state :: Symbol
+    priority :: Symbol
+    neural_weight :: Float64
+    memory_slots :: List[SlotId]
+    channels :: List[ChannelId]
+  |}
+
+  concept Memory <: Entity {|
+    description :: "A symbolic memory region or slot pool"
+    capacity :: UInt64
+    allocated :: UInt64
+    generation :: UInt32
+    fragmentation :: Float64
+  |}
+
+  concept Channel <: Entity {|
+    description :: "An IPC communication conduit between processes"
+    sender :: Process
+    receiver :: Process
+    buffer_size :: UInt32
+    protocol :: Symbol
+  |}
+
+  concept Signal <: Temporal {|
+    description :: "An asynchronous notification between kernel entities"
+    source :: Entity
+    target :: Entity
+    signal_type :: Symbol
+    payload :: Map[String, Any]
+    priority :: UInt32
+  |}
+
+  concept Device <: Entity {|
+    description :: "A hardware or virtual device abstraction"
+    device_class :: Symbol
+    driver :: Symbol
+    state :: Symbol
+    capabilities :: List[Symbol]
+    latency :: Duration
+  |}
+
+  concept Agent <: Process {|
+    description :: "A neural-symbolic autonomous process with reasoning"
+    knowledge_base :: List[Symbol]
+    inference_depth :: UInt32
+    autonomy_level :: Float64
+    goals :: List[Symbol]
+  |}
+
+  concept Task <: Temporal {|
+    description :: "A discrete unit of work with dependencies"
+    owner :: Process
+    state :: Symbol
+    dependencies :: List[Task]
+    result :: Option[Any]
+    cost :: Float64
+  |}
+
+  concept Resource <: Entity {|
+    description :: "A finite shared system resource"
+    resource_type :: Symbol
+    capacity :: Float64
+    available :: Float64
+    contention :: Float64
+    holders :: List[Process]
+  |}
+
+  concept Permission <: Entity {|
+    description :: "An access control capability grant"
+    subject :: Entity
+    object :: Entity
+    actions :: List[Symbol]
+    scope :: Symbol
+    revocable :: Bool
+  |}
+
+  concept Event <: Temporal {|
+    description :: "An observable occurrence in the system"
+    event_type :: Symbol
+    source :: Entity
+    data :: Map[String, Any]
+    propagation :: Symbol
+  |}
+
+  -- ==================================================================
+  -- Relation definitions
+  -- ==================================================================
+
+  relation has_state :: Entity -> Symbol {|
+    description :: "Current lifecycle state of an entity"
+    cardinality :: :one_to_one
+    @weight(1.0)
+  |}
+
+  relation communicates_with :: Process -> Process {|
+    description :: "Bidirectional IPC link between processes"
+    cardinality :: :many_to_many
+    via :: Channel
+    @weight(0.8)
+  |}
+
+  relation owns :: Entity -> Resource {|
+    description :: "Exclusive or shared ownership of a resource"
+    cardinality :: :one_to_many
+    exclusive :: Bool
+    @weight(0.9)
+  |}
+
+  relation requires :: Entity -> Resource {|
+    description :: "Dependency: entity cannot proceed without resource"
+    cardinality :: :many_to_many
+    urgency :: Float64
+    @weight(0.85)
+  |}
+
+  relation produces :: Process -> Event {|
+    description :: "A process emits an event into the system"
+    cardinality :: :one_to_many
+    @weight(0.7)
+  |}
+
+  relation consumes :: Process -> Event {|
+    description :: "A process subscribes to and handles an event"
+    cardinality :: :many_to_many
+    @weight(0.7)
+  |}
+
+  relation inherits_from :: Entity -> Entity {|
+    description :: "Subtype relationship in the concept lattice"
+    cardinality :: :many_to_one
+    transitive :: true
+    @weight(1.0)
+  |}
+
+  relation transforms :: Process -> Resource {|
+    description :: "A process modifies or converts a resource"
+    cardinality :: :many_to_many
+    transformation_type :: Symbol
+    @weight(0.6)
+  |}
+
+  -- ==================================================================
+  -- Subtype lattice constraints
+  -- ==================================================================
+
+  [| Agent <: Process <: Entity |]
+  [| Task <: Temporal <: Entity |]
+  [| Signal <: Temporal <: Entity |]
+  [| Event <: Temporal <: Entity |]
+  [| Memory <: Entity |]
+  [| Channel <: Entity |]
+  [| Device <: Entity |]
+  [| Resource <: Entity |]
+  [| Permission <: Entity |]
+
+  -- ==================================================================
+  -- State enumerations (referenced by scheduler.oxk and memory.oxk)
+  -- ==================================================================
+
+  concept ProcessState :: {|
+    values :: [:Ready, :Running, :Blocked, :Sleeping, :Terminated, :Suspended]
+  |}
+
+  concept DeviceState :: {|
+    values :: [:Online, :Offline, :Degraded, :Unreachable, :Initializing]
+  |}
+
+  concept TaskState :: {|
+    values :: [:Pending, :Ready, :Running, :Completed, :Failed, :Cancelled]
+  |}
+
+  concept ResourceType :: {|
+    values :: [:CPU, :Memory, :Disk, :Network, :GPU, :Channel, :Lock]
+  |}
+
+  concept SignalType :: {|
+    values :: [:SIGTERM, :SIGKILL, :SIGSTOP, :SIGCONT, :SIGCHLD,
+               :SIGMEM, :SIGDEV, :SIGWATCH, :SIGIPC, :SIGFAULT]
+  |}
+
+|}

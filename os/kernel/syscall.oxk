@@ -1,0 +1,413 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Syscall Interface Table
+-- Declares all system calls by category with dispatch routing
+
+module Syscall {|
+
+  requires :: [:scheduler, :memory, :ipc, :signals]
+  version :: "0.1.0"
+
+  -- Syscall result codes
+  enum SyscallResult {|
+    :Ok
+    :Error
+    :Blocked
+    :PermissionDenied
+    :InvalidArgument
+    :NotImplemented
+  |}
+
+  -- Syscall categories for dispatch routing
+  enum SyscallCategory {|
+    :Process
+    :Memory
+    :IPC
+    :Signal
+    :Device
+    :FileSystem
+    :Network
+    :System
+  |}
+
+  -- Syscall descriptor
+  struct SyscallEntry {|
+    id :: UInt16
+    name :: String
+    category :: SyscallCategory
+    handler :: Symbol
+    min_capability :: Capability
+    arg_count :: UInt8
+    is_blocking :: Bool
+    audit_log :: Bool
+  |}
+
+  -- Syscall table: master registry of all system calls
+  config SyscallTable {|
+
+    -- Process management syscalls (0x00 - 0x1F)
+    syscall sys_spawn {|
+      id :: 0x01
+      category :: :Process
+      handler :: :Scheduler.spawn
+      min_capability :: :process_create
+      arg_count :: 4
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_terminate {|
+      id :: 0x02
+      category :: :Process
+      handler :: :Scheduler.terminate
+      min_capability :: :process_kill
+      arg_count :: 2
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_yield {|
+      id :: 0x03
+      category :: :Process
+      handler :: :Scheduler.yield
+      min_capability :: :none
+      arg_count :: 0
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    syscall sys_suspend {|
+      id :: 0x04
+      category :: :Process
+      handler :: :Scheduler.suspend
+      min_capability :: :process_manage
+      arg_count :: 1
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_resume {|
+      id :: 0x05
+      category :: :Process
+      handler :: :Scheduler.resume
+      min_capability :: :process_manage
+      arg_count :: 1
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_getpid {|
+      id :: 0x06
+      category :: :Process
+      handler :: :Scheduler.get_current_pid
+      min_capability :: :none
+      arg_count :: 0
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    syscall sys_wait {|
+      id :: 0x07
+      category :: :Process
+      handler :: :Scheduler.wait_child
+      min_capability :: :none
+      arg_count :: 2
+      is_blocking :: true
+      audit_log :: false
+    |}
+
+    syscall sys_set_priority {|
+      id :: 0x08
+      category :: :Process
+      handler :: :Scheduler.set_priority
+      min_capability :: :process_manage
+      arg_count :: 2
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    -- Memory management syscalls (0x20 - 0x3F)
+    syscall sys_alloc {|
+      id :: 0x20
+      category :: :Memory
+      handler :: :Memory.allocate
+      min_capability :: :memory_alloc
+      arg_count :: 3
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    syscall sys_free {|
+      id :: 0x21
+      category :: :Memory
+      handler :: :Memory.free
+      min_capability :: :memory_alloc
+      arg_count :: 1
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    syscall sys_pin {|
+      id :: 0x22
+      category :: :Memory
+      handler :: :Memory.pin
+      min_capability :: :memory_pin
+      arg_count :: 1
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_unpin {|
+      id :: 0x23
+      category :: :Memory
+      handler :: :Memory.unpin
+      min_capability :: :memory_pin
+      arg_count :: 1
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_gc_trigger {|
+      id :: 0x24
+      category :: :Memory
+      handler :: :Memory.gc_full
+      min_capability :: :memory_gc
+      arg_count :: 0
+      is_blocking :: true
+      audit_log :: true
+    |}
+
+    syscall sys_mem_info {|
+      id :: 0x25
+      category :: :Memory
+      handler :: :Memory.get_stats
+      min_capability :: :none
+      arg_count :: 0
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    syscall sys_link_slots {|
+      id :: 0x26
+      category :: :Memory
+      handler :: :Memory.link_slots
+      min_capability :: :memory_alloc
+      arg_count :: 2
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    -- IPC syscalls (0x40 - 0x5F)
+    syscall sys_chan_create {|
+      id :: 0x40
+      category :: :IPC
+      handler :: :IPC.create_channel
+      min_capability :: :ipc_create
+      arg_count :: 3
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_chan_connect {|
+      id :: 0x41
+      category :: :IPC
+      handler :: :IPC.connect_channel
+      min_capability :: :ipc_connect
+      arg_count :: 2
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_chan_close {|
+      id :: 0x42
+      category :: :IPC
+      handler :: :IPC.close_channel
+      min_capability :: :ipc_create
+      arg_count :: 1
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_send {|
+      id :: 0x43
+      category :: :IPC
+      handler :: :IPC.send
+      min_capability :: :ipc_send
+      arg_count :: 4
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    syscall sys_recv {|
+      id :: 0x44
+      category :: :IPC
+      handler :: :IPC.recv
+      min_capability :: :ipc_recv
+      arg_count :: 3
+      is_blocking :: true
+      audit_log :: false
+    |}
+
+    syscall sys_broadcast {|
+      id :: 0x45
+      category :: :IPC
+      handler :: :IPC.broadcast
+      min_capability :: :ipc_broadcast
+      arg_count :: 3
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    -- Signal syscalls (0x60 - 0x7F)
+    syscall sys_signal_send {|
+      id :: 0x60
+      category :: :Signal
+      handler :: :Signals.send_signal
+      min_capability :: :signal_send
+      arg_count :: 3
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_signal_register {|
+      id :: 0x61
+      category :: :Signal
+      handler :: :Signals.register_handler
+      min_capability :: :none
+      arg_count :: 2
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    syscall sys_signal_mask {|
+      id :: 0x62
+      category :: :Signal
+      handler :: :Signals.set_mask
+      min_capability :: :none
+      arg_count :: 1
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    syscall sys_signal_pending {|
+      id :: 0x63
+      category :: :Signal
+      handler :: :Signals.get_pending
+      min_capability :: :none
+      arg_count :: 0
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    -- Device syscalls (0x80 - 0x9F)
+    syscall sys_device_register {|
+      id :: 0x80
+      category :: :Device
+      handler :: :Devices.register_device
+      min_capability :: :device_register
+      arg_count :: 3
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_device_remove {|
+      id :: 0x81
+      category :: :Device
+      handler :: :Devices.remove_device
+      min_capability :: :device_register
+      arg_count :: 1
+      is_blocking :: false
+      audit_log :: true
+    |}
+
+    syscall sys_device_invoke {|
+      id :: 0x82
+      category :: :Device
+      handler :: :Devices.invoke_device
+      min_capability :: :device_use
+      arg_count :: 3
+      is_blocking :: true
+      audit_log :: true
+    |}
+
+    syscall sys_device_list {|
+      id :: 0x83
+      category :: :Device
+      handler :: :Devices.list_devices
+      min_capability :: :none
+      arg_count :: 0
+      is_blocking :: false
+      audit_log :: false
+    |}
+
+    syscall sys_device_status {|
+      id :: 0x84
+      category :: :Device
+      handler :: :Devices.get_status
+      min_capability :: :none
+      arg_count :: 1
+      is_blocking :: false
+      audit_log :: false
+    |}
+  |}
+
+  -- Syscall dispatcher: routes syscall by ID to handler
+  service dispatch(syscall_id :: UInt16, caller_pid :: UInt32,
+                   args :: List[Any]) -> Result[Any, SyscallResult] {|
+    -- Look up syscall entry
+    let entry = lookup_entry(syscall_id)
+    match entry {|
+      None -> return Err(:NotImplemented)
+      Some(e) -> {|
+        -- Validate argument count
+        if List.length(args) != e.arg_count as UInt32 {|
+          return Err(:InvalidArgument)
+        |}
+
+        -- Check capabilities
+        if e.min_capability != :none {|
+          let has_cap = invoke Policy.check_capability(caller_pid, e.min_capability)
+          if not has_cap {|
+            if e.audit_log {|
+              emit :SyscallDenied with {|
+                syscall :: e.name, pid :: caller_pid, capability :: e.min_capability
+              |}
+            |}
+            return Err(:PermissionDenied)
+          |}
+        |}
+
+        -- Audit logging
+        if e.audit_log {|
+          emit :SyscallInvoked with {|
+            syscall :: e.name, pid :: caller_pid, timestamp :: now()
+          |}
+        |}
+
+        -- Dispatch to handler
+        let result = invoke e.handler with args
+        return result
+      |}
+    |}
+  |}
+
+  -- Fast path lookup by syscall ID
+  service lookup_entry(id :: UInt16) -> Option[SyscallEntry] {|
+    -- Binary search in sorted syscall table
+    for entry in SyscallTable {|
+      if entry.id == id {|
+        return Some(entry)
+      |}
+    |}
+    return None
+  |}
+
+  -- Get all syscalls in a category
+  service list_by_category(cat :: SyscallCategory) -> List[SyscallEntry] {|
+    let results = []
+    for entry in SyscallTable where entry.category == cat {|
+      results = List.append(results, entry)
+    |}
+    return results
+  |}
+
+|}

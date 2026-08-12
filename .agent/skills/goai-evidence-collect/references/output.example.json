@@ -1,0 +1,18 @@
+{
+  "schema": "goai.skill.evidence-collect.output.v1.1",
+  "decision": "COLLECT_EVIDENCE",
+  "summary": "读取三个平台的全部允许证据，验证告警、数据契约与部署修订之间的因果关系。",
+  "confidence": 0.94,
+  "requestedToolNames": [
+    "aiops.alert.get",
+    "aiops.service.health",
+    "aiops.k8s.workload.get",
+    "dataops.quality.report.get",
+    "dataops.schema.snapshot.get",
+    "dataops.lineage.get",
+    "dataops.workflow.instance.get",
+    "mlops.deployment.get",
+    "mlops.inference.probe"
+  ],
+  "evidenceIds": []
+}

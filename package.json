@@ -1,0 +1,336 @@
+{
+  "name": "openxnet",
+  "version": "1.1.0",
+  "description": "OpenXnet v1.1.0 | AI multi-agent productivity platform",
+  "main": "main.js",
+  "asar": true,
+  "scripts": {
+    "start": "npm run build:desktop && node start.js",
+    "dev": "npm run build:desktop && node start.js",
+    "build:desktop": "npm run build:desktop-core && npm run build:renderer-bootstrap",
+    "build:desktop-core": "tsc -p tsconfig.desktop.json",
+    "build:desktop-core:test": "tsc -p tsconfig.desktop.test.json",
+    "smoke:provider-runtime": "npm run build:desktop-core && electron scripts/smoke_application_provider_runtime.cjs",
+    "smoke:agent-runtime": "npm run build:desktop-core && electron scripts/smoke_application_agent_runtime.cjs",
+    "smoke:memory-management": "npm run build:desktop-core && electron scripts/smoke_application_memory_management.cjs",
+    "build:renderer-bootstrap": "node scripts/build_renderer_bootstrap.cjs",
+    "build:feature-pack:gitnexus": "node scripts/build_gitnexus_feature_pack.cjs",
+    "build:feature-pack:voice": ".\\.venv\\Scripts\\python.exe scripts\\build_voice_feature_pack.py",
+    "build:feature-pack:vector": ".\\.venv\\Scripts\\python.exe scripts\\build_vector_feature_pack.py",
+    "build:feature-pack:memory": ".\\.venv\\Scripts\\python.exe scripts\\build_memory_feature_pack.py",
+    "build:feature-pack:documents": ".\\.venv\\Scripts\\python.exe scripts\\build_document_feature_pack.py",
+    "build:feature-pack:connectors": ".\\.venv\\Scripts\\python.exe scripts\\build_connector_feature_pack.py",
+    "build:feature-pack:live": ".\\.venv\\Scripts\\python.exe scripts\\build_live_feature_pack.py",
+    "build:feature-pack:mcp": ".\\.venv\\Scripts\\python.exe scripts\\build_mcp_feature_pack.py",
+    "build:feature-pack:agentteams": ".\\.venv\\Scripts\\python.exe scripts\\build_agentteams_feature_pack.py",
+    "build:feature-pack:desktop-control": ".\\.venv\\Scripts\\python.exe scripts\\build_desktop_control_feature_pack.py",
+    "package:feature-pack": "node scripts/package_feature_pack.cjs",
+    "build:feature-pack:catalog": "node scripts/build_feature_pack_catalog.cjs",
+    "sign:feature-pack": "node scripts/sign_feature_pack.cjs",
+    "build:chat-ui": "npm --prefix frontend/chat-vite run build",
+    "build:role-ui": "npm --prefix frontend/role-vite run build",
+    "build:model-ui": "npm --prefix frontend/model-vite run build",
+    "build:toolkit-ui": "npm --prefix frontend/toolkit-vite run build",
+    "build:skills-ui": "npm --prefix frontend/skills-vite run build",
+    "build:browser-ui": "npm --prefix frontend/browser-vite run build",
+    "build:ops-ui": "npm --prefix frontend/ops-vite run build",
+    "test": "npm run test:architecture && python scripts/kernel_regression_suite.py",
+    "test:architecture": "npm run check:architecture && npm run test:base-package-boundary && npm run test:renderer-startup && npm run test:desktop-core && npm run test:provider-credentials && npm run test:search-credentials && npm run test:voice-credentials && npm run test:tool-credentials && npm run test:connector-credentials && npm run test:telegram-credentials && npm run test:image-host-credentials && npm run test:live-platform-credentials && npm run test:code-sandbox-credentials && npm run test:home-assistant-credentials && npm run test:sql-credentials && npm run test:comfyui-credentials && npm run test:delivery-credentials && npm run test:delivery-webhook-security && npm run test:task-center && npm run test:task-schedule-policy && npm run test:task-terminal-delivery && npm run test:task-execution-preflight && npm run test:task-execution-broker-api && npm run test:task-worker-store && npm run test:task-http-profile && npm run test:execution-engine-profile && npm run test:knowledge-base-runtime && npm run test:desktop-control-runtime && npm run test:chat-engine-api && npm run test:execution-engine-runtime && npm run test:enterprise-insights && npm run test:kernel-runtime && npm run test:model-assets && npm run test:server-task-api && npm run smoke:task-http-profiles && npm run test:task-rpc-auth && npm run test:worker-protocol && npm run test:task-execution-events && npm run test:task-execution-session && npm run test:task-execution-worker && npm run test:task-executor-worker-client && npm run test:sub-agent-executor && npm run test:feature-packs && npm run test:voice-worker && npm run test:audio-pcm && npm run test:vector-worker && npm run test:memory-worker && npm run test:document-worker && npm run test:google-rest && npm run test:connector-worker && npm run test:live-worker && npm run test:mcp-worker && npm run test:agentteams-python",
+    "test:renderer-startup": "node scripts/check_renderer_test_manifest.cjs && node --test tests/renderer_startup_bootstrap.test.cjs tests/desktop_chat_transport.test.cjs tests/desktop_cold_start_report.test.cjs tests/application_kernel_renderer.test.cjs tests/application_model_asset_renderer.test.cjs tests/application_provider_runtime_renderer.test.cjs tests/application_voice_synthesis_renderer.test.cjs tests/application_vrm_presentation_renderer.test.cjs tests/application_system_runtime_renderer.test.cjs tests/application_sticker_artifact_renderer.test.cjs tests/application_agent_runtime_renderer.test.cjs tests/application_memory_management_renderer.test.cjs tests/application_goai_competition_renderer.test.cjs tests/application_staff_role_studio_renderer.test.cjs tests/application_enterprise_sandbox_collaboration_renderer.test.cjs",
+    "test:base-package-boundary": "python -m unittest discover -s tests -p test_base_package_boundary.py && npm run test:a2a-direct",
+    "test:a2a-direct": "python -m unittest discover -s tests -p test_direct_a2a_client.py",
+    "test:desktop-core": "npm run build:desktop-core:test && node --test --test-concurrency=1 build-ts/desktop/chat/application-chat.test.js build-ts/desktop/contracts/application-knowledge-base-runtime.test.js build-ts/desktop/contracts/application-desktop-control-runtime.test.js build-ts/desktop/contracts/application-toolchain-runtime.test.js build-ts/desktop/contracts/application-recall-runtime.test.js build-ts/desktop/contracts/application-live-runtime.test.js build-ts/desktop/contracts/application-mcp-runtime.test.js build-ts/desktop/core/capability-registry.test.js build-ts/desktop/core/register-execution-engine-capability.test.js build-ts/desktop/desktop-control/application-desktop-control-runtime.test.js build-ts/desktop/recall/application-recall-runtime.test.js build-ts/desktop/gateway/application-access-gateway.test.js build-ts/desktop/gateway/local-ui-gateway.test.js build-ts/desktop/gateway/mcp-tool-broker-gateway.test.js build-ts/desktop/gateway/task-execution-broker-gateway.test.js build-ts/desktop/gateway/worker-rpc-gateway.test.js build-ts/desktop/knowledge/application-knowledge-base-runtime.test.js build-ts/desktop/live/application-live-runtime.test.js build-ts/desktop/mcp/application-mcp-runtime.test.js build-ts/desktop/main/register-application-access-ipc.test.js build-ts/desktop/main/register-application-artifacts-ipc.test.js build-ts/desktop/main/register-application-auth-ipc.test.js build-ts/desktop/main/register-application-chat-ipc.test.js build-ts/desktop/main/register-application-knowledge-base-runtime-ipc.test.js build-ts/desktop/main/register-application-desktop-control-runtime-ipc.test.js build-ts/desktop/main/register-application-toolchain-runtime-ipc.test.js build-ts/desktop/main/register-application-recall-runtime-ipc.test.js build-ts/desktop/main/register-application-live-runtime-ipc.test.js build-ts/desktop/main/register-application-mcp-runtime-ipc.test.js build-ts/desktop/main/register-application-providers-ipc.test.js build-ts/desktop/main/register-application-search-credentials-ipc.test.js build-ts/desktop/main/register-application-voice-credentials-ipc.test.js build-ts/desktop/main/register-application-voice-runtime-ipc.test.js build-ts/desktop/main/register-application-tool-credentials-ipc.test.js build-ts/desktop/main/register-application-connector-credentials-ipc.test.js build-ts/desktop/main/register-application-telegram-credentials-ipc.test.js build-ts/desktop/main/register-application-image-host-credentials-ipc.test.js build-ts/desktop/main/register-application-repository-credentials-ipc.test.js build-ts/desktop/main/register-application-live-platform-credentials-ipc.test.js build-ts/desktop/main/register-application-code-sandbox-credentials-ipc.test.js build-ts/desktop/main/register-application-home-assistant-credentials-ipc.test.js build-ts/desktop/main/register-application-comfyui-credentials-ipc.test.js build-ts/desktop/main/register-application-settings-ipc.test.js build-ts/desktop/main/register-application-tasks-ipc.test.js build-ts/desktop/main/register-application-task-execution-ipc.test.js build-ts/desktop/main/register-core-ipc.test.js build-ts/desktop/main/register-desktop-bootstrap-ipc.test.js build-ts/desktop/main/register-legacy-renderer-state-ipc.test.js build-ts/desktop/packs/feature-pack-manager.test.js build-ts/desktop/packs/feature-pack-distribution.test.js build-ts/desktop/packs/register-gitnexus-feature-pack.test.js build-ts/desktop/security/renderer-security.test.js build-ts/desktop/storage/application-artifacts.test.js build-ts/desktop/storage/application-auth.test.js build-ts/desktop/storage/application-providers.test.js build-ts/desktop/storage/application-search-credentials.test.js build-ts/desktop/storage/application-voice-credentials.test.js build-ts/desktop/storage/application-mcp-credentials.test.js build-ts/desktop/storage/application-http-tool-credentials.test.js build-ts/desktop/storage/application-connector-credentials.test.js build-ts/desktop/storage/application-telegram-credentials.test.js build-ts/desktop/storage/application-image-host-credentials.test.js build-ts/desktop/storage/application-repository-credentials.test.js build-ts/desktop/storage/application-live-platform-credentials.test.js build-ts/desktop/storage/application-code-sandbox-credentials.test.js build-ts/desktop/storage/application-home-assistant-credentials.test.js build-ts/desktop/storage/application-comfyui-credentials.test.js build-ts/desktop/storage/application-settings-bootstrap.test.js build-ts/desktop/storage/application-store.test.js build-ts/desktop/storage/application-tasks.test.js build-ts/desktop/storage/legacy-renderer-state.test.js build-ts/desktop/storage/safe-storage-credential-store.test.js build-ts/desktop/storage/safe-storage-provider-credential-store.test.js build-ts/desktop/storage/safe-storage-search-credential-store.test.js build-ts/desktop/storage/safe-storage-voice-credential-store.test.js build-ts/desktop/storage/safe-storage-tool-credential-stores.test.js build-ts/desktop/storage/safe-storage-connector-credential-store.test.js build-ts/desktop/storage/safe-storage-telegram-credential-store.test.js build-ts/desktop/storage/safe-storage-image-host-credential-store.test.js build-ts/desktop/storage/safe-storage-repository-credential-store.test.js build-ts/desktop/storage/safe-storage-live-platform-credential-store.test.js build-ts/desktop/storage/safe-storage-code-sandbox-credential-store.test.js build-ts/desktop/storage/safe-storage-home-assistant-credential-store.test.js build-ts/desktop/storage/safe-storage-comfyui-credential-store.test.js build-ts/desktop/tasks/application-task-execution.test.js build-ts/desktop/toolchain/application-toolchain-runtime.test.js build-ts/desktop/voice/application-voice-runtime.test.js build-ts/desktop/workers/execution-engine-supervisor.test.js build-ts/desktop/workers/worker-supervisor.test.js",
+    "posttest:desktop-core": "node --test --test-concurrency=1 build-ts/desktop/contracts/application-agent-runtime.test.js build-ts/desktop/agents/application-agent-runtime.test.js build-ts/desktop/main/register-application-agent-runtime-ipc.test.js build-ts/desktop/contracts/application-memory-management-runtime.test.js build-ts/desktop/memory-management/application-memory-management-runtime.test.js build-ts/desktop/main/register-application-memory-management-ipc.test.js build-ts/desktop/vrm/application-vrm-presentation-runtime.test.js build-ts/desktop/main/register-application-vrm-presentation-ipc.test.js build-ts/desktop/system/application-system-runtime.test.js build-ts/desktop/main/register-application-system-runtime-ipc.test.js build-ts/desktop/developer-workbench/application-developer-workbench-runtime.test.js build-ts/desktop/main/register-application-developer-workbench-runtime-ipc.test.js build-ts/desktop/vr-assets/application-vr-asset-runtime.test.js build-ts/desktop/main/register-application-vr-asset-ipc.test.js build-ts/desktop/extensions/application-extension-runtime.test.js build-ts/desktop/skills/application-skill-runtime.test.js build-ts/desktop/main/register-application-extension-skill-runtime-ipc.test.js build-ts/desktop/enterprise/application-enterprise-runtime.test.js build-ts/desktop/main/register-application-enterprise-runtime-ipc.test.js build-ts/desktop/enterprise/application-enterprise-insights-runtime.test.js build-ts/desktop/main/register-application-enterprise-insights-runtime-ipc.test.js build-ts/desktop/agentteams/application-agentteams-runtime.test.js build-ts/desktop/main/register-application-agentteams-runtime-ipc.test.js build-ts/desktop/competition/application-competition-runtime.test.js build-ts/desktop/competition/competition-agentteams-adapter.test.js build-ts/desktop/competition/competition-approval-publisher.test.js build-ts/desktop/competition/competition-tool-adapter.test.js build-ts/desktop/competition/competition-mcp-gateway.test.js build-ts/desktop/main/register-application-competition-runtime-ipc.test.js",
+    "test:agentteams-python": "python -m unittest discover -s tests -p test_agentteams_runtime.py",
+    "test:provider-credentials": "python -m unittest discover -s tests -p test_provider_credentials.py && python -m unittest discover -s tests -p test_external_cli_credentials.py",
+    "test:search-credentials": "python -m unittest discover -s tests -p test_search_credentials.py",
+    "test:voice-credentials": "python -m unittest discover -s tests -p test_voice_credentials.py",
+    "smoke:application-voice-synthesis": "npm run build:desktop-core && electron scripts/smoke_application_voice_synthesis.cjs",
+    "smoke:application-vrm-presentation": "npm run build:desktop-core && electron scripts/smoke_application_vrm_presentation.cjs",
+    "smoke:application-system-runtime": "npm run build:desktop-core && electron scripts/smoke_application_system_runtime.cjs",
+    "smoke:goai:fixture": "npm run build:desktop-core && node scripts/smoke_goai_competition_fixture.cjs",
+    "smoke:goai:live": "npm run build:desktop-core && node scripts/smoke_goai_competition_live.cjs",
+    "smoke:goai:ui": "npm run build:desktop && electron scripts/smoke_goai_competition_ui.cjs",
+    "init:goai:workspace": "npm run build:desktop-core && node scripts/initialize_goai_enterprise_workspace.cjs",
+    "test:goai:skills": "node scripts/test_goai_competition_skills.cjs",
+    "licenses:node": "node scripts/generate_node_license_inventory.cjs",
+    "licenses:python": ".\\.venv\\Scripts\\python.exe scripts\\generate_python_license_inventory.py",
+    "licenses": "npm run licenses:node && npm run licenses:python",
+    "test:tool-credentials": "python -m unittest discover -s tests -p test_tool_credentials.py",
+    "test:connector-credentials": "python -m unittest discover -s tests -p test_connector_credentials.py && npm run test:connector-runtime",
+    "test:connector-runtime": "npm run build:desktop-core:test && node --test --test-concurrency=1 build-ts/desktop/contracts/application-connector-runtime.test.js build-ts/desktop/connectors/application-connector-runtime.test.js build-ts/desktop/main/register-application-connector-runtime-ipc.test.js && python -m unittest discover -s tests -p test_connector_runtime_profile.py",
+    "test:telegram-credentials": "python -m unittest discover -s tests -p test_telegram_credentials.py",
+    "test:image-host-credentials": "python -m unittest discover -s tests -p test_image_host_credentials.py",
+    "test:live-platform-credentials": "python -m unittest discover -s tests -p test_live_platform_credentials.py",
+    "test:code-sandbox-credentials": "python -m unittest discover -s tests -p test_code_sandbox_credentials.py",
+    "test:home-assistant-credentials": "python -m unittest discover -s tests -p test_home_assistant_credentials.py",
+    "test:sql-credentials": "npm run build:desktop-core:test && node --test --test-concurrency=1 build-ts/desktop/contracts/application-mcp-runtime.test.js build-ts/desktop/mcp/application-mcp-runtime.test.js build-ts/desktop/main/register-application-sql-credentials-ipc.test.js build-ts/desktop/storage/application-sql-credentials.test.js && python -m unittest discover -s tests -p test_sql_credentials.py",
+    "test:comfyui-credentials": "python -m unittest discover -s tests -p test_comfyui_credentials.py",
+    "test:delivery-credentials": "npm run build:desktop-core:test && node --test --test-concurrency=1 build-ts/desktop/contracts/application-delivery-credentials.test.js build-ts/desktop/main/register-application-delivery-credentials-ipc.test.js build-ts/desktop/storage/application-delivery-credentials.test.js build-ts/desktop/storage/safe-storage-delivery-credential-store.test.js && python -m unittest discover -s tests -p test_delivery_credentials.py",
+    "test:delivery-webhook-security": "python -m unittest discover -s tests -p test_delivery_webhook_security.py",
+    "test:task-center": "python -m unittest discover -s tests -p test_task_center_persistence.py",
+    "test:task-schedule-policy": "python -m unittest discover -s tests -p \"test_task_schedule*.py\"",
+    "test:task-terminal-delivery": "python -m unittest discover -s tests -p test_task_terminal_delivery.py",
+    "test:task-execution-preflight": "python -m unittest discover -s tests -p test_task_execution_preflight.py",
+    "test:task-execution-broker-api": "python -m unittest discover -s tests -p test_task_execution_broker_api.py",
+    "test:task-worker-store": "python -m unittest discover -s tests -p test_task_worker_store.py",
+    "test:task-http-profile": "python -m unittest discover -s tests -p test_task_http_profile.py",
+    "test:execution-engine-profile": "python -m unittest discover -s tests -p test_execution_engine_profile.py",
+    "test:knowledge-base-runtime": "python -m unittest discover -s tests -p test_knowledge_base_runtime.py",
+    "test:desktop-control-runtime": "python -m unittest discover -s tests -p test_desktop_control_runtime.py",
+    "test:chat-engine-api": "python -m unittest discover -s tests -p test_chat_engine_api.py",
+    "test:execution-engine-runtime": "python -m unittest discover -s tests -p test_execution_engine_runtime.py",
+    "test:enterprise-insights": "python -m unittest discover -s tests -p test_enterprise_insights_engine_api.py",
+    "test:kernel-runtime": "npm run build:desktop-core:test && node --test --test-concurrency=1 build-ts/desktop/contracts/application-kernel-runtime.test.js build-ts/desktop/kernel/application-kernel-runtime.test.js build-ts/desktop/main/register-application-kernel-runtime-ipc.test.js && python -m unittest discover -s tests -p test_kernel_engine_api.py",
+    "test:model-assets": "npm run build:desktop-core:test && node --test --test-concurrency=1 build-ts/desktop/contracts/application-model-assets.test.js build-ts/desktop/model-assets/application-model-asset-runtime.test.js build-ts/desktop/main/register-application-model-asset-ipc.test.js",
+    "test:server-task-api": "python -m unittest discover -s tests -p test_server_task_api.py",
+    "test:task-rpc-auth": "python -m unittest discover -s tests -p test_task_rpc_auth.py",
+    "test:worker-protocol": "python -m unittest discover -s tests -p test_worker_protocol.py",
+    "test:task-execution-events": "python -m unittest discover -s tests -p test_task_execution_events.py",
+    "test:task-execution-session": "python -m unittest discover -s tests -p test_task_execution_session.py",
+    "test:task-execution-worker": "python -m unittest discover -s tests -p test_task_execution_worker.py",
+    "test:task-executor-worker-client": "python -m unittest discover -s tests -p test_task_executor_worker_client.py",
+    "test:sub-agent-executor": "python -m unittest discover -s tests -p test_sub_agent_executor.py",
+    "test:feature-packs": "python -m unittest discover -s tests -p test_gitnexus_feature_pack.py",
+    "test:voice-worker": "python -m unittest discover -s tests -p test_voice_worker.py",
+    "test:audio-pcm": "python -m unittest discover -s tests -p test_audio_pcm.py",
+    "test:vector-worker": "python -m unittest discover -s tests -p test_vector_worker.py",
+    "test:memory-worker": "python -m unittest discover -s tests -p test_memory_worker.py",
+    "test:document-worker": "python -m unittest discover -s tests -p test_document_worker.py",
+    "test:google-rest": "python -m unittest discover -s tests -p test_google_rest_clients.py && python -m unittest discover -s tests -p test_direct_search_clients.py",
+    "test:connector-worker": "npm run build:desktop-core:test && node --test --test-concurrency=1 build-ts/desktop/gateway/connector-chat-broker-gateway.test.js build-ts/desktop/gateway/connector-voice-broker-gateway.test.js && python -m unittest discover -s tests -p test_connector_settings.py && python -m unittest discover -s tests -p test_connector_worker.py && python -m unittest discover -s tests -p test_connector_chat_client.py && python -m unittest discover -s tests -p test_connector_voice_client.py && python -m unittest discover -s tests -p test_telegram_connector_runtime.py",
+    "test:live-worker": "python -m unittest discover -s tests -p test_live_worker.py",
+    "test:mcp-worker": "python -m unittest discover -s tests -p test_mcp_worker.py",
+    "check:utf8": "python scripts/check_architecture_standards.py",
+    "check:function-docs": "python scripts/check_architecture_standards.py && node scripts/check_ts_function_docs.cjs",
+    "check:renderer-bootstrap": "node scripts/build_renderer_bootstrap.cjs --check",
+    "check:architecture": "npm run check:function-docs && npm run check:renderer-bootstrap",
+    "test:kernel": "python scripts/kernel_regression_suite.py",
+    "test:kernel:live": "python scripts/kernel_regression_suite.py --live-url http://127.0.0.1:3456",
+    "verify:update-cdn": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify_cdn_update_feed.ps1",
+    "verify:startup-budget": "node scripts/check_startup_budget.cjs",
+    "smoke:auth-storage": "npm run build:desktop-core && electron scripts/smoke_application_auth.cjs",
+    "smoke:application-artifacts": "npm run build:desktop-core && electron scripts/smoke_application_artifacts.cjs",
+    "smoke:desktop-cold-start": "npm run build:desktop && node scripts/smoke_desktop_cold_start.cjs",
+    "smoke:task-execution-session": "python scripts/smoke_task_execution_session.py",
+    "smoke:execution-engine": ".\\.venv\\Scripts\\python.exe scripts\\smoke_execution_engine.py",
+    "smoke:desktop-control-feature-pack": "npm run build:desktop-core && node scripts\\smoke_desktop_control_feature_pack.cjs",
+    "smoke:toolchain-runtime": "npm run build:desktop-core && node scripts\\smoke_toolchain_runtime.cjs",
+    "smoke:developer-workbench": "npm run build:desktop-core && electron scripts/smoke_application_developer_workbench.cjs",
+    "smoke:vr-assets": "npm run build:desktop-core && electron scripts/smoke_application_vr_assets.cjs",
+    "smoke:extensions-skills": "npm run build:desktop-core && electron scripts/smoke_application_extensions_skills.cjs",
+    "smoke:enterprise": "npm run build:desktop-core && electron scripts/smoke_application_enterprise.cjs",
+    "smoke:kernel-runtime": "npm run build:desktop-core && electron scripts/smoke_application_kernel.cjs",
+    "smoke:model-assets": "npm run build:desktop-core && electron scripts/smoke_application_model_assets.cjs",
+    "smoke:recall-feature-pack": "npm run build:desktop-core && node scripts\\smoke_recall_feature_pack.cjs",
+    "smoke:task-http-profiles": "python scripts/smoke_task_http_profiles.py",
+    "sign:check:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check_windows_signature.ps1",
+    "build:backend": ".\\.venv\\Scripts\\python.exe -m PyInstaller server.spec --clean --noconfirm",
+    "build": "npm run build:desktop && electron-builder -mwl",
+    "build:win": "npm run build:desktop && npm run build:backend && electron-builder -w",
+    "build:release:win": "npm run build:win",
+    "build:release:win:signed": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_signed_windows_release.ps1",
+    "build:mac": "npm run build:desktop && electron-builder -m",
+    "build:linux": "npm run build:desktop && electron-builder -l",
+    "pack": "npm run build:desktop && electron-builder --dir",
+    "pack:ui-smoke": "npm run build:desktop && electron-builder --dir -w --config scripts/electron-builder.ui-smoke.config.cjs"
+  },
+  "keywords": [
+    "AI",
+    "Multi-Agent",
+    "Productivity",
+    "Automation",
+    "MCP",
+    "A2A"
+  ],
+  "author": {
+    "name": "synapxnet",
+    "email": "contact@synapxnet.com"
+  },
+  "license": "AGPL-3.0",
+  "build": {
+    "appId": "com.openxnet.desktop",
+    "productName": "OpenXnet",
+    "copyright": "Copyright © 2025 synapxnet",
+    "publish": {
+      "provider": "generic",
+      "url": "https://download.openxnet.synapxnet.com/releases/latest/"
+    },
+    "compression": "maximum",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "build-ts/desktop/",
+      "LICENSE",
+      "README.md",
+      "static/source/",
+      "static/js/preload.js",
+      "static/js/skeleton-preload.js",
+      "static/js/surface-preload.js",
+      "static/js/vrm-preload.js",
+      "static/skeleton.html",
+      "static/js/shotPreload.js",
+      "static/js/webview-preload.js",
+      "static/shotOverlay.html",
+      "static/source/icon_tray.png"
+    ],
+    "extraResources": [
+      {
+        "from": "static/",
+        "to": "ui",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vrm/",
+        "to": "vrm",
+        "filter": [
+          "animations/**/*",
+          "scene/**/*",
+          "asr/**/*",
+          "vrm/Eku_VRM_v1_0_0/**/*"
+        ]
+      },
+      {
+        "from": "skills/",
+        "to": "skills",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": ".agent/skills/",
+        "to": "skills",
+        "filter": [
+          "goai-evidence-collect/**/*",
+          "goai-change-execute/**/*",
+          "goai-service-verify/**/*"
+        ]
+      },
+      {
+        "from": "dist/server/",
+        "to": "server",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "node_modules/npm/",
+        "to": "npm",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "linux": {
+      "icon": "static/source/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "artifactName": "${productName}-${version}-Linux.${ext}"
+    },
+    "mac": {
+      "icon": "static/source/icon.icns",
+      "target": [
+        "dmg"
+      ],
+      "artifactName": "${productName}-${version}-Mac.${ext}",
+      "category": "public.app-category.utilities",
+      "identity": "openxnet",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "type": "distribution",
+      "asarUnpack": "**/*.node",
+      "extendInfo": {
+        "NSRequiresAquaSystemAppearance": false
+      },
+      "provisioningProfile": null
+    },
+    "dmg": {
+      "icon": "static/source/icon.icns",
+      "iconSize": 100,
+      "contents": [
+        {
+          "x": 380,
+          "y": 180,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 130,
+          "y": 180,
+          "type": "file"
+        }
+      ],
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "win": {
+      "icon": "static/source/icon.ico",
+      "verifyUpdateCodeSignature": false,
+      "target": [
+        "nsis"
+      ],
+      "signtoolOptions": {
+        "publisherName": "synapxnet",
+        "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}-win-${arch}.${ext}",
+      "uninstallDisplayName": "${productName}",
+      "createDesktopShortcut": true,
+      "installerIcon": "static/source/icon.ico",
+      "uninstallerIcon": "static/source/icon.ico",
+      "installerHeaderIcon": "static/source/icon.ico",
+      "differentialPackage": true,
+      "perMachine": false,
+      "displayLanguageSelector": false,
+      "installerSidebar": null,
+      "include": "installer/installer.nsh"
+    }
+  },
+  "devDependencies": {
+    "@types/archiver": "^7.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.19.15",
+    "@types/tar-stream": "^3.1.4",
+    "@vue/compiler-dom": "^3.5.22",
+    "archiver": "^7.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^39.8.10",
+    "electron-builder": "^26.15.3",
+    "parse5": "^7.3.0",
+    "tar-stream": "^3.2.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "cli-progress": "^3.12.0",
+    "electron-dl": "3.5.0",
+    "electron-updater": "^6.8.9",
+    "extract-zip": "2.0.1",
+    "form-data": "^4.0.6",
+    "js-yaml": "4.3.0",
+    "npm": "11.19.0",
+    "osc": "^2.4.5",
+    "tar": "^7.5.21",
+    "yauzl": "2.10.0"
+  },
+  "overrides": {
+    "js-yaml": "4.3.0",
+    "osc": {
+      "ws": "8.21.1"
+    }
+  }
+}

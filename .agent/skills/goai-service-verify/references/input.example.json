@@ -1,0 +1,35 @@
+{
+  "schema": "goai.skill.service-verify.input.v1.1",
+  "incidentId": "inc_goai_demo",
+  "traceId": "trace_goai_demo",
+  "action": {
+    "actionId": "action_goai_demo",
+    "planId": "feature-drift-full-recovery-v2",
+    "planDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "toolName": "mlops.feature.fallback.apply",
+    "resourceVersionAfter": "44",
+    "completedStepCount": 9,
+    "compensationPlanReady": true,
+    "outcome": "SUCCEEDED"
+  },
+  "evidence": [
+    { "evidenceId": "ev_recovery", "toolName": "aiops.inference.recovery.status", "contentDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    { "evidenceId": "ev_dataset", "toolName": "dataops.dataset.validation.get", "contentDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+    { "evidenceId": "ev_probe", "toolName": "mlops.inference.probe", "contentDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+    { "evidenceId": "ev_deployment", "toolName": "mlops.deployment.get", "contentDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" },
+    { "evidenceId": "ev_release", "toolName": "mlops.release.validation.get", "contentDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }
+  ],
+  "policy": {
+    "maxErrorRate": 0.05,
+    "maxP95Ms": 300,
+    "requireHealthyService": true,
+    "requireReadyReplicas": false,
+    "requiredVerificationTools": [
+      "aiops.inference.recovery.status",
+      "dataops.dataset.validation.get",
+      "mlops.inference.probe",
+      "mlops.deployment.get",
+      "mlops.release.validation.get"
+    ]
+  }
+}

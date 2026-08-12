@@ -1,0 +1,603 @@
+/*
+ * Late-loaded runtime theme parity.
+ * Keep this file after menu/page CSS so all visible shells consume the same
+ * uiplan token set instead of falling back to old hard-coded light colors.
+ */
+
+body.openxnet-ui-redesign-body,
+body.openxnet-ui-redesign-body .openxnet-redesign-app,
+.openxnet-redesign-app {
+  --ox-vite-shell-bg: var(--ox-bg-base, #F8F9FB);
+  --ox-vite-surface: var(--ox-bg-surface, #FFFFFF);
+  --ox-vite-surface-subtle: var(--ox-bg-surface-hover, #F1F3F9);
+  --ox-vite-input-bg: var(--ox-bg-input, #F4F5F9);
+  --ox-vite-input-bg-hover: var(--ox-bg-input-hover, #ECEEF5);
+  --ox-vite-border: var(--ox-border, rgba(15, 23, 42, 0.08));
+  --ox-vite-border-strong: var(--ox-border-hover, rgba(15, 23, 42, 0.14));
+  --ox-vite-text-primary: var(--ox-text-primary, #1E293B);
+  --ox-vite-text-secondary: var(--ox-text-secondary, #64748B);
+  --ox-vite-text-muted: var(--ox-text-muted, #94A3B8);
+  --ox-vite-accent-soft: var(--ox-accent-soft, rgba(91, 163, 197, 0.12));
+  --ox-runtime-panel-gradient: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ox-bg-surface, #FFFFFF) 98%, transparent),
+    color-mix(in srgb, var(--ox-bg-base, #F8F9FB) 94%, transparent)
+  );
+  --ox-runtime-hero-gradient:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--ox-accent, #5BA3C5) 14%, transparent), transparent 36%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ox-bg-surface, #FFFFFF) 98%, transparent),
+      color-mix(in srgb, var(--ox-bg-base, #F8F9FB) 96%, transparent)
+    );
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body,
+html[data-theme="neon"] body.openxnet-ui-redesign-body {
+  color-scheme: dark;
+}
+
+html,
+body.openxnet-ui-redesign-body,
+body.openxnet-ui-redesign-body .openxnet-redesign-app,
+.openxnet-redesign-app,
+.openxnet-redesign-app .main-container.el-container {
+  background: var(--ox-bg-base) !important;
+  color: var(--ox-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body .top-bar.el-header,
+.openxnet-redesign-app .top-bar.el-header {
+  background: var(--ox-bg-topbar, var(--ox-bg-base)) !important;
+  border-bottom-color: var(--ox-border) !important;
+  color: var(--ox-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body .sidebar.el-aside,
+.openxnet-redesign-app .sidebar.el-aside,
+body.openxnet-ui-redesign-body .ox-prototype-rail-shell,
+.openxnet-redesign-app .ox-prototype-rail-shell,
+body.openxnet-ui-redesign-body .ox-sidebar.ox-prototype-rail-shell,
+.openxnet-redesign-app .ox-sidebar.ox-prototype-rail-shell,
+body.openxnet-ui-redesign-body .ox-sidebar__footer,
+.openxnet-redesign-app .ox-sidebar__footer,
+body.openxnet-ui-redesign-body .ox-prototype-statusbar,
+.openxnet-redesign-app .ox-prototype-statusbar {
+  background: var(--ox-bg-sidebar) !important;
+  border-color: var(--ox-border) !important;
+  color: var(--ox-text-secondary) !important;
+}
+
+body.openxnet-ui-redesign-body .content.ox-content-surface,
+.openxnet-redesign-app .content.ox-content-surface,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page,
+.openxnet-redesign-app .content.ox-content-surface > .page {
+  background: var(--ox-bg-base) !important;
+  background-image: none !important;
+  color: var(--ox-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-chat-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-role-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-model-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-toolkit-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-skills-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-browser-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-ops-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-chat-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-role-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-model-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-toolkit-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-skills-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-browser-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-ops-page {
+  background: transparent !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-shell,
+body.openxnet-ui-redesign-body .ox-vite-role-shell,
+body.openxnet-ui-redesign-body .ox-vite-model-shell,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell,
+body.openxnet-ui-redesign-body .ox-vite-browser-shell,
+body.openxnet-ui-redesign-body .ox-vite-ops-shell,
+.openxnet-redesign-app .ox-vite-chat-shell,
+.openxnet-redesign-app .ox-vite-role-shell,
+.openxnet-redesign-app .ox-vite-model-shell,
+.openxnet-redesign-app .ox-vite-toolkit-shell,
+.openxnet-redesign-app .ox-vite-skills-shell,
+.openxnet-redesign-app .ox-vite-browser-shell,
+.openxnet-redesign-app .ox-vite-ops-shell {
+  background: var(--ox-bg-base) !important;
+  color: var(--ox-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-panel-card,
+body.openxnet-ui-redesign-body .ox-vite-summary-card,
+body.openxnet-ui-redesign-body .ox-vite-stat-card,
+body.openxnet-ui-redesign-body .ox-vite-info-card,
+body.openxnet-ui-redesign-body .ox-vite-task-column,
+body.openxnet-ui-redesign-body .ox-vite-task-detail,
+body.openxnet-ui-redesign-body .ox-vite-media-card,
+body.openxnet-ui-redesign-body .ox-vite-link-card,
+body.openxnet-ui-redesign-body .ox-vite-fact-row,
+body.openxnet-ui-redesign-body .ox-vite-side-tabs,
+body.openxnet-ui-redesign-body .ox-vite-theme-card,
+body.openxnet-ui-redesign-body .ox-vite-workspace-card,
+body.openxnet-ui-redesign-body .ox-vite-project-card,
+body.openxnet-ui-redesign-body .ox-vite-kb-card,
+body.openxnet-ui-redesign-body .ox-vite-sandbox-detail-card,
+body.openxnet-ui-redesign-body .ox-vite-role-template-card,
+body.openxnet-ui-redesign-body .ox-vite-role-library-card,
+body.openxnet-ui-redesign-body .ox-vite-role-spotlight__card,
+.openxnet-redesign-app .ox-vite-panel-card,
+.openxnet-redesign-app .ox-vite-summary-card,
+.openxnet-redesign-app .ox-vite-stat-card,
+.openxnet-redesign-app .ox-vite-info-card,
+.openxnet-redesign-app .ox-vite-task-column,
+.openxnet-redesign-app .ox-vite-task-detail,
+.openxnet-redesign-app .ox-vite-media-card,
+.openxnet-redesign-app .ox-vite-link-card,
+.openxnet-redesign-app .ox-vite-fact-row,
+.openxnet-redesign-app .ox-vite-side-tabs,
+.openxnet-redesign-app .ox-vite-theme-card,
+.openxnet-redesign-app .ox-vite-workspace-card,
+.openxnet-redesign-app .ox-vite-project-card,
+.openxnet-redesign-app .ox-vite-kb-card,
+.openxnet-redesign-app .ox-vite-sandbox-detail-card,
+.openxnet-redesign-app .ox-vite-role-template-card,
+.openxnet-redesign-app .ox-vite-role-library-card,
+.openxnet-redesign-app .ox-vite-role-spotlight__card {
+  background: var(--ox-runtime-panel-gradient, var(--ox-bg-surface)) !important;
+  border-color: var(--ox-border) !important;
+  color: var(--ox-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-hero,
+body.openxnet-ui-redesign-body .ox-vite-workspace-hub__hero,
+body.openxnet-ui-redesign-body .ox-vite-sandbox-hero,
+body.openxnet-ui-redesign-body .ox-vite-kb-hero,
+.openxnet-redesign-app .ox-vite-role-hero,
+.openxnet-redesign-app .ox-vite-workspace-hub__hero,
+.openxnet-redesign-app .ox-vite-sandbox-hero,
+.openxnet-redesign-app .ox-vite-kb-hero {
+  background: var(--ox-runtime-hero-gradient) !important;
+  border-color: var(--ox-border) !important;
+  color: var(--ox-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-list-row,
+body.openxnet-ui-redesign-body .ox-vite-inline-note,
+body.openxnet-ui-redesign-body .ox-vite-deploy-preview,
+body.openxnet-ui-redesign-body .ox-vite-deploy-hero__status,
+body.openxnet-ui-redesign-body .ox-vite-task-empty,
+body.openxnet-ui-redesign-body .ox-vite-empty-state,
+body.openxnet-ui-redesign-body .ox-vite-task-detail__trace-item,
+body.openxnet-ui-redesign-body .ox-vite-workspace-card__stat,
+body.openxnet-ui-redesign-body .ox-vite-vrm-list,
+.openxnet-redesign-app .ox-vite-list-row,
+.openxnet-redesign-app .ox-vite-inline-note,
+.openxnet-redesign-app .ox-vite-deploy-preview,
+.openxnet-redesign-app .ox-vite-deploy-hero__status,
+.openxnet-redesign-app .ox-vite-task-empty,
+.openxnet-redesign-app .ox-vite-empty-state,
+.openxnet-redesign-app .ox-vite-task-detail__trace-item,
+.openxnet-redesign-app .ox-vite-workspace-card__stat,
+.openxnet-redesign-app .ox-vite-vrm-list {
+  background: var(--ox-bg-surface-hover) !important;
+  border-color: var(--ox-border) !important;
+  color: var(--ox-text-secondary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-side-tab,
+body.openxnet-ui-redesign-body .ox-vite-strip-tab,
+body.openxnet-ui-redesign-body .ox-vite-ops-secondary-btn,
+body.openxnet-ui-redesign-body .ox-vite-segmented button,
+body.openxnet-ui-redesign-body .ox-vite-role-category-chip,
+body.openxnet-ui-redesign-body .ox-vite-sandbox-breadcrumb__chip,
+body.openxnet-ui-redesign-body .ox-vite-sandbox-back,
+.openxnet-redesign-app .ox-vite-side-tab,
+.openxnet-redesign-app .ox-vite-strip-tab,
+.openxnet-redesign-app .ox-vite-ops-secondary-btn,
+.openxnet-redesign-app .ox-vite-segmented button,
+.openxnet-redesign-app .ox-vite-role-category-chip,
+.openxnet-redesign-app .ox-vite-sandbox-breadcrumb__chip,
+.openxnet-redesign-app .ox-vite-sandbox-back {
+  background: var(--ox-bg-surface) !important;
+  border-color: var(--ox-border) !important;
+  color: var(--ox-text-secondary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-side-tab.active,
+body.openxnet-ui-redesign-body .ox-vite-strip-tab.active,
+body.openxnet-ui-redesign-body .ox-vite-segmented button.active,
+body.openxnet-ui-redesign-body .ox-vite-theme-card.active,
+body.openxnet-ui-redesign-body .ox-vite-role-category-chip.is-active,
+body.openxnet-ui-redesign-body .ox-vite-sandbox-breadcrumb__chip.is-current,
+body.openxnet-ui-redesign-body .ox-vite-workspace-card--selectable.is-selected,
+body.openxnet-ui-redesign-body .ox-vite-project-card--selectable.is-selected,
+body.openxnet-ui-redesign-body .ox-vite-role-library-card--selectable.is-selected,
+.openxnet-redesign-app .ox-vite-side-tab.active,
+.openxnet-redesign-app .ox-vite-strip-tab.active,
+.openxnet-redesign-app .ox-vite-segmented button.active,
+.openxnet-redesign-app .ox-vite-theme-card.active,
+.openxnet-redesign-app .ox-vite-role-category-chip.is-active,
+.openxnet-redesign-app .ox-vite-sandbox-breadcrumb__chip.is-current,
+.openxnet-redesign-app .ox-vite-workspace-card--selectable.is-selected,
+.openxnet-redesign-app .ox-vite-project-card--selectable.is-selected,
+.openxnet-redesign-app .ox-vite-role-library-card--selectable.is-selected {
+  background: var(--ox-accent-soft) !important;
+  border-color: var(--ox-border-accent) !important;
+  color: var(--ox-accent) !important;
+  box-shadow: var(--ox-shadow-glow) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-ops-primary-btn,
+body.openxnet-ui-redesign-body .ox-vite-task-progress__fill,
+body.openxnet-ui-redesign-body .ox-vite-mini-bars__bar,
+body.openxnet-ui-redesign-body .ox-vite-kb-card__icon,
+body.openxnet-ui-redesign-body .ox-vite-vrm-preview__hero,
+body.openxnet-ui-redesign-body .ox-vite-vrm-row.is-active .ox-vite-vrm-row__icon,
+.openxnet-redesign-app .ox-vite-ops-primary-btn,
+.openxnet-redesign-app .ox-vite-task-progress__fill,
+.openxnet-redesign-app .ox-vite-mini-bars__bar,
+.openxnet-redesign-app .ox-vite-kb-card__icon,
+.openxnet-redesign-app .ox-vite-vrm-preview__hero,
+.openxnet-redesign-app .ox-vite-vrm-row.is-active .ox-vite-vrm-row__icon {
+  background: var(--ox-accent-gradient) !important;
+  color: var(--ox-text-inverse, #FFFFFF) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-select,
+body.openxnet-ui-redesign-body .ox-vite-text-input,
+body.openxnet-ui-redesign-body .ox-vite-field input,
+body.openxnet-ui-redesign-body .ox-vite-vrm-search input,
+body.openxnet-ui-redesign-body .ox-vite-role-search input,
+body.openxnet-ui-redesign-body .el-input__wrapper,
+body.openxnet-ui-redesign-body .el-textarea__inner,
+body.openxnet-ui-redesign-body .el-select__wrapper,
+.openxnet-redesign-app .ox-vite-select,
+.openxnet-redesign-app .ox-vite-text-input,
+.openxnet-redesign-app .ox-vite-field input,
+.openxnet-redesign-app .ox-vite-vrm-search input,
+.openxnet-redesign-app .ox-vite-role-search input,
+.openxnet-redesign-app .el-input__wrapper,
+.openxnet-redesign-app .el-textarea__inner,
+.openxnet-redesign-app .el-select__wrapper {
+  background: var(--ox-bg-input) !important;
+  border-color: var(--ox-border) !important;
+  color: var(--ox-text-primary) !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-select:focus,
+body.openxnet-ui-redesign-body .ox-vite-text-input:focus,
+body.openxnet-ui-redesign-body .ox-vite-field input:focus,
+body.openxnet-ui-redesign-body .ox-vite-vrm-search input:focus,
+body.openxnet-ui-redesign-body .ox-vite-role-search input:focus,
+body.openxnet-ui-redesign-body .el-input__wrapper.is-focus,
+body.openxnet-ui-redesign-body .el-select__wrapper.is-focused,
+.openxnet-redesign-app .ox-vite-select:focus,
+.openxnet-redesign-app .ox-vite-text-input:focus,
+.openxnet-redesign-app .ox-vite-field input:focus,
+.openxnet-redesign-app .ox-vite-vrm-search input:focus,
+.openxnet-redesign-app .ox-vite-role-search input:focus,
+.openxnet-redesign-app .el-input__wrapper.is-focus,
+.openxnet-redesign-app .el-select__wrapper.is-focused {
+  background: var(--ox-bg-surface) !important;
+  border-color: var(--ox-accent) !important;
+  box-shadow: var(--ox-shadow-glow) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-switch input:checked + span,
+.openxnet-redesign-app .ox-vite-switch input:checked + span {
+  background: var(--ox-accent) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-switch span::after,
+.openxnet-redesign-app .ox-vite-switch span::after {
+  background: var(--ox-bg-surface) !important;
+}
+
+body.openxnet-ui-redesign-body .el-dialog,
+body.openxnet-ui-redesign-body .el-dialog__header,
+body.openxnet-ui-redesign-body .el-drawer,
+body.openxnet-ui-redesign-body .el-popper,
+body.openxnet-ui-redesign-body .el-dropdown-menu,
+.openxnet-redesign-app .el-dialog,
+.openxnet-redesign-app .el-dialog__header,
+.openxnet-redesign-app .el-drawer,
+.openxnet-redesign-app .el-popper,
+.openxnet-redesign-app .el-dropdown-menu {
+  background: var(--ox-bg-surface) !important;
+  border-color: var(--ox-border) !important;
+  color: var(--ox-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body .el-button--primary,
+.openxnet-redesign-app .el-button--primary {
+  background: var(--ox-accent-gradient) !important;
+  border-color: var(--ox-accent) !important;
+  color: var(--ox-text-inverse, #FFFFFF) !important;
+}
+
+body.openxnet-ui-redesign-body .el-button:not(.el-button--primary),
+.openxnet-redesign-app .el-button:not(.el-button--primary) {
+  background: var(--ox-bg-surface) !important;
+  border-color: var(--ox-border) !important;
+  color: var(--ox-text-secondary) !important;
+}
+
+body.openxnet-ui-redesign-body .el-button:not(.el-button--primary):hover,
+.openxnet-redesign-app .el-button:not(.el-button--primary):hover {
+  background: var(--ox-bg-surface-hover) !important;
+  border-color: var(--ox-border-hover) !important;
+  color: var(--ox-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-prototype-brand,
+body.openxnet-ui-redesign-body .ox-prototype-brand-wordmark,
+body.openxnet-ui-redesign-body .ox-prototype-nav-item.active,
+body.openxnet-ui-redesign-body .ox-nav-item--active,
+body.openxnet-ui-redesign-body .ox-nav-item--active i,
+body.openxnet-ui-redesign-body .ox-vite-ops-header__kicker,
+body.openxnet-ui-redesign-body .ox-vite-deploy-kicker,
+body.openxnet-ui-redesign-body .ox-vite-info-card__icon,
+body.openxnet-ui-redesign-body .ox-vite-about-mark,
+.openxnet-redesign-app .ox-prototype-brand,
+.openxnet-redesign-app .ox-prototype-brand-wordmark,
+.openxnet-redesign-app .ox-prototype-nav-item.active,
+.openxnet-redesign-app .ox-nav-item--active,
+.openxnet-redesign-app .ox-nav-item--active i,
+.openxnet-redesign-app .ox-vite-ops-header__kicker,
+.openxnet-redesign-app .ox-vite-deploy-kicker,
+.openxnet-redesign-app .ox-vite-info-card__icon,
+.openxnet-redesign-app .ox-vite-about-mark {
+  color: var(--ox-accent) !important;
+}
+
+body.openxnet-ui-redesign-body .sidebar-brand-mark,
+body.openxnet-ui-redesign-body .boot-splash__mark,
+.openxnet-redesign-app .sidebar-brand-mark,
+.openxnet-redesign-app .boot-splash__mark {
+  background: var(--ox-accent-gradient) !important;
+  box-shadow: var(--ox-shadow-glow) !important;
+}
+
+body.openxnet-ui-redesign-body p,
+body.openxnet-ui-redesign-body small,
+body.openxnet-ui-redesign-body .ox-vite-text-muted,
+body.openxnet-ui-redesign-body .ox-vite-role-template-card__department,
+body.openxnet-ui-redesign-body .ox-vite-role-library-card__meta,
+body.openxnet-ui-redesign-body .ox-vite-role-spotlight__meta,
+body.openxnet-ui-redesign-body .ox-vite-workspace-card__meta,
+body.openxnet-ui-redesign-body .ox-vite-project-card__meta,
+body.openxnet-ui-redesign-body .ox-vite-kb-card__meta,
+.openxnet-redesign-app p,
+.openxnet-redesign-app small,
+.openxnet-redesign-app .ox-vite-text-muted,
+.openxnet-redesign-app .ox-vite-role-template-card__department,
+.openxnet-redesign-app .ox-vite-role-library-card__meta,
+.openxnet-redesign-app .ox-vite-role-spotlight__meta,
+.openxnet-redesign-app .ox-vite-workspace-card__meta,
+.openxnet-redesign-app .ox-vite-project-card__meta,
+.openxnet-redesign-app .ox-vite-kb-card__meta {
+  color: var(--ox-text-secondary) !important;
+}
+
+/* Lift specificity above older theme-specific topbar rules. */
+html[data-theme] body.openxnet-ui-redesign-body .openxnet-redesign-app .top-bar,
+html[data-theme] body.openxnet-ui-redesign-body .top-bar.el-header {
+  background: var(--ox-bg-topbar, var(--ox-bg-base)) !important;
+  background-color: var(--ox-bg-topbar, var(--ox-bg-base)) !important;
+  background-image: none !important;
+  border-bottom: 1px solid var(--ox-border) !important;
+  box-shadow: none !important;
+  color: var(--ox-text-primary) !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-topbar-shell {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: var(--ox-text-primary) !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-brand,
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-brand-wordmark {
+  --ox-brand-foreground: color-mix(
+    in srgb,
+    var(--ox-accent, #5BA3C5) 72%,
+    var(--ox-text-primary, #0F172A) 28%
+  );
+  color: var(--ox-brand-foreground) !important;
+  -webkit-text-fill-color: var(--ox-brand-foreground) !important;
+}
+
+/* 品牌图标使用 PNG 透明轮廓承载主题强调色，避免固定底板割裂顶栏。 */
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-brand-icon,
+html[data-theme] .openxnet-redesign-app .ox-prototype-brand-icon {
+  position: relative !important;
+  width: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  flex: 0 0 28px !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: inherit !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-brand-icon::before,
+html[data-theme] .openxnet-redesign-app .ox-prototype-brand-icon::before {
+  content: "";
+  width: 26px;
+  height: 26px;
+  background: var(--ox-brand-foreground, var(--ox-accent, #5BA3C5));
+  -webkit-mask: url("../source/icon.png") center / contain no-repeat;
+  mask: url("../source/icon.png") center / contain no-repeat;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-brand-icon img,
+html[data-theme] .openxnet-redesign-app .ox-prototype-brand-icon img {
+  display: none !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle,
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-icon-button,
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-language-button,
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-theme-button,
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-window-button,
+html[data-theme] body.openxnet-ui-redesign-body .top-bar-btn {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--ox-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-topbar-toggle:hover,
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-icon-button:hover,
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-language-button:hover,
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-theme-button:hover,
+html[data-theme] body.openxnet-ui-redesign-body .top-bar-btn:hover {
+  background: var(--ox-bg-surface-hover) !important;
+  color: var(--ox-text-primary) !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-topbar-search {
+  background: var(--ox-bg-input) !important;
+  border: 1px solid var(--ox-border) !important;
+  color: var(--ox-text-muted) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-topbar-search:hover {
+  background: var(--ox-bg-input-hover) !important;
+  border-color: var(--ox-border-hover) !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-text {
+  color: var(--ox-text-muted) !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-topbar-search-kbd {
+  background: var(--ox-bg-surface) !important;
+  border-color: var(--ox-border) !important;
+  color: var(--ox-text-muted) !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-avatar-button {
+  background: var(--ox-bg-surface) !important;
+  border: 1px solid var(--ox-border) !important;
+  color: var(--ox-text-primary) !important;
+  box-shadow: var(--ox-shadow-xs) !important;
+}
+
+html[data-theme] body.openxnet-ui-redesign-body .ox-prototype-avatar-button.is-logged-in {
+  background: var(--ox-accent-soft) !important;
+  border-color: var(--ox-border-accent) !important;
+  color: var(--ox-accent) !important;
+}
+
+/* Enterprise sandbox immersive fullscreen must live in this late-loaded theme
+   layer. Otherwise theme backgrounds can win the cascade and leak as a 1px
+   light frame around the desktop fullscreen viewport. */
+html.enterprise-3d-fullscreen-active,
+html:has(body.enterprise-3d-fullscreen-active),
+html[data-theme].enterprise-3d-fullscreen-active,
+html[data-theme]:has(body.enterprise-3d-fullscreen-active),
+html.enterprise-3d-fullscreen-active body.openxnet-ui-redesign-body,
+html[data-theme] body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active {
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  background: #0a121c !important;
+  background-image: none !important;
+}
+
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active::before {
+  content: "" !important;
+  position: fixed !important;
+  inset: -12px !important;
+  z-index: 2147482000 !important;
+  display: block !important;
+  background: #0a121c !important;
+  background-image: none !important;
+  pointer-events: none !important;
+  filter: none !important;
+  mask-image: none !important;
+}
+
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active::after {
+  display: none !important;
+  content: none !important;
+}
+
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active #app,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .el-container,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .el-main,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .main-container.el-container,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .openxnet-redesign-app,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .content,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .content.ox-content-surface,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .content.ox-content-surface > .page,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .page.is-enterprise-3d-fullscreen-host,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .ent-page-content,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .oxe-rebuilt,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .oxe-rebuilt--full,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .oxe-shell,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .oxe-content {
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  background: #0a121c !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  transform: none !important;
+  perspective: none !important;
+  contain: none !important;
+  will-change: auto !important;
+}
+
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .content.ox-content-surface::before,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .content.ox-content-surface::after,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .page.is-enterprise-3d-fullscreen-host::before,
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .page.is-enterprise-3d-fullscreen-host::after {
+  display: none !important;
+  content: none !important;
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body.enterprise-3d-fullscreen-active .enterprise-sandbox-shell.is-enterprise-3d-fullscreen {
+  background: #0a121c !important;
+  background-image: none !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}

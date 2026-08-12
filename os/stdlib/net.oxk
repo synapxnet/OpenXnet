@@ -1,0 +1,490 @@
+-- OpenXnet Neuro-Symbolic OS Standard Library
+-- Network: HTTP client, WebSocket, SSE streaming
+
+module StdNet {|
+
+  requires :: [:io, :ipc, :devices]
+  version :: "0.1.0"
+
+  -- HTTP methods
+  enum HttpMethod {|
+    :GET
+    :POST
+    :PUT
+    :PATCH
+    :DELETE
+    :HEAD
+    :OPTIONS
+  |}
+
+  -- Connection states
+  enum ConnectionState {|
+    :Idle
+    :Connecting
+    :Connected
+    :Closing
+    :Closed
+    :Error
+  |}
+
+  -- HTTP request
+  struct HttpRequest {|
+    method :: HttpMethod
+    url :: String
+    headers :: Map[String, String]
+    body :: Option[String]
+    timeout :: Duration
+    follow_redirects :: Bool
+    max_redirects :: UInt8
+    retry_count :: UInt8
+    retry_delay :: Duration
+  |}
+
+  -- HTTP response
+  struct HttpResponse {|
+    status_code :: UInt16
+    status_text :: String
+    headers :: Map[String, String]
+    body :: String
+    latency :: Duration
+    url :: String                   -- final URL after redirects
+    redirected :: Bool
+  |}
+
+  -- WebSocket message types
+  enum WsMessageType {|
+    :Text
+    :Binary
+    :Ping
+    :Pong
+    :Close
+  |}
+
+  -- WebSocket message
+  struct WsMessage {|
+    msg_type :: WsMessageType
+    data :: String
+    timestamp :: Timestamp
+  |}
+
+  -- WebSocket connection
+  struct WebSocketConn {|
+    id :: UInt32
+    url :: String
+    state :: ConnectionState
+    protocols :: List[String]
+    headers :: Map[String, String]
+    ping_interval :: Duration
+    last_ping :: Timestamp
+    last_pong :: Timestamp
+    messages_sent :: UInt64
+    messages_received :: UInt64
+    on_message :: Option[Symbol]
+    on_close :: Option[Symbol]
+    on_error :: Option[Symbol]
+  |}
+
+  -- SSE event
+  struct SSEEvent {|
+    id :: Option[String]
+    event_type :: String
+    data :: String
+    retry :: Option[Duration]
+    timestamp :: Timestamp
+  |}
+
+  -- SSE stream connection
+  struct SSEStream {|
+    id :: UInt32
+    url :: String
+    state :: ConnectionState
+    headers :: Map[String, String]
+    last_event_id :: Option[String]
+    reconnect_delay :: Duration
+    auto_reconnect :: Bool
+    events_received :: UInt64
+    on_event :: Option[Symbol]
+    on_error :: Option[Symbol]
+  |}
+
+  -- Configuration
+  config NetConfig {|
+    default_timeout :: 30s
+    max_timeout :: 300s
+    max_connections :: 128
+    max_response_size :: 10485760   -- 10MB
+    default_user_agent :: "OpenXnet/0.1.0"
+    websocket_ping_interval :: 30s
+    websocket_pong_timeout :: 10s
+    sse_reconnect_delay :: 3s
+    max_redirects :: 5
+    connection_pool_size :: 32
+    retry_max :: 3
+    retry_backoff :: 1s
+    dns_cache_ttl :: 300s
+  |}
+
+  -- State
+  state active_connections :: Map[UInt32, Any] = Map.empty()
+  state next_conn_id :: UInt32 = 1
+  state dns_cache :: Map[String, (String, Timestamp)] = Map.empty()
+
+  -- HTTP GET request
+  service http_get(url :: String,
+                   headers :: Map[String, String]) -> Result[HttpResponse, Error] {|
+    let request = HttpRequest {|
+      method :: :GET
+      url :: url
+      headers :: merge_default_headers(headers)
+      body :: None
+      timeout :: NetConfig.default_timeout
+      follow_redirects :: true
+      max_redirects :: NetConfig.max_redirects
+      retry_count :: NetConfig.retry_max
+      retry_delay :: NetConfig.retry_backoff
+    |}
+
+    return invoke execute_request(request)
+  |}
+
+  -- HTTP POST request
+  service http_post(url :: String, body :: String,
+                    headers :: Map[String, String]) -> Result[HttpResponse, Error] {|
+    let merged_headers = merge_default_headers(headers)
+    -- Set content-type if not provided
+    if not Map.contains_key(merged_headers, "Content-Type") {|
+      merged_headers = Map.insert(merged_headers, "Content-Type", "application/json")
+    |}
+
+    let request = HttpRequest {|
+      method :: :POST
+      url :: url
+      headers :: merged_headers
+      body :: Some(body)
+      timeout :: NetConfig.default_timeout
+      follow_redirects :: true
+      max_redirects :: NetConfig.max_redirects
+      retry_count :: NetConfig.retry_max
+      retry_delay :: NetConfig.retry_backoff
+    |}
+
+    return invoke execute_request(request)
+  |}
+
+  -- HTTP request with full control
+  service http_request(method :: HttpMethod, url :: String,
+                       body :: Option[String],
+                       headers :: Map[String, String],
+                       timeout :: Duration) -> Result[HttpResponse, Error] {|
+    let request = HttpRequest {|
+      method :: method
+      url :: url
+      headers :: merge_default_headers(headers)
+      body :: body
+      timeout :: clamp(timeout, 1s, NetConfig.max_timeout)
+      follow_redirects :: true
+      max_redirects :: NetConfig.max_redirects
+      retry_count :: 0
+      retry_delay :: 0ms
+    |}
+
+    return invoke execute_request(request)
+  |}
+
+  -- Execute an HTTP request with retries and redirect following
+  service execute_request(req :: HttpRequest) -> Result[HttpResponse, Error] {|
+    -- Check capability
+    let has_cap = invoke Policy.check_capability(get_current_pid(), :net_connect)
+    if not has_cap {|
+      return Err(:PermissionDenied)
+    |}
+
+    let attempts = 0
+    let last_error = None
+
+    -- Retry loop
+    for attempt in List.range(0, req.retry_count + 1) {|
+      let start = now()
+
+      -- Resolve DNS (with cache)
+      let resolved_url = invoke resolve_url(req.url)
+
+      -- Execute via network device
+      let result = invoke Devices.invoke_device(get_network_device(), "http_request", {|
+        "method" -> to_string(req.method),
+        "url" -> resolved_url,
+        "headers" -> req.headers,
+        "body" -> req.body,
+        "timeout_ms" -> duration_to_ms(req.timeout)
+      |})
+
+      match result {|
+        Ok(device_response) -> {|
+          let status = device_response.result.get("status_code") as UInt16
+          let resp_headers = device_response.result.get("headers") as Map[String, String]
+          let resp_body = device_response.result.get("body") as String
+
+          -- Handle redirects
+          if status >= 300 and status < 400 and req.follow_redirects {|
+            let location = resp_headers.get("Location")
+            match location {|
+              Some(redirect_url) -> {|
+                if req.max_redirects == 0 {|
+                  return Err(:TooManyRedirects)
+                |}
+                let redirect_req = req with {|
+                  url :: resolve_relative_url(req.url, redirect_url)
+                  max_redirects :: req.max_redirects - 1
+                  method :: if status == 303 then :GET else req.method
+                  body :: if status == 303 then None else req.body
+                |}
+                return invoke execute_request(redirect_req)
+              |}
+              None -> ()  -- no location header, return as-is
+            |}
+          |}
+
+          let response = HttpResponse {|
+            status_code :: status
+            status_text :: status_to_text(status)
+            headers :: resp_headers
+            body :: resp_body
+            latency :: elapsed_since(start)
+            url :: resolved_url
+            redirected :: resolved_url != req.url
+          |}
+
+          return Ok(response)
+        |}
+        Err(e) -> {|
+          last_error = Some(e)
+          if attempt < req.retry_count {|
+            let delay = req.retry_delay * (2 ^ attempt)
+            invoke sleep(delay)
+          |}
+        |}
+      |}
+    |}
+
+    return Err(last_error.unwrap_or(:NetworkError))
+  |}
+
+  -- Connect to a WebSocket endpoint
+  service websocket_connect(url :: String, protocols :: List[String],
+                            headers :: Map[String, String]) -> Result[UInt32, Error] {|
+    let has_cap = invoke Policy.check_capability(get_current_pid(), :net_connect)
+    if not has_cap {|
+      return Err(:PermissionDenied)
+    |}
+
+    if Map.size(active_connections) >= NetConfig.max_connections {|
+      return Err(:ConnectionLimitReached)
+    |}
+
+    let conn_id = next_conn_id
+    next_conn_id = next_conn_id + 1
+
+    let ws = WebSocketConn {|
+      id :: conn_id
+      url :: url
+      state :: :Connecting
+      protocols :: protocols
+      headers :: merge_default_headers(headers)
+      ping_interval :: NetConfig.websocket_ping_interval
+      last_ping :: now()
+      last_pong :: now()
+      messages_sent :: 0
+      messages_received :: 0
+      on_message :: None
+      on_close :: None
+      on_error :: None
+    |}
+
+    active_connections = Map.insert(active_connections, conn_id, ws)
+
+    -- Perform WebSocket handshake via device
+    let result = invoke Devices.invoke_device(get_network_device(), "ws_connect", {|
+      "url" -> url,
+      "protocols" -> protocols,
+      "headers" -> ws.headers
+    |})
+
+    match result {|
+      Ok(_) -> {|
+        let connected = ws with {| state :: :Connected |}
+        active_connections = Map.insert(active_connections, conn_id, connected)
+        emit :WebSocketConnected with {| id :: conn_id, url :: url |}
+        return Ok(conn_id)
+      |}
+      Err(e) -> {|
+        let errored = ws with {| state :: :Error |}
+        active_connections = Map.insert(active_connections, conn_id, errored)
+        return Err(e)
+      |}
+    |}
+  |}
+
+  -- Send a WebSocket message
+  service websocket_send(conn_id :: UInt32, data :: String) -> Result[Void, Error] {|
+    match Map.get(active_connections, conn_id) {|
+      Some(ws) where ws.state == :Connected -> {|
+        invoke Devices.invoke_device(get_network_device(), "ws_send", {|
+          "conn_id" -> conn_id,
+          "data" -> data,
+          "type" -> "text"
+        |})
+        let updated = ws with {| messages_sent :: ws.messages_sent + 1 |}
+        active_connections = Map.insert(active_connections, conn_id, updated)
+        return Ok(())
+      |}
+      Some(_) -> return Err(:NotConnected)
+      None -> return Err(:InvalidConnection)
+    |}
+  |}
+
+  -- Close a WebSocket connection
+  service websocket_close(conn_id :: UInt32, code :: UInt16,
+                          reason :: String) -> Result[Void, Error] {|
+    match Map.get(active_connections, conn_id) {|
+      Some(ws) -> {|
+        let closing = ws with {| state :: :Closing |}
+        active_connections = Map.insert(active_connections, conn_id, closing)
+
+        invoke Devices.invoke_device(get_network_device(), "ws_close", {|
+          "conn_id" -> conn_id,
+          "code" -> code,
+          "reason" -> reason
+        |})
+
+        let closed = ws with {| state :: :Closed |}
+        active_connections = Map.insert(active_connections, conn_id, closed)
+        emit :WebSocketClosed with {| id :: conn_id, code :: code |}
+        return Ok(())
+      |}
+      None -> return Err(:InvalidConnection)
+    |}
+  |}
+
+  -- Connect to a Server-Sent Events stream
+  service sse_stream(url :: String,
+                     headers :: Map[String, String]) -> Result[UInt32, Error] {|
+    let has_cap = invoke Policy.check_capability(get_current_pid(), :net_connect)
+    if not has_cap {|
+      return Err(:PermissionDenied)
+    |}
+
+    let conn_id = next_conn_id
+    next_conn_id = next_conn_id + 1
+
+    let stream = SSEStream {|
+      id :: conn_id
+      url :: url
+      state :: :Connecting
+      headers :: merge_default_headers(Map.insert(headers, "Accept", "text/event-stream"))
+      last_event_id :: None
+      reconnect_delay :: NetConfig.sse_reconnect_delay
+      auto_reconnect :: true
+      events_received :: 0
+      on_event :: None
+      on_error :: None
+    |}
+
+    active_connections = Map.insert(active_connections, conn_id, stream)
+
+    -- Open SSE connection via device
+    let result = invoke Devices.invoke_device(get_network_device(), "sse_connect", {|
+      "url" -> url,
+      "headers" -> stream.headers
+    |})
+
+    match result {|
+      Ok(_) -> {|
+        let connected = stream with {| state :: :Connected |}
+        active_connections = Map.insert(active_connections, conn_id, connected)
+        emit :SSEConnected with {| id :: conn_id, url :: url |}
+        return Ok(conn_id)
+      |}
+      Err(e) -> {|
+        let errored = stream with {| state :: :Error |}
+        active_connections = Map.insert(active_connections, conn_id, errored)
+        return Err(e)
+      |}
+    |}
+  |}
+
+  -- Register an event handler for SSE stream
+  service sse_on_event(conn_id :: UInt32, handler :: Symbol) -> Result[Void, Error] {|
+    match Map.get(active_connections, conn_id) {|
+      Some(stream) -> {|
+        let updated = stream with {| on_event :: Some(handler) |}
+        active_connections = Map.insert(active_connections, conn_id, updated)
+        return Ok(())
+      |}
+      None -> return Err(:InvalidConnection)
+    |}
+  |}
+
+  -- Close an SSE stream
+  service sse_close(conn_id :: UInt32) -> Result[Void, Error] {|
+    match Map.get(active_connections, conn_id) {|
+      Some(stream) -> {|
+        let closed = stream with {| state :: :Closed, auto_reconnect :: false |}
+        active_connections = Map.insert(active_connections, conn_id, closed)
+        invoke Devices.invoke_device(get_network_device(), "sse_close", {|
+          "conn_id" -> conn_id
+        |})
+        emit :SSEClosed with {| id :: conn_id |}
+        return Ok(())
+      |}
+      None -> return Err(:InvalidConnection)
+    |}
+  |}
+
+  -- Merge with default headers
+  service merge_default_headers(custom :: Map[String, String]) -> Map[String, String] {|
+    let defaults = Map.from_list([
+      ("User-Agent", NetConfig.default_user_agent),
+      ("Accept", "*/*"),
+      ("Connection", "keep-alive")
+    ])
+    -- Custom headers override defaults
+    return Map.merge(defaults, custom)
+  |}
+
+  -- DNS resolution with caching
+  service resolve_url(url :: String) -> String {|
+    let host = extract_host(url)
+    match Map.get(dns_cache, host) {|
+      Some((resolved, cached_at)) where elapsed_since(cached_at) < NetConfig.dns_cache_ttl -> {|
+        return String.replace(url, host, resolved)
+      |}
+      _ -> {|
+        let resolved = invoke dns_resolve(host)
+        dns_cache = Map.insert(dns_cache, host, (resolved, now()))
+        return url  -- use original URL, let device handle resolution
+      |}
+    |}
+  |}
+
+  -- Map status code to text
+  service status_to_text(code :: UInt16) -> String {|
+    match code {|
+      200 -> "OK"
+      201 -> "Created"
+      204 -> "No Content"
+      301 -> "Moved Permanently"
+      302 -> "Found"
+      304 -> "Not Modified"
+      400 -> "Bad Request"
+      401 -> "Unauthorized"
+      403 -> "Forbidden"
+      404 -> "Not Found"
+      429 -> "Too Many Requests"
+      500 -> "Internal Server Error"
+      502 -> "Bad Gateway"
+      503 -> "Service Unavailable"
+      _   -> "Unknown"
+    |}
+  |}
+
+|}

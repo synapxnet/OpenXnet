@@ -1,0 +1,423 @@
+<!doctype html>
+<!--
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+
+File: subtitle_overlay.html
+Purpose: OpenXnet subtitle overlay surface for TTS and live speech caption playback.
+Author: OpenAI Codex
+Date: 2026-04-23
+Version: 1.0.0
+Security Level: INTERNAL
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenXnet Subtitle Overlay</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: rgba(8, 12, 20, 0.9);
+      --panel: rgba(19, 27, 40, 0.82);
+      --line: rgba(255, 255, 255, 0.1);
+      --text: #f8fafc;
+      --muted: rgba(226, 232, 240, 0.72);
+      --accent: #5eead4;
+      --accent-warm: #ffb86b;
+      --danger: #fb7185;
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+      --font: "Segoe UI Variable Display", "SF Pro Display", "HarmonyOS Sans SC", "Microsoft YaHei UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+      font-family: var(--font);
+    }
+
+    body {
+      pointer-events: none;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .status-pill {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(7, 12, 20, 0.52);
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      opacity: 0.72;
+    }
+
+    .status-pill::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--danger);
+      box-shadow: 0 0 18px rgba(251, 113, 133, 0.45);
+      transition: background 180ms ease, box-shadow 180ms ease;
+    }
+
+    .status-pill.online::before {
+      background: var(--accent);
+      box-shadow: 0 0 18px rgba(94, 234, 212, 0.45);
+    }
+
+    .shell {
+      width: min(920px, calc(100vw - 32px));
+      padding: 10px;
+      border-radius: 30px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background:
+        radial-gradient(circle at top left, rgba(94, 234, 212, 0.14), transparent 34%),
+        radial-gradient(circle at top right, rgba(255, 184, 107, 0.12), transparent 30%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+        var(--bg);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(24px) saturate(135%);
+      -webkit-backdrop-filter: blur(24px) saturate(135%);
+      transform: translateY(18px) scale(0.98);
+      opacity: 0;
+      transition: opacity 200ms ease, transform 220ms ease;
+    }
+
+    .shell.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    .panel {
+      display: grid;
+      gap: 10px;
+      padding: 18px 22px;
+      border-radius: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01)), var(--panel);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 22px;
+    }
+
+    .meta-left {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .kicker {
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(94, 234, 212, 0.18);
+      background: rgba(94, 234, 212, 0.08);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .mode {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .time {
+      font-size: 12px;
+      color: rgba(248, 250, 252, 0.62);
+      white-space: nowrap;
+    }
+
+    .caption {
+      margin: 0;
+      color: var(--text);
+      font-size: clamp(22px, 2.5vw, 34px);
+      line-height: 1.45;
+      font-weight: 700;
+      text-align: center;
+      text-wrap: balance;
+      text-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      word-break: break-word;
+    }
+
+    .caption.empty {
+      color: rgba(248, 250, 252, 0.48);
+      font-size: clamp(16px, 2vw, 22px);
+      font-weight: 500;
+    }
+
+    .hint {
+      display: flex;
+      justify-content: center;
+      color: rgba(248, 250, 252, 0.5);
+      font-size: 12px;
+      letter-spacing: 0.02em;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 16px;
+      }
+
+      .shell {
+        width: calc(100vw - 24px);
+      }
+
+      .panel {
+        padding: 16px 16px 18px;
+      }
+
+      .meta {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .time {
+        align-self: flex-end;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="statusPill" class="status-pill">Subtitle overlay offline</div>
+  <main id="shell" class="shell">
+    <section class="panel">
+      <div class="meta">
+        <div class="meta-left">
+          <span class="kicker">Caption</span>
+          <span id="modeLabel" class="mode">Waiting for `/ws/subtitles` feed</span>
+        </div>
+        <span id="timeLabel" class="time">--:--:--</span>
+      </div>
+      <p id="captionText" class="caption empty">OpenXnet subtitle overlay is ready.</p>
+      <div class="hint">Messages from TTS and live speech will appear here automatically.</div>
+    </section>
+  </main>
+
+  <script>
+    const shell = document.getElementById('shell');
+    const statusPill = document.getElementById('statusPill');
+    const modeLabel = document.getElementById('modeLabel');
+    const timeLabel = document.getElementById('timeLabel');
+    const captionText = document.getElementById('captionText');
+
+    let socket = null;
+    let heartbeatTimer = 0;
+    let reconnectTimer = 0;
+    let hideTimer = 0;
+    let lastLiveText = '';
+
+    function formatTime(date = new Date()) {
+      return new Intl.DateTimeFormat('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }).format(date);
+    }
+
+    function setConnectionState(online) {
+      statusPill.classList.toggle('online', Boolean(online));
+      statusPill.textContent = online ? 'Subtitle overlay online' : 'Subtitle overlay offline';
+      if (!shell.classList.contains('visible') && !online) {
+        modeLabel.textContent = 'Reconnecting to /ws/subtitles';
+      }
+    }
+
+    function scheduleHide(delay = 1800) {
+      window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => {
+        shell.classList.remove('visible');
+        captionText.textContent = 'OpenXnet subtitle overlay is ready.';
+        captionText.classList.add('empty');
+        modeLabel.textContent = socket && socket.readyState === WebSocket.OPEN
+          ? 'Waiting for subtitle data'
+          : 'Reconnecting to /ws/subtitles';
+      }, delay);
+    }
+
+    function showCaption(text, options = {}) {
+      const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+      if (!normalized) {
+        return;
+      }
+
+      captionText.textContent = normalized;
+      captionText.classList.remove('empty');
+      modeLabel.textContent = options.mode || 'Speech subtitle';
+      timeLabel.textContent = formatTime();
+      shell.classList.add('visible');
+
+      window.clearTimeout(hideTimer);
+      if (!options.sticky) {
+        scheduleHide(options.hold || 2200);
+      }
+    }
+
+    function clearCaption(immediate = false) {
+      if (immediate) {
+        window.clearTimeout(hideTimer);
+        shell.classList.remove('visible');
+        captionText.textContent = 'OpenXnet subtitle overlay is ready.';
+        captionText.classList.add('empty');
+        modeLabel.textContent = 'Waiting for subtitle data';
+        return;
+      }
+      scheduleHide(1200);
+    }
+
+    function extractFallbackText(payload) {
+      if (!payload || typeof payload !== 'object') {
+        return '';
+      }
+      return String(
+        payload.text ||
+        payload.message ||
+        payload.content ||
+        payload.summary ||
+        payload.title ||
+        ''
+      ).trim();
+    }
+
+    function handleStructuredMessage(message) {
+      const type = String(message.type || '').trim();
+      const data = message.data && typeof message.data === 'object' ? message.data : {};
+
+      switch (type) {
+        case 'ttsStarted':
+          lastLiveText = '';
+          modeLabel.textContent = 'Voice stream ready';
+          timeLabel.textContent = formatTime();
+          break;
+        case 'omniStreaming': {
+          const text = String(data.text || '').trim();
+          if (!text || text === lastLiveText) {
+            return;
+          }
+          lastLiveText = text;
+          showCaption(text, {
+            mode: data.voice ? `Live stream · ${data.voice}` : 'Live stream subtitle',
+            sticky: true
+          });
+          break;
+        }
+        case 'startSpeaking':
+          showCaption(data.text, {
+            mode: data.voice ? `Speech subtitle · ${data.voice}` : 'Speech subtitle',
+            hold: 2600
+          });
+          break;
+        case 'stopSpeaking':
+          clearCaption(false);
+          break;
+        case 'allChunksCompleted':
+        case 'chunkEnded':
+          scheduleHide(1800);
+          break;
+        default: {
+          const fallbackText = extractFallbackText(data) || extractFallbackText(message);
+          if (fallbackText) {
+            showCaption(fallbackText, {
+              mode: 'Subtitle event',
+              hold: 2400
+            });
+          }
+          break;
+        }
+      }
+    }
+
+    function handleIncomingMessage(rawText) {
+      const normalized = String(rawText || '').trim();
+      if (!normalized || normalized.toLowerCase() === 'ping') {
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(normalized);
+        handleStructuredMessage(parsed);
+      } catch (_error) {
+        showCaption(normalized, {
+          mode: 'Raw subtitle',
+          hold: 2400
+        });
+      }
+    }
+
+    function connect() {
+      window.clearTimeout(reconnectTimer);
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(`${protocol}//${window.location.host}/ws/subtitles`);
+
+      socket.addEventListener('open', () => {
+        setConnectionState(true);
+        modeLabel.textContent = 'Waiting for subtitle data';
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = window.setInterval(() => {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send('ping');
+          }
+        }, 12000);
+      });
+
+      socket.addEventListener('message', (event) => {
+        handleIncomingMessage(event.data);
+      });
+
+      socket.addEventListener('close', () => {
+        setConnectionState(false);
+        window.clearInterval(heartbeatTimer);
+        reconnectTimer = window.setTimeout(connect, 1600);
+      });
+
+      socket.addEventListener('error', () => {
+        setConnectionState(false);
+      });
+    }
+
+    timeLabel.textContent = formatTime();
+    connect();
+
+    window.addEventListener('beforeunload', () => {
+      window.clearInterval(heartbeatTimer);
+      window.clearTimeout(reconnectTimer);
+      window.clearTimeout(hideTimer);
+      if (socket) {
+        socket.close();
+      }
+    });
+  </script>
+</body>
+</html>

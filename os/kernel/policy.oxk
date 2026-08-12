@@ -1,0 +1,392 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Capability-Based Policy Enforcement
+-- Access control, permission checks, escalation rules
+
+module Policy {|
+
+  requires :: [:syscall, :memory]
+  version :: "0.1.0"
+
+  -- Capability tokens
+  enum Capability {|
+    :none
+    :process_create
+    :process_kill
+    :process_manage
+    :memory_alloc
+    :memory_pin
+    :memory_gc
+    :ipc_create
+    :ipc_connect
+    :ipc_send
+    :ipc_recv
+    :ipc_broadcast
+    :signal_send
+    :signal_manage
+    :device_register
+    :device_remove
+    :device_use
+    :file_read
+    :file_write
+    :net_connect
+    :net_listen
+    :crypto_sign
+    :system_admin
+    :watchdog_override
+    :policy_modify
+  |}
+
+  -- Capability hierarchy levels
+  enum CapabilityLevel {|
+    :Kernel     -- full unrestricted access
+    :System     -- system daemons
+    :Privileged -- elevated user processes
+    :User       -- standard user processes
+    :Sandboxed  -- restricted processes
+  |}
+
+  -- Access decision
+  enum AccessDecision {|
+    :Allow
+    :Deny
+    :Escalate    -- requires confirmation
+    :Audit       -- allow but log
+  |}
+
+  -- Capability grant record
+  struct CapabilityGrant {|
+    capability :: Capability
+    granted_to :: UInt32             -- PID
+    granted_by :: UInt32             -- granting PID (0 = system)
+    level :: CapabilityLevel
+    expires_at :: Option[Timestamp]
+    conditions :: List[PolicyCondition]
+    revocable :: Bool
+    delegatable :: Bool              -- can this be passed to children?
+  |}
+
+  -- Policy condition (constraints on capability use)
+  struct PolicyCondition {|
+    condition_type :: Symbol
+    parameters :: Map[String, Any]
+  |}
+
+  -- Policy rule
+  struct PolicyRule {|
+    id :: UInt32
+    name :: String
+    priority :: UInt32              -- lower = evaluated first
+    subject :: PolicySubject
+    action :: Capability
+    decision :: AccessDecision
+    conditions :: List[PolicyCondition]
+    audit :: Bool
+  |}
+
+  -- Policy subject (who the rule applies to)
+  enum PolicySubject {|
+    :AllProcesses
+    :ByLevel(CapabilityLevel)
+    :ByPid(UInt32)
+    :ByName(String)
+    :ByParent(UInt32)
+  |}
+
+  -- Configuration
+  config PolicyConfig {|
+    default_decision :: :Deny
+    escalation_timeout :: 30s
+    max_grants_per_process :: 64
+    capability_ttl_default :: 3600s
+    audit_all_denials :: true
+    enforce_least_privilege :: true
+    allow_self_escalation :: false
+    delegation_depth_max :: 3
+  |}
+
+  -- State
+  state grants :: Map[UInt32, List[CapabilityGrant]] = Map.empty()
+  state rules :: List[PolicyRule] = default_rules()
+  state escalation_requests :: Map[UInt64, EscalationRequest] = Map.empty()
+  state audit_log :: Queue[AuditEntry] = Queue.empty()
+  state next_request_id :: UInt64 = 1
+
+  -- Default policy rules loaded at boot
+  service default_rules() -> List[PolicyRule] {|
+    return [
+      -- Kernel processes have full access
+      PolicyRule {|
+        id :: 1
+        name :: "kernel_full_access"
+        priority :: 0
+        subject :: :ByLevel(:Kernel)
+        action :: :system_admin
+        decision :: :Allow
+        conditions :: []
+        audit :: false
+      |},
+
+      -- System daemons get system-level caps
+      PolicyRule {|
+        id :: 2
+        name :: "system_daemon_access"
+        priority :: 10
+        subject :: :ByLevel(:System)
+        action :: :process_manage
+        decision :: :Allow
+        conditions :: []
+        audit :: true
+      |},
+
+      -- Users cannot modify policy
+      PolicyRule {|
+        id :: 3
+        name :: "deny_user_policy_modify"
+        priority :: 5
+        subject :: :ByLevel(:User)
+        action :: :policy_modify
+        decision :: :Deny
+        conditions :: []
+        audit :: true
+      |},
+
+      -- Sandboxed processes: deny device access
+      PolicyRule {|
+        id :: 4
+        name :: "sandbox_deny_device"
+        priority :: 5
+        subject :: :ByLevel(:Sandboxed)
+        action :: :device_use
+        decision :: :Deny
+        conditions :: []
+        audit :: true
+      |},
+
+      -- Sandboxed processes: deny network
+      PolicyRule {|
+        id :: 5
+        name :: "sandbox_deny_network"
+        priority :: 5
+        subject :: :ByLevel(:Sandboxed)
+        action :: :net_connect
+        decision :: :Deny
+        conditions :: []
+        audit :: true
+      |},
+
+      -- Default deny for everything else
+      PolicyRule {|
+        id :: 999
+        name :: "default_deny"
+        priority :: 999
+        subject :: :AllProcesses
+        action :: :none
+        decision :: :Deny
+        conditions :: []
+        audit :: true
+      |}
+    ]
+  |}
+
+  -- Check if a process has a specific capability
+  service check_capability(pid :: UInt32, cap :: Capability) -> Bool {|
+    -- First check explicit grants
+    let process_grants = grants.get(pid).unwrap_or([])
+    for grant in process_grants {|
+      if grant.capability == cap {|
+        -- Check expiry
+        match grant.expires_at {|
+          Some(expiry) where now() > expiry -> {|
+            invoke revoke_grant(pid, cap)
+            -- continue checking other grants
+          |}
+          _ -> {|
+            -- Check conditions
+            if evaluate_conditions(grant.conditions, pid) {|
+              return true
+            |}
+          |}
+        |}
+      |}
+    |}
+
+    -- Then check policy rules
+    let decision = evaluate_rules(pid, cap)
+    match decision {|
+      :Allow -> return true
+      :Audit -> {|
+        invoke log_audit(:CapabilityUsed, pid, cap)
+        return true
+      |}
+      :Deny -> {|
+        if PolicyConfig.audit_all_denials {|
+          invoke log_audit(:CapabilityDenied, pid, cap)
+        |}
+        return false
+      |}
+      :Escalate -> {|
+        -- Cannot escalate in synchronous check
+        invoke log_audit(:EscalationRequired, pid, cap)
+        return false
+      |}
+    |}
+  |}
+
+  -- Evaluate policy rules for a process and capability
+  service evaluate_rules(pid :: UInt32, cap :: Capability) -> AccessDecision {|
+    let process_level = get_process_level(pid)
+
+    -- Sort rules by priority and evaluate in order
+    let sorted = List.sort_by(rules, r -> r.priority)
+
+    for rule in sorted {|
+      let subject_matches = match rule.subject {|
+        :AllProcesses -> true
+        :ByLevel(level) -> process_level == level
+        :ByPid(target) -> pid == target
+        :ByName(name) -> get_process_name(pid) == name
+        :ByParent(parent) -> get_parent_pid(pid) == parent
+      |}
+
+      if subject_matches and (rule.action == cap or rule.action == :none) {|
+        if evaluate_conditions(rule.conditions, pid) {|
+          return rule.decision
+        |}
+      |}
+    |}
+
+    return PolicyConfig.default_decision
+  |}
+
+  -- Evaluate conditions attached to a grant or rule
+  service evaluate_conditions(conditions :: List[PolicyCondition],
+                              pid :: UInt32) -> Bool {|
+    for cond in conditions {|
+      let result = match cond.condition_type {|
+        :time_range -> {|
+          let start = cond.parameters["start"] as Time
+          let end = cond.parameters["end"] as Time
+          let current = time_of_day()
+          current >= start and current <= end
+        |}
+        :rate_limit -> {|
+          let max_calls = cond.parameters["max"] as UInt32
+          let window = cond.parameters["window"] as Duration
+          let count = get_recent_calls(pid, window)
+          count < max_calls
+        |}
+        :resource_limit -> {|
+          let max_memory = cond.parameters["max_memory"] as UInt64
+          let current = get_process_memory(pid)
+          current < max_memory
+        |}
+        :requires_confirmation -> false  -- always escalate
+        _ -> true  -- unknown conditions pass by default
+      |}
+
+      if not result {|
+        return false
+      |}
+    |}
+    return true
+  |}
+
+  -- Grant a capability to a process
+  syscall grant_capability(target_pid :: UInt32, cap :: Capability,
+                           level :: CapabilityLevel,
+                           delegatable :: Bool) -> Result[Void, Error] {|
+    let caller_pid = get_current_pid()
+
+    -- Only higher-level processes can grant capabilities
+    let caller_level = get_process_level(caller_pid)
+    if not level_dominates(caller_level, level) {|
+      return Err(:InsufficientPrivilege)
+    |}
+
+    -- Check grant limit
+    let existing = grants.get(target_pid).unwrap_or([])
+    if List.length(existing) >= PolicyConfig.max_grants_per_process {|
+      return Err(:GrantLimitReached)
+    |}
+
+    let grant = CapabilityGrant {|
+      capability :: cap
+      granted_to :: target_pid
+      granted_by :: caller_pid
+      level :: level
+      expires_at :: Some(now() + PolicyConfig.capability_ttl_default)
+      conditions :: []
+      revocable :: true
+      delegatable :: delegatable
+    |}
+
+    let updated = List.append(existing, grant)
+    grants = Map.insert(grants, target_pid, updated)
+
+    emit :CapabilityGranted with {|
+      target :: target_pid, capability :: cap, by :: caller_pid
+    |}
+    return Ok(())
+  |}
+
+  -- Revoke a specific capability from a process
+  syscall revoke_capability(target_pid :: UInt32,
+                            cap :: Capability) -> Result[Void, Error] {|
+    invoke revoke_grant(target_pid, cap)
+    emit :CapabilityRevoked with {| target :: target_pid, capability :: cap |}
+    return Ok(())
+  |}
+
+  -- Internal: remove a grant
+  service revoke_grant(pid :: UInt32, cap :: Capability) -> Void {|
+    let existing = grants.get(pid).unwrap_or([])
+    let filtered = List.filter(existing, g -> g.capability != cap)
+    grants = Map.insert(grants, pid, filtered)
+  |}
+
+  -- Check if one level dominates another
+  service level_dominates(a :: CapabilityLevel, b :: CapabilityLevel) -> Bool {|
+    let rank = match {|
+      :Kernel -> 0
+      :System -> 1
+      :Privileged -> 2
+      :User -> 3
+      :Sandboxed -> 4
+    |}
+    return rank(a) <= rank(b)
+  |}
+
+  -- Audit logging
+  service log_audit(event :: Symbol, pid :: UInt32, cap :: Capability) -> Void {|
+    let entry = AuditEntry {|
+      timestamp :: now()
+      event :: event
+      pid :: pid
+      capability :: cap
+      process_name :: get_process_name(pid)
+    |}
+    audit_log = Queue.enqueue(audit_log, entry)
+
+    -- Keep audit log bounded
+    if Queue.size(audit_log) > 10000 {|
+      audit_log = Queue.drop(audit_log, 5000)
+    |}
+  |}
+
+  -- Get the capability level of a process
+  service get_process_level(pid :: UInt32) -> CapabilityLevel {|
+    if pid == 0 {| return :Kernel |}
+    let pcb = invoke Scheduler.get_process(pid)
+    match pcb {|
+      Some(p) -> {|
+        -- Determine level from process attributes
+        if List.contains(p.capabilities, :system_admin) {| return :Kernel |}
+        if p.parent_pid == 0 {| return :System |}
+        if List.contains(p.capabilities, :process_manage) {| return :Privileged |}
+        return :User
+      |}
+      None -> return :Sandboxed
+    |}
+  |}
+
+|}

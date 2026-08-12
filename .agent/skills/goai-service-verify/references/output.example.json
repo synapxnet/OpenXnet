@@ -1,0 +1,8 @@
+{
+  "schema": "goai.skill.service-verify.output.v1.1",
+  "decision": "CLOSE",
+  "summary": "完整计划已执行，业务恢复、数据质量、推理契约、目标修订和发布流量均满足关闭策略。",
+  "confidence": 0.96,
+  "requestedToolNames": [],
+  "evidenceIds": ["ev_recovery", "ev_dataset", "ev_probe", "ev_deployment", "ev_release"]
+}

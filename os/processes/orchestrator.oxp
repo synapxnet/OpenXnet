@@ -1,0 +1,172 @@
+-- OpenXnet Neuro-Symbolic OS
+-- Central Orchestrator: coordination supervisor for all system processes
+-- Routes commands, monitors children, applies restart strategies
+
+process Orchestrator :: :supervisor {|
+
+  requires :: [:scheduler, :signals, :ipc, :memory, :syscall]
+  version :: "0.1.0"
+
+  enum RestartStrategy {|
+    :OneForOne
+    :OneForAll
+    :RestForOne
+  |}
+
+  struct ChildEntry {|
+    pid :: UInt32
+    name :: String
+    process_type :: Symbol
+    strategy :: RestartStrategy
+    restart_count :: UInt32
+    max_restarts :: UInt32
+    last_restart :: Timestamp
+    status :: Symbol
+  |}
+
+  config OrchestratorConfig {|
+    max_children :: 256
+    health_check_interval :: 2s
+    max_restart_intensity :: 5
+    restart_window :: 30s
+    command_timeout :: 10s
+  |}
+
+  state children :: Map[UInt32, ChildEntry] = Map.empty()
+  state spawn_order :: List[UInt32] = []
+  state system_status :: Symbol = :initializing
+
+  channels {|
+    channel command_in :: Recv<CommandMessage>
+    channel status_out :: Send<StatusMessage>
+    channel broadcast :: Send<BroadcastMessage>
+  |}
+
+  lifecycle {|
+    on init {|
+      emit :OrchestratorStarting with {| timestamp :: now() |}
+      invoke spawn_child("perception_daemon", :daemon, :OneForOne, 3)
+      invoke spawn_child("memory_gc", :daemon, :OneForOne, 5)
+      invoke spawn_child("tool_proxy", :worker, :OneForOne, 10)
+      system_status = :running
+      emit :OrchestratorReady with {| timestamp :: now(), children :: Map.size(children) |}
+    |}
+
+    on suspend {|
+      system_status = :suspended
+      for pid, child in children where child.process_type != :daemon {|
+        invoke Scheduler.suspend(pid)
+      |}
+    |}
+
+    on resume {|
+      system_status = :running
+      for pid, child in children where child.status == :suspended {|
+        invoke Scheduler.resume(pid)
+      |}
+    |}
+
+    on terminate {|
+      system_status = :shutting_down
+      for pid in List.reverse(spawn_order) {|
+        signal :SIGTERM to pid
+        invoke await_termination(pid, 5s) {|
+          on :timeout -> invoke Scheduler.terminate(pid, :forced)
+        |}
+      |}
+      emit :OrchestratorTerminated with {| timestamp :: now() |}
+    |}
+  |}
+
+  behavior {|
+    on recv(cmd) from command_in {|
+      match cmd.type {|
+        :spawn_agent -> {|
+          invoke spawn_child(cmd.name, cmd.process_type, cmd.strategy or :OneForOne, 3)
+          emit status_out <- StatusMessage {| type :: :spawn_ok, ref :: cmd.ref |}
+        |}
+        :terminate_agent -> {|
+          invoke Scheduler.terminate(cmd.pid, cmd.reason or :normal)
+          emit status_out <- StatusMessage {| type :: :terminate_ok, ref :: cmd.ref |}
+        |}
+        :query_status -> {|
+          emit status_out <- StatusMessage {|
+            type :: :status_report
+            ref :: cmd.ref
+            payload :: {| system_status :: system_status, child_count :: Map.size(children) |}
+          |}
+        |}
+        :broadcast_msg -> {|
+          emit broadcast <- BroadcastMessage {| origin :: :orchestrator, payload :: cmd.payload |}
+        |}
+      |}
+    |}
+
+    on signal(:SIGCHLD) {|
+      let child_pid = signal.payload.child_pid
+      match Map.get(children, child_pid) {|
+        Some(child) -> invoke handle_child_failure(child)
+        None -> ()
+      |}
+    |}
+
+    on signal(:TICK) {|
+      invoke health_check_all()
+    |}
+  |}
+
+  service spawn_child(name :: String, ptype :: Symbol,
+                      strategy :: RestartStrategy, max :: UInt32) -> Result[UInt32, Error] {|
+    let result = invoke Scheduler.spawn(name, :default_entry, :Normal, [])
+    match result {|
+      Ok(pid) -> {|
+        let entry = ChildEntry {|
+          pid :: pid, name :: name, process_type :: ptype,
+          strategy :: strategy, restart_count :: 0,
+          max_restarts :: max, last_restart :: epoch(), status :: :running
+        |}
+        children = Map.insert(children, pid, entry)
+        spawn_order = List.append(spawn_order, pid)
+        return Ok(pid)
+      |}
+      Err(e) -> return Err(e)
+    |}
+  |}
+
+  service handle_child_failure(child :: ChildEntry) -> Void {|
+    let in_window = elapsed_since(child.last_restart) < OrchestratorConfig.restart_window
+    if child.restart_count >= child.max_restarts and in_window {|
+      emit :ChildPermanentFailure with {| name :: child.name, pid :: child.pid |}
+      children = Map.remove(children, child.pid)
+      return
+    |}
+    match child.strategy {|
+      :OneForOne -> invoke restart_single(child)
+      :OneForAll -> for pid, c in children {| invoke restart_single(c) |}
+      :RestForOne -> invoke restart_single(child)
+    |}
+  |}
+
+  service restart_single(child :: ChildEntry) -> Void {|
+    invoke Scheduler.terminate(child.pid, :restarting)
+    let result = invoke Scheduler.spawn(child.name, :default_entry, :Normal, [])
+    match result {|
+      Ok(new_pid) -> {|
+        children = Map.remove(children, child.pid)
+        children = Map.insert(children, new_pid, child with {|
+          pid :: new_pid, restart_count :: child.restart_count + 1, last_restart :: now()
+        |})
+        emit :ChildRestarted with {| name :: child.name, new_pid :: new_pid |}
+      |}
+      Err(_) -> emit :RestartFailed with {| name :: child.name |}
+    |}
+  |}
+
+  service health_check_all() -> Void {|
+    for pid, child in children {|
+      let state = invoke Scheduler.query_state(pid)
+      if state == :Terminated {| invoke handle_child_failure(child) |}
+    |}
+  |}
+
+|}

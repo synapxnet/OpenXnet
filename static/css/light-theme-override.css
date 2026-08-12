@@ -1,0 +1,760 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLEAN LIGHT THEME — Prototype-Match Override
+   Targets ACTUAL OpenXnet selectors (ox-prototype-*, ox-rail-*, ox-chat-*,
+   .sidebar, .top-bar, .content.ox-content-surface, etc.)
+   Forces solid backgrounds, removes gradients/glows/pseudo-element decorations.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 0. Body — solid base, kill grid-line & glow pseudo-elements ─── */
+html[data-theme="light"] body.openxnet-ui-redesign-body {
+  background: #F8F9FB !important;
+  background-image: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body::before {
+  display: none !important;
+  content: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* ─── 1. Top Bar — solid white, thin border, no gradient ─── */
+html[data-theme="light"] .openxnet-redesign-app .top-bar,
+html[data-theme="light"] body.openxnet-ui-redesign-body .top-bar {
+  background: rgba(248, 249, 251, 0.85) !important;
+  background-image: none !important;
+  backdrop-filter: blur(12px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(150%) !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+}
+
+/* Topbar brand */
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-brand-wordmark,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-brand-wordmark {
+  color: #5BA3C5 !important;
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  -webkit-text-fill-color: #5BA3C5 !important;
+}
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-brand-icon,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-brand-icon {
+  box-shadow: none !important;
+}
+
+/* Topbar mode switch */
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-mode-switch,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-mode-switch {
+  background: #F4F5F9 !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-mode-button,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-mode-button {
+  background: transparent !important;
+  color: #64748B !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-mode-button.active,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-mode-button.active {
+  background: #FFFFFF !important;
+  color: #5BA3C5 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-mode-button::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-mode-button::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-mode-button::after,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-mode-button::after {
+  display: none !important;
+}
+
+/* Topbar icon buttons */
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-icon-button,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-icon-button {
+  background: transparent !important;
+  color: #64748B !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-icon-button:hover,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-icon-button:hover {
+  background: #F1F3F9 !important;
+  color: #1E293B !important;
+}
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-icon-button::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-icon-button::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-icon-button::after,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-icon-button::after {
+  display: none !important;
+}
+
+/* Topbar theme button */
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-theme-button,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-theme-button {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-theme-button::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-theme-button::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-theme-button::after,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-theme-button::after {
+  display: none !important;
+}
+
+/* Topbar workspace trigger */
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-workspace-trigger,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-workspace-trigger {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-workspace-trigger:hover,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-workspace-trigger:hover {
+  background: rgba(91, 163, 197, 0.08) !important;
+  border-color: rgba(91, 163, 197, 0.18) !important;
+}
+
+/* Topbar avatar */
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-avatar-button,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button {
+  box-shadow: none !important;
+}
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-avatar-button::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-avatar-button::after,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-avatar-button::after {
+  display: none !important;
+}
+
+/* ─── 2. Sidebar — solid #F0F2F7, no gradient ─── */
+html[data-theme="light"] .sidebar,
+html[data-theme="light"] body.openxnet-ui-redesign-body .sidebar,
+html[data-theme="light"] .openxnet-redesign-app .sidebar {
+  background: #F0F2F7 !important;
+  background-image: none !important;
+  border-right: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+}
+/* Kill sidebar brand pulse animation */
+html[data-theme="light"] .sidebar-brand-pulse,
+html[data-theme="light"] body.openxnet-ui-redesign-body .sidebar-brand-pulse {
+  animation: none !important;
+  border-color: rgba(91, 163, 197, 0.12) !important;
+}
+
+/* Rail shell */
+html[data-theme="light"] .ox-prototype-rail-shell,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-rail-shell,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-rail-shell {
+  background: #F0F2F7 !important;
+  background-image: none !important;
+  border-right: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+}
+
+/* Rail header */
+html[data-theme="light"] .ox-rail-header,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-rail-header,
+html[data-theme="light"] .openxnet-redesign-app .ox-rail-header {
+  background: transparent !important;
+}
+html[data-theme="light"] .ox-rail-header::before,
+html[data-theme="light"] .ox-rail-header::after {
+  display: none !important;
+}
+
+/* Rail items */
+html[data-theme="light"] .ox-rail-item,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-rail-item,
+html[data-theme="light"] .openxnet-redesign-app .ox-rail-item {
+  background: transparent !important;
+  color: #64748B !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .ox-rail-item::before,
+html[data-theme="light"] .ox-rail-item::after,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-rail-item::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-rail-item::after {
+  display: none !important;
+}
+html[data-theme="light"] .ox-rail-item:hover,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-rail-item:hover,
+html[data-theme="light"] .openxnet-redesign-app .ox-rail-item:hover {
+  background: rgba(91, 163, 197, 0.08) !important;
+  color: #1E293B !important;
+}
+html[data-theme="light"] .ox-rail-item.active,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-rail-item.active,
+html[data-theme="light"] .openxnet-redesign-app .ox-rail-item.active {
+  background: rgba(91, 163, 197, 0.12) !important;
+  color: #5BA3C5 !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .ox-rail-item.active::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-rail-item.active::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-rail-item.active::before {
+  display: block !important;
+  background: #5BA3C5 !important;
+  box-shadow: none !important;
+}
+
+/* ─── 3. Content Surface — solid white, kill gradient overlay pseudo-element ─── */
+html[data-theme="light"] body.openxnet-ui-redesign-body .content.ox-content-surface::before,
+html[data-theme="light"] .openxnet-redesign-app .content.ox-content-surface::before {
+  display: none !important;
+  content: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .content.ox-content-surface {
+  background: #F8F9FB !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .content.ox-content-surface > .page:not(.chat-container),
+html[data-theme="light"] .openxnet-redesign-app .content.ox-content-surface > .page:not(.chat-container) {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Chat surface */
+html[data-theme="light"] body.openxnet-ui-redesign-body .content.ox-content-surface.content--chat-surface::before,
+html[data-theme="light"] .openxnet-redesign-app .content.ox-content-surface.content--chat-surface::before {
+  display: none !important;
+  content: none !important;
+}
+
+/* ─── 4. Subnav / Conversation Panel — solid white ─── */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border-right-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+}
+
+/* Subnav action button */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-action,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-action {
+  background: #FFFFFF !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-action:hover,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-action:hover {
+  background: rgba(91, 163, 197, 0.08) !important;
+  border-color: rgba(91, 163, 197, 0.18) !important;
+}
+
+/* Subnav hero card */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-hero,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-hero {
+  background: rgba(91, 163, 197, 0.05) !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-hero::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-hero::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-hero::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-hero::after {
+  display: none !important;
+}
+
+/* Subnav tabs */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-tab,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-tab {
+  background: #F4F5F9 !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  color: #64748B !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-tab.active,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-tab.active {
+  background: #FFFFFF !important;
+  color: #5BA3C5 !important;
+  border-color: rgba(91, 163, 197, 0.18) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+/* Subnav search */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-search,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-search {
+  background: #F4F5F9 !important;
+  background-image: none !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-search:focus-within,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-search:focus-within {
+  border-color: #5BA3C5 !important;
+  box-shadow: 0 0 0 3px rgba(91, 163, 197, 0.15) !important;
+  background: #FFFFFF !important;
+}
+
+/* Conversation items */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-conversation-item,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-item,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-conversation-item {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item::after,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-conversation-item::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-conversation-item::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-item::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-item::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-conversation-item::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-conversation-item::after {
+  display: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item:hover,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-conversation-item:hover,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-item:hover,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-conversation-item:hover {
+  background: #F1F3F9 !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-subnav-item.active,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-conversation-item.active,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-subnav-item.active,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-conversation-item.active {
+  background: rgba(91, 163, 197, 0.10) !important;
+}
+
+/* ─── 5. Cards — solid white, clean shadow (ALL actual card classes) ─── */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-card,
+html[data-theme="light"] body.openxnet-ui-redesign-body .provider-card,
+html[data-theme="light"] body.openxnet-ui-redesign-body .tool-item,
+html[data-theme="light"] body.openxnet-ui-redesign-body .market-link-banner,
+html[data-theme="light"] body.openxnet-ui-redesign-body .plugin-header,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-toolkit-card,
+html[data-theme="light"] .openxnet-redesign-app .el-card,
+html[data-theme="light"] .openxnet-redesign-app .provider-card,
+html[data-theme="light"] .openxnet-redesign-app .tool-item,
+html[data-theme="light"] .openxnet-redesign-app .market-link-banner,
+html[data-theme="light"] .openxnet-redesign-app .plugin-header,
+html[data-theme="light"] .openxnet-redesign-app .ox-toolkit-card{
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* Kill card pseudo-elements */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-card::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-card::after,
+html[data-theme="light"] body.openxnet-ui-redesign-body .provider-card::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .provider-card::after,
+html[data-theme="light"] body.openxnet-ui-redesign-body .tool-item::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .tool-item::after,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-toolkit-card::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-toolkit-card::after,
+html[data-theme="light"] .openxnet-redesign-app .el-card::before,
+html[data-theme="light"] .openxnet-redesign-app .el-card::after,
+html[data-theme="light"] .openxnet-redesign-app .provider-card::before,
+html[data-theme="light"] .openxnet-redesign-app .provider-card::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-toolkit-card::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-toolkit-card::after{
+  display: none !important;
+  content: none !important;
+}
+/* Card hover */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-card:hover,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-toolkit-card:hover,
+html[data-theme="light"] .openxnet-redesign-app .el-card:hover,
+html[data-theme="light"] .openxnet-redesign-app .ox-toolkit-card:hover {
+  box-shadow: 0 4px 16px rgba(91, 163, 197, 0.10), 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+  border-color: rgba(15, 23, 42, 0.14) !important;
+}
+
+/* ─── 6. Suite Layout ─── */
+html[data-theme="light"] body.openxnet-ui-redesign-body .suite-sidebar,
+html[data-theme="light"] .openxnet-redesign-app .suite-sidebar {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border-right: 1px solid rgba(15, 23, 42, 0.08) !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .suite-content,
+html[data-theme="light"] .openxnet-redesign-app .suite-content {
+  background: #F8F9FB !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Section pages */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-section-page,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-section-page {
+  background: transparent !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-panel,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-panel {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  backdrop-filter: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-panel::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-panel::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-panel::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-panel::after {
+  display: none !important;
+}
+
+/* Page header */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-page-header,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-page-header {
+  background: transparent !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-page-title,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-page-title {
+  color: #1E293B !important;
+  background: none !important;
+  -webkit-text-fill-color: #1E293B !important;
+  -webkit-background-clip: unset !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-page-button,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-page-button {
+  background: linear-gradient(135deg, #5BA3C5, #7BB8D4) !important;
+  color: #FFFFFF !important;
+  border: none !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-page-button::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-page-button::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-page-button::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-page-button::after {
+  display: none !important;
+}
+
+/* Tab shell */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-tab-shell,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-tab-shell {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08) !important;
+}
+
+/* ─── 7. Chat Area ─── */
+/* Chat topbar */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-topbar,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-topbar {
+  background: rgba(248, 249, 251, 0.85) !important;
+  background-image: none !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08) !important;
+  backdrop-filter: blur(12px) !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-topbar::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-topbar::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-topbar::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-topbar::after {
+  display: none !important;
+}
+
+/* Chat icon buttons & pills */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-icon-btn,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-topbar-pill,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-icon-btn,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-topbar-pill {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03) !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-icon-btn::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-icon-btn::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-icon-btn::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-icon-btn::after {
+  display: none !important;
+}
+
+/* Tool pills */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-tool-pill,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-tool-pill {
+  background: #F4F5F9 !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-tool-pill.active,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-tool-pill.active {
+  background: rgba(91, 163, 197, 0.12) !important;
+  border-color: rgba(91, 163, 197, 0.18) !important;
+  color: #5BA3C5 !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-tool-pill::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-tool-pill::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-tool-pill::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-tool-pill::after {
+  display: none !important;
+}
+
+/* Chat access bar */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-access-bar,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-access-bar {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  backdrop-filter: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-access-bar::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-access-bar::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-access-bar::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-access-bar::after {
+  display: none !important;
+}
+
+/* Chat page variables — solid surfaces */
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-page,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-page {
+  --home-chat-surface: #FFFFFF !important;
+  --home-chat-surface-strong: #FFFFFF !important;
+  --home-chat-muted-surface: #F4F5F9 !important;
+  --home-chat-border: rgba(15, 23, 42, 0.08) !important;
+  --home-chat-border-strong: rgba(91, 163, 197, 0.18) !important;
+}
+
+/* Chat composer */
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-composer,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-composer {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  backdrop-filter: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-composer::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-composer::after,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-composer::before,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-composer::after {
+  display: none !important;
+}
+
+/* Chat quick dropdown */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-quick-dropdown,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-quick-dropdown {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08) !important;
+  backdrop-filter: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-quick-dropdown::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-quick-dropdown::after,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-quick-dropdown::before,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-quick-dropdown::after {
+  display: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-chat-quick-item:hover,
+html[data-theme="light"] .openxnet-redesign-app .ox-chat-quick-item:hover {
+  background: #F1F3F9 !important;
+}
+
+/* Home chat cards (status band, flight hero, metric, spotlight, etc.) */
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-status-band,
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-flight-hero,
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-flight-focus,
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-flight-lane,
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-command-deck-card,
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-desktop-spotlight,
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-desktop-scene-shell--home,
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-metric-card,
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-flight-command,
+html[data-theme="light"] body.openxnet-ui-redesign-body .home-chat-flight-focus-preview-item,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-status-band,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-flight-hero,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-flight-focus,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-flight-lane,
+html[data-theme="light"] .openxnet-redesign-app .home-command-deck-card,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-desktop-spotlight,
+html[data-theme="light"] .openxnet-redesign-app .home-desktop-scene-shell--home,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-metric-card,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-flight-command,
+html[data-theme="light"] .openxnet-redesign-app .home-chat-flight-focus-preview-item {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+/* ─── 8. Status Bar — solid #F0F2F7 ─── */
+html[data-theme="light"] .ox-prototype-statusbar,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-statusbar,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-statusbar {
+  background: #F0F2F7 !important;
+  background-image: none !important;
+  border-top: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+  color: #94A3B8 !important;
+}
+
+/* 滚动条已迁移到 css/scrollbar-style.css */
+
+/* ─── 10. Element Plus component overrides ─── */
+
+/* Buttons */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-button--primary,
+html[data-theme="light"] .openxnet-redesign-app .el-button--primary {
+  background: linear-gradient(135deg, #5BA3C5, #7BB8D4) !important;
+  border: none !important;
+  color: #FFFFFF !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-button--primary::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-button--primary::after,
+html[data-theme="light"] .openxnet-redesign-app .el-button--primary::before,
+html[data-theme="light"] .openxnet-redesign-app .el-button--primary::after {
+  display: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-button--default,
+html[data-theme="light"] .openxnet-redesign-app .el-button--default {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  color: #1E293B !important;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03) !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-button--default:hover,
+html[data-theme="light"] .openxnet-redesign-app .el-button--default:hover {
+  background: #F1F3F9 !important;
+  border-color: rgba(15, 23, 42, 0.14) !important;
+}
+
+/* Inputs */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-input__wrapper,
+html[data-theme="light"] .openxnet-redesign-app .el-input__wrapper {
+  background: #F4F5F9 !important;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08) !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-input__wrapper:hover,
+html[data-theme="light"] .openxnet-redesign-app .el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.14) !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-input__wrapper.is-focus,
+html[data-theme="light"] .openxnet-redesign-app .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px #5BA3C5, 0 0 0 3px rgba(91, 163, 197, 0.15) !important;
+  background: #FFFFFF !important;
+}
+
+/* Tables */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-table,
+html[data-theme="light"] .openxnet-redesign-app .el-table {
+  --el-table-bg-color: #FFFFFF !important;
+  --el-table-tr-bg-color: #FFFFFF !important;
+  --el-table-header-bg-color: rgba(91, 163, 197, 0.05) !important;
+  --el-table-border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+/* Dialogs */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-dialog,
+html[data-theme="light"] .openxnet-redesign-app .el-dialog {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.10) !important;
+  backdrop-filter: none !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-dialog::before,
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-dialog::after,
+html[data-theme="light"] .openxnet-redesign-app .el-dialog::before,
+html[data-theme="light"] .openxnet-redesign-app .el-dialog::after {
+  display: none !important;
+}
+html[data-theme="light"] .el-overlay {
+  background: rgba(15, 23, 42, 0.4) !important;
+}
+
+/* Dropdowns / Popovers */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-dropdown__popper,
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-select-dropdown,
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-popover,
+html[data-theme="light"] .openxnet-redesign-app .el-dropdown__popper,
+html[data-theme="light"] .openxnet-redesign-app .el-select-dropdown,
+html[data-theme="light"] .openxnet-redesign-app .el-popover {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08) !important;
+  backdrop-filter: none !important;
+}
+
+/* Tags */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-tag,
+html[data-theme="light"] .openxnet-redesign-app .el-tag {
+  box-shadow: none !important;
+}
+
+/* Menu items */
+html[data-theme="light"] body.openxnet-ui-redesign-body .sidebar .el-menu-item,
+html[data-theme="light"] .openxnet-redesign-app .sidebar .el-menu-item {
+  background: transparent !important;
+  color: #64748B !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .sidebar .el-menu-item:hover,
+html[data-theme="light"] .openxnet-redesign-app .sidebar .el-menu-item:hover {
+  background: rgba(91, 163, 197, 0.08) !important;
+  color: #1E293B !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .sidebar .el-menu-item.is-active,
+html[data-theme="light"] .openxnet-redesign-app .sidebar .el-menu-item.is-active {
+  background: rgba(91, 163, 197, 0.12) !important;
+  color: #5BA3C5 !important;
+}
+
+/* Switch */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-switch.is-checked .el-switch__core,
+html[data-theme="light"] .openxnet-redesign-app .el-switch.is-checked .el-switch__core {
+  background: #5BA3C5 !important;
+  border-color: #5BA3C5 !important;
+}
+
+/* Tabs */
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-tabs__active-bar,
+html[data-theme="light"] .openxnet-redesign-app .el-tabs__active-bar {
+  background: #5BA3C5 !important;
+}
+html[data-theme="light"] body.openxnet-ui-redesign-body .el-tabs__item.is-active,
+html[data-theme="light"] .openxnet-redesign-app .el-tabs__item.is-active {
+  color: #5BA3C5 !important;
+}
+
+/* ─── 11. Gradient text fix — solid color in light theme ─── */
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-prototype-page-title,
+html[data-theme="light"] body.openxnet-ui-redesign-body .ox-rail-header-mark,
+html[data-theme="light"] .openxnet-redesign-app .ox-prototype-page-title,
+html[data-theme="light"] .openxnet-redesign-app .ox-rail-header-mark {
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  background-clip: unset !important;
+  -webkit-text-fill-color: #1E293B !important;
+  color: #1E293B !important;
+}
+
+/* ─── 12. Kill brand pulse animation ─── */
+html[data-theme="light"] .sidebar-brand-pulse {
+  animation: none !important;
+}
+
+/* ─── 14. Task center, developer workbench ─── */
+html[data-theme="light"] body.openxnet-ui-redesign-body .task-center-shell,
+html[data-theme="light"] body.openxnet-ui-redesign-body .developer-workbench-page,
+html[data-theme="light"] .openxnet-redesign-app .task-center-shell,
+html[data-theme="light"] .openxnet-redesign-app .developer-workbench-page {
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+/* ─── 15. Selection ─── */
+html[data-theme="light"] ::selection {
+  background: rgba(91, 163, 197, 0.15) !important;
+  color: #5BA3C5 !important;
+}
+
+/* ─── END CLEAN LIGHT THEME OVERRIDE ─── */

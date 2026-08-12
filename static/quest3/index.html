@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenXnet Quest 3 Gateway</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090b0f;
+      --panel: #141922;
+      --panel-2: #1b2330;
+      --border: rgba(255, 255, 255, 0.12);
+      --text: #edf2ff;
+      --muted: #96a2b7;
+      --green: #38d488;
+      --blue: #57a6ff;
+      --amber: #ffc95c;
+      --red: #ff6f76;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 50% 0%, rgba(39, 90, 138, 0.35), transparent 42%), var(--bg);
+      color: var(--text);
+      font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif;
+      overflow: hidden;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    .shell {
+      height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(260px, 330px) minmax(340px, 1fr) minmax(280px, 380px);
+      gap: 14px;
+      padding: 14px;
+    }
+
+    .panel {
+      min-height: 0;
+      border: 1px solid var(--border);
+      background: rgba(20, 25, 34, 0.86);
+      backdrop-filter: blur(16px);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 14px currentColor;
+    }
+
+    .dot.ready {
+      background: var(--green);
+    }
+
+    .dot.connecting {
+      background: var(--amber);
+    }
+
+    .content {
+      min-height: 0;
+      overflow: auto;
+      padding: 14px;
+      scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+    }
+
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0c1118;
+      color: var(--text);
+      padding: 10px 11px;
+      outline: none;
+    }
+
+    textarea {
+      min-height: 72px;
+      resize: vertical;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      background: #263246;
+      color: var(--text);
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: #31425d;
+      transform: translateY(-1px);
+    }
+
+    .btn.primary {
+      background: #1668dc;
+      border-color: #448eff;
+    }
+
+    .btn.icon {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .kv strong {
+      color: var(--text);
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    .network-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .network-card.warning {
+      border-color: rgba(255, 201, 92, 0.48);
+      background: rgba(255, 201, 92, 0.08);
+    }
+
+    .network-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .network-url {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.35;
+      word-break: break-all;
+    }
+
+    .network-hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .btn.small {
+      padding: 6px 8px;
+      font-size: 12px;
+    }
+
+    .avatar-stage {
+      height: 220px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(180deg, rgba(87, 166, 255, 0.13), rgba(56, 212, 136, 0.06));
+      border-bottom: 1px solid var(--border);
+    }
+
+    .avatar {
+      width: 128px;
+      height: 128px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at 50% 35%, #eef7ff 0 18%, #64b5ff 19% 42%, #1b4b7f 43% 100%);
+      color: #07111e;
+      font-weight: 900;
+      font-size: 28px;
+      box-shadow: 0 24px 70px rgba(87, 166, 255, 0.35);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .avatar.speaking {
+      transform: scale(1.06);
+      box-shadow: 0 24px 80px rgba(87, 166, 255, 0.58);
+    }
+
+    .avatar.thinking {
+      box-shadow: 0 24px 80px rgba(255, 201, 92, 0.5);
+    }
+
+    .avatar.error {
+      box-shadow: 0 24px 80px rgba(255, 111, 118, 0.5);
+    }
+
+    .message-list,
+    .task-list,
+    .memory-list,
+    .log-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .bubble {
+      max-width: 86%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      white-space: pre-wrap;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .bubble.user {
+      align-self: flex-end;
+      background: #123b68;
+    }
+
+    .bubble.assistant {
+      align-self: flex-start;
+      background: #182231;
+    }
+
+    .bubble.system {
+      align-self: flex-start;
+      background: rgba(255, 193, 7, 0.12);
+      border-color: rgba(255, 193, 7, 0.35);
+      color: #ffd86b;
+      font-size: 12px;
+    }
+
+    .composer {
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .task,
+    .memory,
+    .log {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.035);
+      padding: 10px;
+    }
+
+    .task h3,
+    .memory h3 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+
+    .task p,
+    .memory p,
+    .log {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .progress {
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress span {
+      display: block;
+      height: 100%;
+      background: var(--blue);
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab {
+      border: 0;
+      border-right: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      padding: 11px 8px;
+      cursor: pointer;
+    }
+
+    .tab:last-child {
+      border-right: 0;
+    }
+
+    .tab.active {
+      color: var(--text);
+      background: rgba(87, 166, 255, 0.12);
+    }
+
+    @media (max-width: 980px) {
+      body {
+        overflow: auto;
+      }
+
+      .shell {
+        height: auto;
+        min-height: 100vh;
+        grid-template-columns: 1fr;
+      }
+
+      .avatar-stage {
+        height: 180px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="panel">
+      <header>
+        <h1>Quest 3 Gateway</h1>
+        <span class="status"><span id="statusDot" class="dot"></span><span id="statusText">未连接</span></span>
+      </header>
+      <div class="avatar-stage">
+        <div id="avatar" class="avatar">OX</div>
+      </div>
+      <div class="content stack">
+        <div>
+          <label for="serverUrl">OpenXnet 地址</label>
+          <input id="serverUrl" autocomplete="off">
+        </div>
+        <div id="networkCard" class="network-card">
+          <div class="network-head">
+            <span>Quest 真机入口</span>
+            <button id="useQuestUrlBtn" class="btn small" type="button">套用</button>
+          </div>
+          <div id="questUrl" class="network-url">-</div>
+          <p id="networkHint" class="network-hint">正在读取 VR Gateway 状态。</p>
+        </div>
+        <div>
+          <label for="pairingCode">配对码</label>
+          <input id="pairingCode" placeholder="PoC 可留空" autocomplete="off">
+        </div>
+        <div class="row">
+          <button id="connectBtn" class="btn primary">连接</button>
+          <button id="refreshBtn" class="btn">刷新任务</button>
+        </div>
+        <div class="kv">
+          <span>Session</span><strong id="sessionId">-</strong>
+          <span>WebSocket</span><strong id="wsUrl">-</strong>
+          <span>Avatar</span><strong id="avatarState">idle</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header>
+        <h2>空间对话</h2>
+        <span class="status">OpenXnet Chat Stream</span>
+      </header>
+      <div id="messages" class="content message-list"></div>
+      <div class="composer">
+        <div class="row">
+          <textarea id="chatInput" placeholder="例如：帮我总结 Quest 3 PoC 下一步任务。"></textarea>
+          <button id="sendBtn" class="btn icon primary" title="发送">↗</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="tabs">
+        <button class="tab active" data-tab="tasks">任务</button>
+        <button class="tab" data-tab="memory">记忆</button>
+        <button class="tab" data-tab="logs">事件</button>
+      </div>
+      <div id="tasksPanel" class="content task-list"></div>
+      <div id="memoryPanel" class="content memory-list" hidden></div>
+      <div id="logsPanel" class="content log-list" hidden></div>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      baseUrl: window.location.origin,
+      sessionId: "",
+      wsUrl: "",
+      ws: null,
+      connected: false,
+      currentAssistantBubble: null,
+      activeTab: "tasks",
+      recommendedOrigin: "",
+      recommendedQuestUrl: "",
+    };
+
+    const el = {
+      serverUrl: document.getElementById("serverUrl"),
+      networkCard: document.getElementById("networkCard"),
+      questUrl: document.getElementById("questUrl"),
+      networkHint: document.getElementById("networkHint"),
+      useQuestUrlBtn: document.getElementById("useQuestUrlBtn"),
+      pairingCode: document.getElementById("pairingCode"),
+      connectBtn: document.getElementById("connectBtn"),
+      refreshBtn: document.getElementById("refreshBtn"),
+      sendBtn: document.getElementById("sendBtn"),
+      chatInput: document.getElementById("chatInput"),
+      messages: document.getElementById("messages"),
+      tasksPanel: document.getElementById("tasksPanel"),
+      memoryPanel: document.getElementById("memoryPanel"),
+      logsPanel: document.getElementById("logsPanel"),
+      statusDot: document.getElementById("statusDot"),
+      statusText: document.getElementById("statusText"),
+      sessionId: document.getElementById("sessionId"),
+      wsUrl: document.getElementById("wsUrl"),
+      avatar: document.getElementById("avatar"),
+      avatarState: document.getElementById("avatarState"),
+    };
+
+    el.serverUrl.value = state.baseUrl;
+
+    function setStatus(text, mode) {
+      el.statusText.textContent = text;
+      el.statusDot.className = "dot" + (mode ? ` ${mode}` : "");
+    }
+
+    function log(type, data) {
+      const node = document.createElement("div");
+      node.className = "log";
+      node.textContent = `[${new Date().toLocaleTimeString()}] ${type} ${JSON.stringify(data || {})}`;
+      el.logsPanel.prepend(node);
+    }
+
+    function api(path, options = {}) {
+      const base = el.serverUrl.value.replace(/\/$/, "");
+      return fetch(`${base}${path}`, {
+        headers: { "Content-Type": "application/json" },
+        ...options,
+      }).then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || data.error || res.statusText);
+        return data;
+      });
+    }
+
+    function originFromQuestUrl(url) {
+      try {
+        return new URL(url).origin;
+      } catch (_) {
+        return "";
+      }
+    }
+
+    async function loadGatewayStatus() {
+      try {
+        const data = await api("/v1/vr/status");
+        const status = data.status || {};
+        const lan = status.lan || {};
+        const request = status.request || {};
+        const recommendedQuestUrl = lan.recommended_quest_url || `${state.baseUrl}/quest3/`;
+        const recommendedOrigin = originFromQuestUrl(recommendedQuestUrl) || state.baseUrl;
+        state.recommendedQuestUrl = recommendedQuestUrl;
+        state.recommendedOrigin = recommendedOrigin;
+        el.questUrl.textContent = recommendedQuestUrl;
+        el.useQuestUrlBtn.disabled = !recommendedOrigin;
+
+        if (request.is_loopback) {
+          el.networkCard.classList.add("warning");
+          el.networkHint.textContent = lan.available
+            ? "当前页面从本机地址打开；Quest 3 真机需要使用上面的局域网地址，并确保后端以局域网模式启动。"
+            : "当前页面从本机地址打开；暂未发现可用局域网 IPv4，请确认 PC 和 Quest 3 在同一 Wi-Fi。";
+        } else {
+          el.networkCard.classList.remove("warning");
+          el.networkHint.textContent = "当前已使用非本机回环地址，Quest 3 可直接连接这个 VR Gateway。";
+        }
+        log("gateway.status", {
+          recommended_quest_url: recommendedQuestUrl,
+          lan_available: Boolean(lan.available),
+          request_is_loopback: Boolean(request.is_loopback),
+        });
+      } catch (err) {
+        el.networkCard.classList.add("warning");
+        el.questUrl.textContent = `${state.baseUrl}/quest3/`;
+        el.networkHint.textContent = `VR Gateway 状态读取失败：${err.message}`;
+        log("gateway.status.failed", { message: err.message });
+      }
+    }
+
+    async function connect() {
+      setStatus("连接中", "connecting");
+      const payload = {
+        device: {
+          type: "quest3",
+          name: "Quest 3 Mock",
+          client: "webxr",
+          client_version: "0.1.0",
+        },
+        capabilities: {
+          mr: true,
+          hand_tracking: true,
+          controllers: true,
+          voice_input: false,
+          webrtc: false,
+        },
+        pairing_code: el.pairingCode.value.trim(),
+      };
+      const result = await api("/v1/vr/session", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      state.sessionId = result.session.session_id;
+      state.wsUrl = result.session.event_ws_url;
+      el.sessionId.textContent = state.sessionId;
+      el.wsUrl.textContent = state.wsUrl;
+      await loadProfile();
+      openSocket();
+      await loadTasks();
+      await loadMemory();
+    }
+
+    async function loadProfile() {
+      const data = await api(`/v1/vr/profile?session_id=${encodeURIComponent(state.sessionId)}`);
+      log("profile", data.profile);
+    }
+
+    function openSocket() {
+      if (state.ws) state.ws.close();
+      state.ws = new WebSocket(state.wsUrl);
+      state.ws.onopen = () => {
+        state.connected = true;
+        setStatus("已连接", "ready");
+      };
+      state.ws.onclose = () => {
+        state.connected = false;
+        setStatus("已断开", "");
+      };
+      state.ws.onerror = () => {
+        setStatus("连接错误", "");
+      };
+      state.ws.onmessage = (event) => {
+        const payload = JSON.parse(event.data);
+        handleEvent(payload);
+      };
+    }
+
+    function sendEvent(type, data = {}) {
+      if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+        log("error", { message: "WebSocket 未连接" });
+        return;
+      }
+      state.ws.send(JSON.stringify({
+        type,
+        event_id: `evt_client_${Date.now()}`,
+        session_id: state.sessionId,
+        data,
+      }));
+    }
+
+    function handleEvent(payload) {
+      log(payload.type, payload.data);
+      if (payload.type === "session.ready") {
+        sendEvent("task.subscribe", { limit: 20 });
+      } else if (payload.type === "avatar.state") {
+        setAvatar(payload.data.state || "idle");
+      } else if (payload.type === "assistant.delta") {
+        appendAssistantDelta(payload.data.text || "");
+      } else if (payload.type === "assistant.done") {
+        state.currentAssistantBubble = null;
+      } else if (payload.type === "chat.fallback") {
+        addMessage("system", `真实聊天流暂不可见，已切到 ${payload.data.fallback || "fallback"}：${payload.data.reason || "unknown"}`);
+      } else if (payload.type === "task.snapshot") {
+        renderTasks(payload.data.tasks || []);
+      } else if (payload.type === "task.created" || payload.type === "task.updated") {
+        loadTasks();
+      } else if (payload.type === "error") {
+        setAvatar("error");
+      }
+    }
+
+    function setAvatar(next) {
+      const value = next || "idle";
+      el.avatar.className = `avatar ${value}`;
+      el.avatarState.textContent = value;
+    }
+
+    function addMessage(role, text) {
+      const node = document.createElement("div");
+      node.className = `bubble ${role}`;
+      node.textContent = text;
+      el.messages.appendChild(node);
+      el.messages.scrollTop = el.messages.scrollHeight;
+      return node;
+    }
+
+    function appendAssistantDelta(text) {
+      if (!state.currentAssistantBubble) {
+        state.currentAssistantBubble = addMessage("assistant", "");
+      }
+      state.currentAssistantBubble.textContent += text;
+      el.messages.scrollTop = el.messages.scrollHeight;
+    }
+
+    function sendChat() {
+      const text = el.chatInput.value.trim();
+      if (!text) return;
+      addMessage("user", text);
+      el.chatInput.value = "";
+      state.currentAssistantBubble = null;
+      setAvatar("listening");
+      sendEvent("chat.send", {
+        conversation_id: "vr_conv_mock",
+        text,
+        input_mode: "text",
+        assistant_id: "default",
+        model: "openxnet-model",
+      });
+    }
+
+    async function loadTasks() {
+      if (!state.sessionId) return;
+      const data = await api(`/v1/vr/tasks?session_id=${encodeURIComponent(state.sessionId)}&limit=20`);
+      renderTasks(data.tasks || []);
+    }
+
+    async function loadMemory() {
+      if (!state.sessionId) return;
+      const data = await api(`/v1/vr/memory/summary?session_id=${encodeURIComponent(state.sessionId)}&limit=10`);
+      renderMemory(data.items || []);
+    }
+
+    function renderTasks(tasks) {
+      el.tasksPanel.innerHTML = "";
+      if (!tasks.length) {
+        el.tasksPanel.innerHTML = `<div class="task"><h3>暂无任务</h3><p>可从 OpenXnet 任务中心创建任务，或通过 WebSocket task.create 创建空间任务。</p></div>`;
+        return;
+      }
+      for (const task of tasks) {
+        const node = document.createElement("div");
+        node.className = "task";
+        node.innerHTML = `
+          <span class="badge">${task.status || "pending"} · ${task.progress || 0}%</span>
+          <h3>${escapeHtml(task.title || "未命名任务")}</h3>
+          <p>${escapeHtml(task.summary || task.last_event || "")}</p>
+          <div class="progress"><span style="width:${Number(task.progress || 0)}%"></span></div>
+        `;
+        el.tasksPanel.appendChild(node);
+      }
+    }
+
+    function renderMemory(items) {
+      el.memoryPanel.innerHTML = "";
+      for (const item of items) {
+        const node = document.createElement("div");
+        node.className = "memory";
+        node.innerHTML = `
+          <span class="badge">${escapeHtml(item.type || "memory")}</span>
+          <h3>${escapeHtml(item.title || "记忆摘要")}</h3>
+          <p>${escapeHtml(item.summary || "")}</p>
+        `;
+        el.memoryPanel.appendChild(node);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    document.querySelectorAll(".tab").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        const tab = button.dataset.tab;
+        el.tasksPanel.hidden = tab !== "tasks";
+        el.memoryPanel.hidden = tab !== "memory";
+        el.logsPanel.hidden = tab !== "logs";
+      });
+    });
+
+    el.connectBtn.addEventListener("click", () => connect().catch((err) => {
+      setStatus("连接失败", "");
+      log("connect.failed", { message: err.message });
+    }));
+    el.useQuestUrlBtn.addEventListener("click", () => {
+      if (!state.recommendedOrigin) return;
+      el.serverUrl.value = state.recommendedOrigin;
+      log("gateway.origin.selected", { origin: state.recommendedOrigin });
+    });
+    el.refreshBtn.addEventListener("click", () => {
+      loadGatewayStatus().catch((err) => log("gateway.status.failed", { message: err.message }));
+      loadTasks().catch((err) => log("tasks.failed", { message: err.message }));
+      loadMemory().catch((err) => log("memory.failed", { message: err.message }));
+    });
+    el.sendBtn.addEventListener("click", sendChat);
+    el.chatInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendChat();
+      }
+    });
+
+    addMessage("assistant", "Quest 3 Gateway 已就绪。先点击连接，然后发送一句话测试 OpenXnet 真实聊天流。");
+    loadGatewayStatus();
+  </script>
+</body>
+</html>

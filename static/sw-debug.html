@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenXnet Cache Debug</title>
+</head>
+<body>
+  <pre id="output">Loading...</pre>
+  <script>
+    (async function debugOpenXnetCache() {
+      const output = document.getElementById('output');
+      const state = {
+        location: window.location.href,
+        controller: navigator.serviceWorker?.controller?.scriptURL || null,
+        registrations: [],
+        caches: []
+      };
+
+      try {
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          state.registrations = registrations.map(registration => ({
+            scope: registration.scope,
+            active: registration.active?.scriptURL || null,
+            waiting: registration.waiting?.scriptURL || null,
+            installing: registration.installing?.scriptURL || null
+          }));
+        }
+        if (window.caches) {
+          const keys = await caches.keys();
+          state.caches = await Promise.all(keys.map(async key => {
+            const cache = await caches.open(key);
+            const requests = await cache.keys();
+            return {
+              key,
+              requests: requests.map(request => request.url)
+            };
+          }));
+        }
+      } catch (error) {
+        state.error = String(error && error.stack ? error.stack : error);
+      }
+
+      output.textContent = JSON.stringify(state, null, 2);
+    })();
+  </script>
+</body>
+</html>

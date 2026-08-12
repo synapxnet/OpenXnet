@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>OpenXnet VRM</title>
+    <link rel="stylesheet" href="fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="css/vrm.css?v=20260513-vrm-preview-controls-hidden">
+    <script src="js/locales.js"></script>
+    <link rel="stylesheet" href="libs/element-plus.css">
+    <script src="libs/vue.global.prod.js"></script>
+    <script src="libs/element-plus.js"></script>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: transparent !important;
+      }
+
+      body.life-shell {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      body.life-shell canvas {
+        display: block;
+        position: relative;
+        z-index: 4;
+        filter: contrast(1.03) saturate(1.04);
+        image-rendering: auto;
+      }
+    </style>
+  </head>
+
+  <body class="life-shell">
+    <div class="life-scene-shell" aria-hidden="true">
+      <div class="life-scene-orb life-scene-orb--a"></div>
+      <div class="life-scene-orb life-scene-orb--b"></div>
+      <div class="life-scene-orb life-scene-orb--c"></div>
+      <div class="life-scene-grid"></div>
+
+      <div class="life-scene-masthead">
+        <div class="life-scene-kicker">OPENXNET VRM</div>
+        <div class="life-scene-copy">
+          <strong id="life-scene-title">VRM Desktop Pet</strong>
+          <span id="life-scene-meta">Loading the selected model.</span>
+        </div>
+        <div class="life-scene-pills">
+          <span class="life-scene-pill" id="life-scene-signal">Connection standby</span>
+          <span class="life-scene-pill" id="life-scene-mode">Motion standby</span>
+        </div>
+      </div>
+
+      <div class="life-scene-floor">
+        <span class="life-scene-floor-line"></span>
+      </div>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./libs/three/build/three.module.js",
+          "three/tsl": "./libs/three/build/three.tsl.js",
+          "three/addons/": "./libs/three/examples/jsm/",
+          "@pixiv/three-vrm": "./libs/@pixiv/three-vrm/lib/three-vrm.module.js",
+          "@pixiv/three-vrm/nodes": "./libs/@pixiv/three-vrm/lib/nodes/index.module.js",
+          "@pixiv/three-vrm-animation": "./libs/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js",
+          "@sparkjsdev/spark": "./libs/@sparkjsdev/spark/dist/spark.module.js"
+        }
+      }
+    </script>
+    <script type="module" src="js/vrm.js?v=20260513-vrm-preview-controls-hidden"></script>
+  </body>
+</html>

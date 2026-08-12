@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openxnet.synapxnet.com/skills/goai-service-verify/1.1.0/input.schema.json",
+  "title": "GOAI Service Verify Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "incidentId", "traceId", "action", "evidence", "policy"],
+  "properties": {
+    "schema": { "const": "goai.skill.service-verify.input.v1.1" },
+    "incidentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "traceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actionId", "planId", "planDigest", "toolName", "resourceVersionAfter", "completedStepCount", "compensationPlanReady", "outcome"],
+      "properties": {
+        "actionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "planId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "planDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "toolName": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*){1,7}$" },
+        "resourceVersionAfter": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "completedStepCount": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "compensationPlanReady": { "const": true },
+        "outcome": { "enum": ["ACCEPTED", "SUCCEEDED"] }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evidenceId", "toolName", "contentDigest"],
+        "properties": {
+          "evidenceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "toolName": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*){1,7}$" },
+          "contentDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxErrorRate", "maxP95Ms", "requireHealthyService", "requireReadyReplicas", "requiredVerificationTools"],
+      "properties": {
+        "maxErrorRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maxP95Ms": { "type": "number", "exclusiveMinimum": 0 },
+        "requireHealthyService": { "type": "boolean" },
+        "requireReadyReplicas": { "type": "boolean" },
+        "requiredVerificationTools": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*){1,7}$" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenXnet — 启动</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;450;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root {
+      --bg-base: #F8F9FB;
+      --bg-deep: #EEF1F6;
+      --panel: rgba(255, 255, 255, 0.88);
+      --panel-strong: rgba(255, 255, 255, 0.95);
+      --line-soft: rgba(91, 163, 197, 0.15);
+      --line-border: rgba(15, 23, 42, 0.08);
+      --text-main: #1E293B;
+      --text-soft: #64748B;
+      --text-muted: #94A3B8;
+      --accent: #5BA3C5;
+      --accent-light: #7BB8D4;
+      --accent-softer: rgba(91, 163, 197, 0.08);
+      --accent-soft: rgba(91, 163, 197, 0.12);
+      --success: #22C55E;
+      --success-soft: rgba(34, 197, 94, 0.10);
+      --warning: #F59E0B;
+      --shadow-soft: 0 24px 80px rgba(91, 163, 197, 0.08), 0 8px 32px rgba(15, 23, 42, 0.04);
+      --shadow-card: 0 4px 16px rgba(91, 163, 197, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+      --progress-angle: 0deg;
+      --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+      --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background:
+        radial-gradient(ellipse at 20% 20%, rgba(91, 163, 197, 0.08), transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(91, 163, 197, 0.06), transparent 50%),
+        linear-gradient(160deg, #F8F9FB 0%, #EEF2F8 50%, #F4F7FB 100%);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      user-select: none;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(91, 163, 197, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(91, 163, 197, 0.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse at center, rgba(0,0,0,0.5), transparent 70%);
+      pointer-events: none;
+    }
+
+    .drag-layer {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 40px;
+      -webkit-app-region: drag;
+      z-index: 60;
+    }
+
+    #app {
+      position: relative;
+      width: 100%; height: 100%;
+      display: grid;
+      place-items: center;
+      padding: clamp(24px, 5vh, 56px);
+      transition: opacity 0.5s ease, transform 0.5s ease, filter 0.5s ease;
+    }
+
+    #app.fade-out {
+      opacity: 0;
+      transform: scale(1.02);
+      filter: blur(8px);
+    }
+
+    .boot-shell {
+      position: relative;
+      z-index: 5;
+      width: min(1200px, calc(100vw - 80px));
+      height: min(720px, calc(100vh - 80px));
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .boot-brand, .boot-telemetry {
+      position: relative;
+      border: 1px solid var(--line-border);
+      border-radius: 24px;
+      overflow: hidden;
+      background: var(--panel);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(20px) saturate(140%);
+      -webkit-backdrop-filter: blur(20px) saturate(140%);
+    }
+
+    .boot-brand {
+      padding: clamp(24px, 4vh, 40px) clamp(28px, 3vw, 40px);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .boot-brand::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #5BA3C5, #7BB8D4, #5BA3C5);
+      opacity: 0.6;
+    }
+
+    /* ── Brand Header ── */
+    .brand-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .brand-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .brand-kicker::before {
+      content: "";
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px rgba(91, 163, 197, 0.5);
+      animation: dot-pulse 2s ease-in-out infinite;
+    }
+
+    .brand-signal {
+      text-align: right;
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .brand-signal strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--success);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* ── Brand Center ── */
+    .brand-center {
+      display: flex;
+      flex-direction: column;
+      gap: clamp(20px, 3vh, 28px);
+    }
+
+    .brand-logo-row {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 16px;
+    }
+
+    .logo-shell {
+      position: relative;
+      width: clamp(96px, 12vh, 128px);
+      height: clamp(96px, 12vh, 128px);
+      display: grid;
+      place-items: center;
+      background: transparent;
+      animation: logo-float 5s ease-in-out infinite;
+      filter: drop-shadow(0 12px 32px rgba(91, 163, 197, 0.25));
+    }
+
+    .logo-shell__img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .logo-shell__text {
+      font-size: clamp(28px, 4vh, 36px);
+      font-weight: 800;
+      color: white;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-copy {
+      text-align: center;
+    }
+
+    .brand-copy h1 {
+      font-size: clamp(36px, 5vw, 56px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      color: var(--text-main);
+    }
+
+    .brand-copy p {
+      margin: 12px auto 0;
+      color: var(--text-soft);
+      font-size: clamp(13px, 1.6vh, 15px);
+      line-height: 1.6;
+      max-width: 420px;
+    }
+
+    /* ── Brand Tags ── */
+    .brand-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .brand-tag {
+      padding: 12px 16px;
+      border-radius: 14px;
+      min-width: 140px;
+      background: var(--accent-softer);
+      border: 1px solid var(--line-soft);
+      transition: all 0.2s var(--ease-smooth);
+    }
+
+    .brand-tag:hover {
+      background: var(--accent-soft);
+      transform: translateY(-1px);
+    }
+
+    .brand-tag span {
+      display: block;
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .brand-tag strong {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    /* ── Brand Checks（实时启动校验） ── */
+    .brand-checks {
+      list-style: none;
+      margin: 0;
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 18px;
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+      background: linear-gradient(180deg, var(--accent-softer), transparent);
+    }
+    .brand-checks li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-soft);
+      animation: brand-check-in 360ms var(--ease-smooth) both;
+    }
+    .brand-checks li:nth-child(1) { animation-delay: 80ms; }
+    .brand-checks li:nth-child(2) { animation-delay: 200ms; }
+    .brand-checks li:nth-child(3) { animation-delay: 320ms; }
+    .brand-checks li:nth-child(4) { animation-delay: 440ms; }
+    .brand-check__dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      box-shadow: 0 0 8px rgba(91, 163, 197, 0.6);
+      animation: brand-check-pulse 2.4s ease-in-out infinite;
+    }
+    .brand-checks li:nth-child(2) .brand-check__dot { animation-delay: 0.4s; }
+    .brand-checks li:nth-child(3) .brand-check__dot { animation-delay: 0.8s; }
+    .brand-checks li:nth-child(4) .brand-check__dot { animation-delay: 1.2s; }
+    .brand-checks li > span:nth-of-type(2) {
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .brand-checks em {
+      font-style: normal;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.12em;
+    }
+    @keyframes brand-check-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes brand-check-pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    /* ── Brand Tip（轮播贴士） ── */
+    .brand-tip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1px dashed rgba(91, 163, 197, 0.28);
+      background: rgba(91, 163, 197, 0.04);
+      color: var(--text-soft);
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+    .brand-tip__bullet {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px rgba(91, 163, 197, 0.6);
+      flex-shrink: 0;
+    }
+    .brand-tip span {
+      transition: opacity 280ms ease, transform 280ms ease;
+    }
+    .brand-tip span.fade {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+
+    /* ── Brand Footer ── */
+    .brand-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .brand-footer code {
+      padding: 5px 10px;
+      border-radius: 9999px;
+      background: var(--accent-softer);
+      border: 1px solid var(--line-soft);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    /* ══════ Telemetry Panel ══════ */
+    .boot-telemetry {
+      padding: clamp(20px, 3vh, 28px);
+      display: flex;
+      flex-direction: column;
+      gap: clamp(14px, 2vh, 20px);
+    }
+
+    .telemetry-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .telemetry-label span {
+      display: block;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .telemetry-label strong {
+      display: block;
+      margin-top: 4px;
+      font-size: clamp(18px, 2.4vh, 22px);
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .telemetry-chip {
+      padding: 6px 12px;
+      border-radius: 9999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+    }
+
+    /* ════════════════════════════════════════════════════════════
+       Neural Orb —— SVG 弧形进度 + 轨道符号 + 中央逻辑表达式
+       ════════════════════════════════════════════════════════════ */
+    .telemetry-ring {
+      --orb-size: clamp(190px, 26vh, 240px);
+      position: relative;
+      width: var(--orb-size);
+      height: var(--orb-size);
+      margin: 0 auto;
+      display: grid;
+      place-items: center;
+    }
+
+    .neural-orb__svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 最外层虚线环：缓慢旋转 */
+    .neural-orb__outer {
+      fill: none;
+      stroke: rgba(91, 163, 197, 0.18);
+      stroke-width: 1;
+      stroke-dasharray: 4 8;
+      transform-origin: 50% 50%;
+      animation: orb-rotate 24s linear infinite;
+    }
+
+    /* 内层 1px 虚线装饰圈 */
+    .neural-orb__inner {
+      fill: none;
+      stroke: rgba(91, 163, 197, 0.14);
+      stroke-width: 1;
+      stroke-dasharray: 2 6;
+      transform-origin: 50% 50%;
+      animation: orb-rotate-rev 18s linear infinite;
+    }
+
+    /* ── 沿圆周的神经符号表达式 ── */
+    .neural-orb__text {
+      font-family: "Cambria Math", "STIX Two Math", "Latin Modern Math", "Segoe UI Symbol", "Times New Roman", serif;
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    /* 底层 ghost：暗色铺满整圈 */
+    .neural-orb__text--ghost {
+      fill: rgba(91, 163, 197, 0.18);
+    }
+    /* 上层 fill：高亮 + 发光，由 mask 控制可见范围 */
+    .neural-orb__text--fill {
+      fill: url(#orbGradient);
+      filter: drop-shadow(0 0 4px rgba(91, 163, 197, 0.65));
+    }
+
+    /* 进度前沿 cursor —— 双层（外发光 halo + 内核小点）+ 整体呼吸 */
+    .neural-orb__cursor {
+      transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+      transform-origin: center;
+      transform-box: fill-box;
+    }
+    .neural-orb__cursor-glow {
+      fill: var(--accent);
+      opacity: 0.28;
+      filter: blur(2px);
+      animation: cursor-breath 1.6s ease-in-out infinite;
+      transform-origin: center;
+      transform-box: fill-box;
+    }
+    .neural-orb__cursor-core {
+      fill: var(--accent);
+      filter: drop-shadow(0 0 4px rgba(91, 163, 197, 0.9));
+    }
+
+    /* ── 中央内容区 ── */
+    .telemetry-ring-center {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 70%;
+      text-align: center;
+    }
+
+    .telemetry-ring-center strong {
+      font-size: clamp(40px, 6vh, 56px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* ── 关键帧 ── */
+    @keyframes orb-rotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes orb-rotate-rev {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(-360deg); }
+    }
+    @keyframes cursor-breath {
+      0%, 100% { opacity: 0.28; transform: scale(1); }
+      50% { opacity: 0.55; transform: scale(1.45); }
+    }
+
+    /* ── Progress Bar ── */
+    .telemetry-progress {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .telemetry-progress-track {
+      height: 8px;
+      border-radius: 9999px;
+      overflow: hidden;
+      background: rgba(91, 163, 197, 0.08);
+      border: 1px solid var(--line-soft);
+    }
+
+    .telemetry-progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--accent-light));
+      box-shadow: 0 0 12px rgba(91, 163, 197, 0.3);
+      transition: width 0.2s ease;
+    }
+
+    .telemetry-status strong {
+      display: block;
+      font-size: clamp(14px, 1.8vh, 16px);
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .telemetry-status span {
+      display: block;
+      margin-top: 3px;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    /* ── Stage List ── */
+    .stage-list {
+      display: flex;
+      flex-direction: column;
+      gap: clamp(8px, 1.2vh, 12px);
+      list-style: none;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .stage-item {
+      display: grid;
+      grid-template-columns: 38px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: var(--bg-base);
+      border: 1px solid var(--line-border);
+      transition: all 0.3s var(--ease-spring);
+    }
+
+    .stage-item.is-active {
+      transform: translateX(4px);
+      background: var(--accent-softer);
+      border-color: rgba(91, 163, 197, 0.25);
+      box-shadow: 0 2px 12px rgba(91, 163, 197, 0.1);
+    }
+
+    .stage-item.is-done {
+      background: var(--success-soft);
+      border-color: rgba(34, 197, 94, 0.2);
+    }
+
+    .stage-index {
+      width: 38px; height: 38px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      background: white;
+      border: 1px solid var(--line-border);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .stage-item.is-active .stage-index {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+      box-shadow: 0 4px 12px rgba(91, 163, 197, 0.3);
+    }
+
+    .stage-item.is-done .stage-index {
+      background: var(--success);
+      border-color: var(--success);
+      color: white;
+    }
+
+    .stage-copy strong {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .stage-copy span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-soft);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .stage-state {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .stage-item.is-done .stage-state { color: var(--success); }
+    .stage-item.is-active .stage-state { color: var(--accent); }
+
+    /* ── Telemetry Footer ── */
+    .telemetry-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .telemetry-footer strong {
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    /* ── Animations ── */
+    @keyframes dot-pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(91, 163, 197, 0.5); }
+      50% { opacity: 0.5; box-shadow: 0 0 4px rgba(91, 163, 197, 0.2); }
+    }
+
+    @keyframes logo-float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    @keyframes ring-rotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes fade-in-up {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .boot-brand { animation: fade-in-up 0.6s var(--ease-smooth) both; }
+    .boot-telemetry { animation: fade-in-up 0.6s var(--ease-smooth) 0.15s both; }
+
+    /* ── Responsive ── */
+    @media (max-width: 1080px) {
+      .boot-shell {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+        width: min(100%, calc(100vw - 48px));
+        height: calc(100vh - 48px);
+        gap: 16px;
+      }
+      .boot-brand {
+        padding: 18px 22px;
+        min-height: auto;
+      }
+      .brand-header, .brand-tags, .brand-footer { display: none; }
+      .brand-center { gap: 0; }
+      .logo-shell { width: 48px; height: 48px; }
+      .logo-shell__text { font-size: 22px; }
+      .brand-copy h1 { font-size: 32px; }
+      .brand-copy p { display: none; }
+    }
+
+    @media (max-height: 700px) {
+      .brand-tags, .brand-footer, .telemetry-footer { display: none; }
+      .telemetry-ring {
+        width: 140px; height: 140px;
+      }
+      .telemetry-ring-center strong { font-size: 36px; }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="drag-layer"></div>
+  <main id="app">
+    <div class="boot-shell">
+
+      <!-- ════ Left: Brand Panel ════ -->
+      <section class="boot-brand">
+        <div class="brand-header">
+          <span class="brand-kicker" id="brand-kicker">OpenXnet Neural Workspace</span>
+          <div class="brand-signal">
+            <span id="signal-label">启动通道</span>
+            <strong id="signal-state">同步激活</strong>
+          </div>
+        </div>
+
+        <div class="brand-center">
+          <div class="brand-logo-row">
+            <div class="logo-shell">
+              <img class="logo-shell__img" src="source/icon.png" alt="OpenXnet" />
+            </div>
+            <div class="brand-copy">
+              <h1>OpenXnet</h1>
+              <p id="brand-description">将模型、记忆、工作区上下文与数字生命整合进同一套原生神经符号界面。</p>
+            </div>
+          </div>
+
+          <div class="brand-tags">
+            <div class="brand-tag">
+              <span id="tag-one-label">神经符号</span>
+              <strong id="tag-one-value">Neural-Symbolic OS</strong>
+            </div>
+            <div class="brand-tag">
+              <span id="tag-two-label">认知核心</span>
+              <strong id="tag-two-value">模型与记忆协同</strong>
+            </div>
+            <div class="brand-tag">
+              <span id="tag-three-label">数字生命</span>
+              <strong id="tag-three-value">VRM 与动态表面</strong>
+            </div>
+          </div>
+
+          <!-- 实时启动校验列表 -->
+          <ul class="brand-checks" id="brand-checks">
+            <li><span class="brand-check__dot"></span><span>本地策略与权限沙箱</span><em>READY</em></li>
+            <li><span class="brand-check__dot"></span><span>神经-符号双通道桥接</span><em>READY</em></li>
+            <li><span class="brand-check__dot"></span><span>持久化记忆与召回索引</span><em>READY</em></li>
+            <li><span class="brand-check__dot"></span><span>插件总线 / MCP 适配层</span><em>READY</em></li>
+          </ul>
+
+          <!-- 滚动小贴士 -->
+          <div class="brand-tip">
+            <i class="brand-tip__bullet"></i>
+            <span id="brand-tip-text">提示：在主界面按 Ctrl + K 唤起命令面板，可以直达任意菜单。</span>
+          </div>
+        </div>
+
+        <div class="brand-footer">
+          <span>原生神经符号 OS 统一启动界面</span>
+          <code>kernel://workspace-sync</code>
+        </div>
+      </section>
+
+      <!-- ════ Right: Telemetry Panel ════ -->
+      <section class="boot-telemetry">
+        <div class="telemetry-topbar">
+          <div class="telemetry-label">
+            <span id="telemetry-kicker">启动 OS 内核</span>
+            <strong id="telemetry-title">准备神经运行时</strong>
+          </div>
+          <div class="telemetry-chip" id="telemetry-chip">桌面配置</div>
+        </div>
+
+        <div class="telemetry-ring" id="telemetry-ring">
+          <svg class="neural-orb__svg" viewBox="0 0 260 260" aria-hidden="true">
+            <defs>
+              <linearGradient id="orbGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#5BA3C5" />
+                <stop offset="55%" stop-color="#7BB8D4" />
+                <stop offset="100%" stop-color="#9CCFE0" />
+              </linearGradient>
+              <radialGradient id="orbHalo" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="rgba(91,163,197,0.18)" />
+                <stop offset="60%" stop-color="rgba(91,163,197,0.06)" />
+                <stop offset="100%" stop-color="rgba(91,163,197,0)" />
+              </radialGradient>
+              <!-- 文本沿此圆周排布；逆时针起点为 12 点钟方向 -->
+              <path id="orbTextPath"
+                    d="M 130 22 A 108 108 0 1 1 129.99 22"
+                    fill="none" />
+              <!-- mask：只显示进度弧覆盖到的字符 -->
+              <mask id="orbProgressMask" maskUnits="userSpaceOnUse" x="0" y="0" width="260" height="260">
+                <rect width="260" height="260" fill="black" />
+                <circle id="orb-mask-arc" cx="130" cy="130" r="108"
+                        fill="none" stroke="white" stroke-width="28"
+                        stroke-dasharray="678.58" stroke-dashoffset="678.58"
+                        transform="rotate(-90 130 130)"
+                        stroke-linecap="butt" />
+              </mask>
+            </defs>
+
+            <!-- 背景 halo -->
+            <circle cx="130" cy="130" r="128" fill="url(#orbHalo)" />
+
+            <!-- 最外虚线环（旋转） -->
+            <circle class="neural-orb__outer" cx="130" cy="130" r="124" />
+
+            <!-- 内层装饰圈 -->
+            <circle class="neural-orb__inner" cx="130" cy="130" r="92" />
+
+            <!-- 神经符号表达式：底层 ghost（暗色铺满全圈），上层 fill（高亮，受 mask 控制只露进度部分） -->
+            <text class="neural-orb__text neural-orb__text--ghost">
+              <textPath id="orb-text-ghost" href="#orbTextPath" startOffset="0">∀x.Cog(x)→Sym(x) · ∃μ.recall(μ)∘ψ · λψ.∇(ψ⊕μ) · Ψ⊨⊢Λ · □(perceive⇒memory) · Σᵢwᵢ·xᵢ→ŷ · ⟨neural⟩⊕⟨symbol⟩⇒Cog · </textPath>
+            </text>
+            <text class="neural-orb__text neural-orb__text--fill" mask="url(#orbProgressMask)">
+              <textPath id="orb-text-fill" href="#orbTextPath" startOffset="0">∀x.Cog(x)→Sym(x) · ∃μ.recall(μ)∘ψ · λψ.∇(ψ⊕μ) · Ψ⊨⊢Λ · □(perceive⇒memory) · Σᵢwᵢ·xᵢ→ŷ · ⟨neural⟩⊕⟨symbol⟩⇒Cog · </textPath>
+            </text>
+
+            <!-- 进度前沿：单一光晕 + 内核圆点 + 呼吸放大 -->
+            <g id="orb-cursor" class="neural-orb__cursor" transform="translate(130 22)">
+              <circle class="neural-orb__cursor-glow" r="9" />
+              <circle class="neural-orb__cursor-core" r="3" />
+            </g>
+          </svg>
+
+          <div class="telemetry-ring-center">
+            <strong id="counter">0%</strong>
+          </div>
+        </div>
+
+        <div class="telemetry-progress">
+          <div class="telemetry-progress-track">
+            <div class="telemetry-progress-bar" id="progress-bar"></div>
+          </div>
+          <div class="telemetry-status">
+            <strong id="status-text">初始化运行时</strong>
+            <span id="status-note">建立桌面进程桥接与安全预加载接口。</span>
+          </div>
+        </div>
+
+        <ol class="stage-list" id="stage-list">
+          <li class="stage-item" data-threshold="10">
+            <div class="stage-index">01</div>
+            <div class="stage-copy">
+              <strong>初始化运行时</strong>
+              <span>建立桌面进程桥接与安全预加载接口</span>
+            </div>
+            <div class="stage-state">待命</div>
+          </li>
+          <li class="stage-item" data-threshold="30">
+            <div class="stage-index">02</div>
+            <div class="stage-copy">
+              <strong>恢复认知核心</strong>
+              <span>载入模型注册表、记忆系统与召回中心</span>
+            </div>
+            <div class="stage-state">待命</div>
+          </li>
+          <li class="stage-item" data-threshold="55">
+            <div class="stage-index">03</div>
+            <div class="stage-copy">
+              <strong>挂载工作区表面</strong>
+              <span>接入工作区、会话、服务商与工具链</span>
+            </div>
+            <div class="stage-state">待命</div>
+          </li>
+          <li class="stage-item" data-threshold="78">
+            <div class="stage-index">04</div>
+            <div class="stage-copy">
+              <strong>同步数字生命</strong>
+              <span>预热灵动岛、VRM 与高级能力入口</span>
+            </div>
+            <div class="stage-state">待命</div>
+          </li>
+          <li class="stage-item" data-threshold="95">
+            <div class="stage-index">05</div>
+            <div class="stage-copy">
+              <strong>进入工作区</strong>
+              <span>切换到主界面</span>
+            </div>
+            <div class="stage-state">待命</div>
+          </li>
+        </ol>
+
+        <div class="telemetry-footer">
+          <span>当前状态</span>
+          <strong id="footer-status">引导进行中</strong>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <script>
+    const stages = [
+      { title: '初始化运行时', note: '建立桌面进程桥接与安全预加载接口。', footer: '建立桌面内核' },
+      { title: '恢复认知核心', note: '载入模型注册表、记忆系统与召回中心。', footer: '恢复模型与记忆' },
+      { title: '挂载工作区表面', note: '接入工作区、会话、服务商与工具链。', footer: '链接工作区与会话' },
+      { title: '同步数字生命', note: '预热灵动岛、VRM 与高级能力入口。', footer: '同步生命表面' },
+      { title: '进入工作区', note: '准备切换到主界面，请稍候。', footer: '进入主工作区' }
+    ];
+
+    const stageItems = Array.from(document.querySelectorAll('.stage-item'));
+    const counterEl = document.getElementById('counter');
+    const progressBarEl = document.getElementById('progress-bar');
+    const ringEl = document.getElementById('telemetry-ring');
+    const orbMaskArc = document.getElementById('orb-mask-arc');
+    const orbCursor = document.getElementById('orb-cursor');
+    const orbTextGhost = document.getElementById('orb-text-ghost');
+    const orbTextFill = document.getElementById('orb-text-fill');
+    const statusTextEl = document.getElementById('status-text');
+    const statusNoteEl = document.getElementById('status-note');
+    const telemetryTitleEl = document.getElementById('telemetry-title');
+    const footerStatusEl = document.getElementById('footer-status');
+    const rootApp = document.getElementById('app');
+    const ipcRenderer = window.electron && window.electron.ipcRenderer;
+
+    // 神经符号表达式池 —— 进度满后会自动滚到下一条铺新一圈
+    const NEURAL_EXPRESSIONS = [
+      '∀x.Cog(x)→Sym(x) · ∃μ.recall(μ)∘ψ · λψ.∇(ψ⊕μ) · Ψ⊨⊢Λ · □(perceive⇒memory) · Σᵢwᵢ·xᵢ→ŷ · ⟨neural⟩⊕⟨symbol⟩⇒Cog · ',
+      '◇(symbol→embodied) · ∫Φ(t)dt→Mind · ∇L·∂θ→0 · ⊨Mind≡⟨Σ,Φ⟩ · φ∧ψ⊢φ⊕ψ · λx.infer(x)∘ground(x) · M⊨φ⇔⊢_NS·φ · ',
+      '∂Cog/∂t=ψ+reflect · τ:Tensor→Concept · argmax_θ·p(y|x;θ) · Σ⊗M⊢Ψ · ∀p∈𝓟.trust(p)⊨act · cogito⊨ergo·sum · ⟨thought⟩↦⟨action⟩ · ',
+    ];
+
+    // 圆周长（半径 108）≈ 2π·108 ≈ 678.58
+    const ORB_RADIUS = 108;
+    const ORB_CX = 130;
+    const ORB_CY = 130;
+    const ORB_CIRCUMFERENCE = 2 * Math.PI * ORB_RADIUS;
+    if (orbMaskArc) {
+      orbMaskArc.setAttribute('stroke-dasharray', String(ORB_CIRCUMFERENCE));
+      orbMaskArc.setAttribute('stroke-dashoffset', String(ORB_CIRCUMFERENCE));
+    }
+
+    function setExpressionByIndex(idx) {
+      if (!orbTextGhost || !orbTextFill) return;
+      const expr = NEURAL_EXPRESSIONS[idx % NEURAL_EXPRESSIONS.length];
+      orbTextGhost.textContent = expr;
+      orbTextFill.textContent = expr;
+    }
+    setExpressionByIndex(0);
+
+    // 左侧滚动小贴士
+    const BRAND_TIPS = [
+      '提示：在主界面按 Ctrl + K 唤起命令面板，可以直达任意菜单。',
+      '提示：自定义 OpenAI 通道与订阅中心已绑定，登录后即可解锁。',
+      '提示：每个角色卡都可以独立绑定模型 / 记忆 / TTS 配置。',
+      '提示：MCP 工具集支持任意 stdio / sse 协议工具直接挂载。',
+      '提示：暗色 / 浅色 / 霓虹 / 墨色 四套主题可在系统设置里切换。',
+      '提示：知识库支持 Markdown、PDF、代码与多语言文档自动向量化。',
+    ];
+    const brandTipEl = document.getElementById('brand-tip-text');
+    let brandTipIdx = 0;
+    if (brandTipEl) {
+      window.setInterval(function () {
+        brandTipEl.classList.add('fade');
+        window.setTimeout(function () {
+          brandTipIdx = (brandTipIdx + 1) % BRAND_TIPS.length;
+          brandTipEl.textContent = BRAND_TIPS[brandTipIdx];
+          brandTipEl.classList.remove('fade');
+        }, 280);
+      }, 4200);
+    }
+
+    function moveCursorByProgress(percent) {
+      if (!orbCursor) return;
+      // 顶部为 0%，顺时针前进；角度从 -90° 起算
+      const theta = (Math.max(0, Math.min(100, percent)) / 100) * 2 * Math.PI - Math.PI / 2;
+      const cx = ORB_CX + ORB_RADIUS * Math.cos(theta);
+      const cy = ORB_CY + ORB_RADIUS * Math.sin(theta);
+      orbCursor.setAttribute('transform', 'translate(' + cx.toFixed(2) + ' ' + cy.toFixed(2) + ')');
+    }
+    moveCursorByProgress(0);
+
+    let currentNum = 0;
+    let targetNum = 0;
+    let currentPhase = 0;
+    let handoffStarted = false;
+
+    function setPhase(index) {
+      var phase = stages[Math.min(index, stages.length - 1)];
+      currentPhase = index;
+      statusTextEl.textContent = phase.title;
+      statusNoteEl.textContent = phase.note;
+      telemetryTitleEl.textContent = phase.title;
+      footerStatusEl.textContent = phase.footer.toUpperCase();
+    }
+
+    function updateStageState(progress) {
+      stageItems.forEach(function(item, index) {
+        var threshold = Number(item.dataset.threshold || 0);
+        var nextThreshold = index < stageItems.length - 1
+          ? Number(stageItems[index + 1].dataset.threshold || 100)
+          : 101;
+        var stateEl = item.querySelector('.stage-state');
+        item.classList.remove('is-active', 'is-done');
+
+        if (progress >= nextThreshold) {
+          item.classList.add('is-done');
+          stateEl.textContent = '完成';
+        } else if (progress >= threshold) {
+          item.classList.add('is-active');
+          stateEl.textContent = '进行中';
+        } else {
+          stateEl.textContent = '待命';
+        }
+      });
+    }
+
+    var lastExprIdx = 0;
+
+    function applyProgress(progress) {
+      var safe = Math.max(0, Math.min(100, progress));
+      counterEl.textContent = safe + '%';
+      progressBarEl.style.width = safe + '%';
+      ringEl.style.setProperty('--progress-angle', Math.round(safe * 3.6) + 'deg');
+
+      // 神经符号表达式沿圆铺一圈，mask 控制可见弧长（stroke-dashoffset 从 周长 → 0）
+      if (orbMaskArc) {
+        var offset = ORB_CIRCUMFERENCE * (1 - safe / 100);
+        orbMaskArc.setAttribute('stroke-dashoffset', String(offset));
+      }
+      moveCursorByProgress(safe);
+
+      // 每跨过一档（25/50/75）换一条新表达式，让玩家感知到"又铺了一圈"
+      var seg = Math.floor(safe / 25);
+      if (seg !== lastExprIdx) {
+        lastExprIdx = seg;
+        setExpressionByIndex(seg);
+      }
+
+      updateStageState(safe);
+
+      var derivedPhase = Math.min(stages.length - 1, Math.floor(safe / 22));
+      if (derivedPhase !== currentPhase) {
+        setPhase(derivedPhase);
+      }
+    }
+
+    function renderLoop() {
+      if (currentNum < targetNum) {
+        var step = Math.max(1, Math.ceil((targetNum - currentNum) * 0.08));
+        currentNum = Math.min(targetNum, currentNum + step);
+        applyProgress(currentNum);
+      }
+      requestAnimationFrame(renderLoop);
+    }
+
+    setPhase(0);
+    applyProgress(0);
+    renderLoop();
+
+    function handoffToWorkspace() {
+      if (handoffStarted) return;
+      handoffStarted = true;
+      Promise.resolve(window.electron && window.electron.openMainApp && window.electron.openMainApp())
+        .then(function(opened) {
+          if (opened !== false) {
+            rootApp.classList.add('fade-out');
+          } else {
+            handoffStarted = false;
+          }
+        })
+        .catch(function(error) {
+          handoffStarted = false;
+          console.error('Failed to open main workspace:', error);
+        });
+    }
+
+    var simulateInterval = setInterval(function() {
+      if (targetNum >= 91) {
+        return;
+      }
+      var boost = Math.floor(Math.random() * 5) + 2;
+      targetNum = Math.min(91, targetNum + boost);
+    }, 300);
+
+    if (ipcRenderer) {
+      ipcRenderer.on('backend-ready', function() {
+        clearInterval(simulateInterval);
+        targetNum = 100;
+        setPhase(stages.length - 1);
+      });
+    }
+
+    var checkDone = setInterval(function() {
+      if (currentNum >= 100) {
+        clearInterval(checkDone);
+        setTimeout(function() {
+          handoffToWorkspace();
+        }, 300);
+      }
+    }, 100);
+  </script>
+</body>
+</html>

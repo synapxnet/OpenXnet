@@ -1,0 +1,615 @@
+body.openxnet-ui-redesign-body {
+  --ox-vite-shell-bg: var(--ox-bg-base, #f8fafc);
+  --ox-vite-surface: var(--ox-bg-surface, #ffffff);
+  --ox-vite-surface-subtle: var(--ox-bg-surface-hover, #f1f3f9);
+  --ox-vite-input-bg: var(--ox-bg-input, #f4f5f9);
+  --ox-vite-input-bg-hover: var(--ox-bg-input-hover, #eceef5);
+  --ox-vite-border: var(--ox-border, rgba(15, 23, 42, 0.08));
+  --ox-vite-border-strong: var(--ox-border-hover, rgba(15, 23, 42, 0.14));
+  --ox-vite-text-primary: var(--ox-text-primary, #1e293b);
+  --ox-vite-text-secondary: var(--ox-text-secondary, #64748b);
+  --ox-vite-text-muted: var(--ox-text-muted, #94a3b8);
+  --ox-vite-accent-soft: var(--ox-accent-soft, rgba(91, 163, 197, 0.08));
+  --ox-vite-shadow-card: var(--ox-shadow-xs, 0 1px 1px rgba(15, 23, 42, 0.03));
+  --ox-vite-shadow-panel: var(--ox-shadow-sm, 0 1px 2px rgba(15, 23, 42, 0.04));
+}
+
+body.openxnet-ui-redesign-body .ox-vite-browser-shell {
+  background: var(--ox-vite-shell-bg) !important;
+  color: var(--ox-vite-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-ops-shell {
+  background: var(--ox-vite-shell-bg) !important;
+  color: var(--ox-vite-text-primary) !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .page.ox-vite-browser-page,
+html[data-theme="light"] body.openxnet-ui-redesign-body .page.ox-vite-ops-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .page.ox-vite-browser-page {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .page.ox-vite-ops-page {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-browser-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-browser-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-ops-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-ops-page {
+  padding: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  overflow-x: hidden !important;
+}
+
+/* AI 浏览器：把标签条 + 地址栏 + Vue 挂载点垂直堆叠在内容区里 */
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-browser-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-browser-page {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .page.ox-vite-browser-page > .ox-vite-browser-root-host,
+.openxnet-redesign-app .page.ox-vite-browser-page > .ox-vite-browser-root-host {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* 标签条容器：Chrome 风、灰底，仅在内容区内部 */
+.page.ox-vite-browser-page > .integrated-browser-bar.ox-ai-browser-tabs-bar {
+  height: 36px;
+  flex-shrink: 0;
+  background: var(--ox-bg-sidebar, #F0F2F7);
+  padding: 0 8px;
+  margin: 0 !important;
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 0;
+}
+
+/* 地址栏行：白底，紧贴标签条下方，无左边偏移（已经在内容区里了） */
+.page.ox-vite-browser-page > .ai-browser-address-row {
+  padding: 0 12px;
+  border-bottom: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+}
+
+body.openxnet-ui-redesign-body .ox-vite-browser-shell *,
+.openxnet-redesign-app .ox-vite-browser-shell *,
+body.openxnet-ui-redesign-body .ox-vite-ops-shell *,
+.openxnet-redesign-app .ox-vite-ops-shell * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ox-scrollbar-thumb, color-mix(in srgb, var(--ox-vite-text-muted) 65%, transparent)) transparent;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-browser-shell *::-webkit-scrollbar,
+.openxnet-redesign-app .ox-vite-browser-shell *::-webkit-scrollbar,
+body.openxnet-ui-redesign-body .ox-vite-ops-shell *::-webkit-scrollbar,
+.openxnet-redesign-app .ox-vite-ops-shell *::-webkit-scrollbar {
+  width: var(--ox-scrollbar-size, 10px);
+  height: var(--ox-scrollbar-size, 10px);
+}
+
+body.openxnet-ui-redesign-body .ox-vite-browser-shell *::-webkit-scrollbar-track,
+.openxnet-redesign-app .ox-vite-browser-shell *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body .ox-vite-ops-shell *::-webkit-scrollbar-track,
+.openxnet-redesign-app .ox-vite-ops-shell *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-browser-shell *::-webkit-scrollbar-thumb,
+.openxnet-redesign-app .ox-vite-browser-shell *::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .ox-vite-ops-shell *::-webkit-scrollbar-thumb,
+.openxnet-redesign-app .ox-vite-ops-shell *::-webkit-scrollbar-thumb {
+  border: var(--ox-scrollbar-inset, 2px) solid transparent;
+  border-radius: var(--ox-scrollbar-radius, 999px);
+  background: var(--ox-scrollbar-thumb, color-mix(in srgb, var(--ox-vite-text-muted) 48%, transparent));
+  background-clip: padding-box;
+  min-height: 36px;
+  min-width: 36px;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-browser-shell *::-webkit-scrollbar-thumb:hover,
+.openxnet-redesign-app .ox-vite-browser-shell *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body .ox-vite-ops-shell *::-webkit-scrollbar-thumb:hover,
+.openxnet-redesign-app .ox-vite-ops-shell *::-webkit-scrollbar-thumb:hover {
+  background: var(--ox-scrollbar-thumb-hover, color-mix(in srgb, var(--ox-vite-text-secondary) 60%, transparent));
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-shell,
+body.openxnet-ui-redesign-body .ox-vite-role-shell,
+body.openxnet-ui-redesign-body .ox-vite-model-shell,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell {
+  background: var(--ox-vite-shell-bg) !important;
+  color: var(--ox-vite-text-primary) !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .page.ox-vite-chat-page,
+html[data-theme="light"] body.openxnet-ui-redesign-body .page.ox-vite-role-page,
+html[data-theme="light"] body.openxnet-ui-redesign-body .page.ox-vite-model-page,
+html[data-theme="light"] body.openxnet-ui-redesign-body .page.ox-vite-toolkit-page,
+html[data-theme="light"] body.openxnet-ui-redesign-body .page.ox-vite-skills-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .page.ox-vite-chat-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .page.ox-vite-role-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .page.ox-vite-model-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .page.ox-vite-toolkit-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .page.ox-vite-skills-page {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-chat-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-role-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-model-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-toolkit-page,
+body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-skills-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-chat-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-role-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-model-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-toolkit-page,
+.openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-skills-page {
+  padding: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  overflow-x: hidden !important;
+}
+
+html[data-theme="light"] body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-chat-page,
+html[data-theme="light"] body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-role-page,
+html[data-theme="light"] body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-model-page,
+html[data-theme="light"] body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-toolkit-page,
+html[data-theme="light"] body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-skills-page,
+html[data-theme="light"] .openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-chat-page,
+html[data-theme="light"] .openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-role-page,
+html[data-theme="light"] .openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-model-page,
+html[data-theme="light"] .openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-toolkit-page,
+html[data-theme="light"] .openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-skills-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-chat-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-role-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-model-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-toolkit-page,
+html:not([data-theme="light"]) body.openxnet-ui-redesign-body .content.ox-content-surface > .page.ox-vite-skills-page,
+html:not([data-theme="light"]) .openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-chat-page,
+html:not([data-theme="light"]) .openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-role-page,
+html:not([data-theme="light"]) .openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-model-page,
+html:not([data-theme="light"]) .openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-toolkit-page,
+html:not([data-theme="light"]) .openxnet-redesign-app .content.ox-content-surface > .page.ox-vite-skills-page {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-shell *,
+ .openxnet-redesign-app .ox-vite-chat-shell *,
+body.openxnet-ui-redesign-body .ox-vite-role-shell *,
+ .openxnet-redesign-app .ox-vite-role-shell *,
+body.openxnet-ui-redesign-body .ox-vite-model-shell *,
+ .openxnet-redesign-app .ox-vite-model-shell *,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell *,
+ .openxnet-redesign-app .ox-vite-toolkit-shell *,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ox-scrollbar-thumb, color-mix(in srgb, var(--ox-vite-text-muted) 65%, transparent)) transparent;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-shell *::-webkit-scrollbar,
+ .openxnet-redesign-app .ox-vite-chat-shell *::-webkit-scrollbar,
+body.openxnet-ui-redesign-body .ox-vite-role-shell *::-webkit-scrollbar,
+ .openxnet-redesign-app .ox-vite-role-shell *::-webkit-scrollbar,
+body.openxnet-ui-redesign-body .ox-vite-model-shell *::-webkit-scrollbar,
+ .openxnet-redesign-app .ox-vite-model-shell *::-webkit-scrollbar,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell *::-webkit-scrollbar,
+ .openxnet-redesign-app .ox-vite-toolkit-shell *::-webkit-scrollbar,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell *::-webkit-scrollbar {
+  width: var(--ox-scrollbar-size, 10px);
+  height: var(--ox-scrollbar-size, 10px);
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-shell *::-webkit-scrollbar-track,
+ .openxnet-redesign-app .ox-vite-chat-shell *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body .ox-vite-role-shell *::-webkit-scrollbar-track,
+ .openxnet-redesign-app .ox-vite-role-shell *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body .ox-vite-model-shell *::-webkit-scrollbar-track,
+ .openxnet-redesign-app .ox-vite-model-shell *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell *::-webkit-scrollbar-track,
+ .openxnet-redesign-app .ox-vite-toolkit-shell *::-webkit-scrollbar-track,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-shell *::-webkit-scrollbar-thumb,
+ .openxnet-redesign-app .ox-vite-chat-shell *::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .ox-vite-role-shell *::-webkit-scrollbar-thumb,
+ .openxnet-redesign-app .ox-vite-role-shell *::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .ox-vite-model-shell *::-webkit-scrollbar-thumb,
+ .openxnet-redesign-app .ox-vite-model-shell *::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell *::-webkit-scrollbar-thumb,
+ .openxnet-redesign-app .ox-vite-toolkit-shell *::-webkit-scrollbar-thumb,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell *::-webkit-scrollbar-thumb {
+  border: var(--ox-scrollbar-inset, 2px) solid transparent;
+  border-radius: var(--ox-scrollbar-radius, 999px);
+  background: var(--ox-scrollbar-thumb, color-mix(in srgb, var(--ox-vite-text-muted) 48%, transparent));
+  background-clip: padding-box;
+  min-height: 36px;
+  min-width: 36px;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-shell *::-webkit-scrollbar-thumb:hover,
+ .openxnet-redesign-app .ox-vite-chat-shell *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body .ox-vite-role-shell *::-webkit-scrollbar-thumb:hover,
+ .openxnet-redesign-app .ox-vite-role-shell *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body .ox-vite-model-shell *::-webkit-scrollbar-thumb:hover,
+ .openxnet-redesign-app .ox-vite-model-shell *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell *::-webkit-scrollbar-thumb:hover,
+ .openxnet-redesign-app .ox-vite-toolkit-shell *::-webkit-scrollbar-thumb:hover,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell *::-webkit-scrollbar-thumb:hover {
+  background: var(--ox-scrollbar-thumb-hover, color-mix(in srgb, var(--ox-vite-text-secondary) 60%, transparent));
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-message__bubble--assistant,
+body.openxnet-ui-redesign-body .ox-vite-chat-composer__surface,
+body.openxnet-ui-redesign-body .ox-vite-chat-header,
+body.openxnet-ui-redesign-body .ox-vite-role-sidebar,
+body.openxnet-ui-redesign-body .ox-vite-role-editor,
+body.openxnet-ui-redesign-body .ox-vite-role-panel,
+body.openxnet-ui-redesign-body .ox-vite-role-content--memory,
+body.openxnet-ui-redesign-body .ox-vite-role-card,
+body.openxnet-ui-redesign-body .ox-vite-role-provider-card,
+body.openxnet-ui-redesign-body .ox-vite-role-avatar-card,
+body.openxnet-ui-redesign-body .ox-vite-role-vrm-upload,
+body.openxnet-ui-redesign-body .ox-vite-role-behavior-card,
+body.openxnet-ui-redesign-body .ox-vite-role-switch,
+body.openxnet-ui-redesign-body .ox-vite-role-table-wrap,
+body.openxnet-ui-redesign-body .ox-vite-model-shell,
+body.openxnet-ui-redesign-body .ox-vite-model-header,
+body.openxnet-ui-redesign-body .ox-vite-model-provider-card,
+body.openxnet-ui-redesign-body .ox-vite-model-detail-card,
+body.openxnet-ui-redesign-body .ox-vite-model-slot-panel,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-main,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-card,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-preview,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-detail,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-nav,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell,
+body.openxnet-ui-redesign-body .ox-vite-skills-card,
+body.openxnet-ui-redesign-body .ox-vite-skills-preview,
+body.openxnet-ui-redesign-body .ox-vite-skills-transform-card,
+body.openxnet-ui-redesign-body .ox-vite-skills-crystal-main,
+body.openxnet-ui-redesign-body .ox-vite-skills-crystal-preview {
+  box-shadow: var(--ox-vite-shadow-card) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-card,
+body.openxnet-ui-redesign-body .ox-vite-model-provider-card,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-card,
+body.openxnet-ui-redesign-body .ox-vite-skills-card {
+  background: var(--ox-vite-surface) !important;
+  border-color: var(--ox-vite-border) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-editor,
+body.openxnet-ui-redesign-body .ox-vite-model-detail-card,
+body.openxnet-ui-redesign-body .ox-vite-model-slot-panel,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-detail,
+body.openxnet-ui-redesign-body .ox-vite-skills-preview,
+body.openxnet-ui-redesign-body .ox-vite-skills-crystal-main,
+body.openxnet-ui-redesign-body .ox-vite-skills-crystal-preview {
+  background: var(--ox-vite-surface) !important;
+  border-color: var(--ox-vite-border) !important;
+  box-shadow: var(--ox-vite-shadow-panel) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-toolkit-nav,
+body.openxnet-ui-redesign-body .ox-vite-model-provider-card,
+body.openxnet-ui-redesign-body .ox-vite-model-detail-card,
+body.openxnet-ui-redesign-body .ox-vite-model-slot-panel,
+body.openxnet-ui-redesign-body .ox-vite-skills-transform-card {
+  background: var(--ox-vite-surface) !important;
+  border-color: var(--ox-vite-border) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-header,
+body.openxnet-ui-redesign-body .ox-vite-chat-composer__surface,
+body.openxnet-ui-redesign-body .ox-vite-chat-message__bubble--assistant,
+body.openxnet-ui-redesign-body .ox-vite-role-content--memory,
+body.openxnet-ui-redesign-body .ox-vite-model-shell,
+body.openxnet-ui-redesign-body .ox-vite-model-header,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-main,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell {
+  background: var(--ox-vite-shell-bg) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-message__bubble--user {
+  color: var(--ox-vite-text-primary) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ox-vite-border) 100%, transparent) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-search input,
+body.openxnet-ui-redesign-body .ox-vite-skills-field input,
+body.openxnet-ui-redesign-body .ox-vite-skills-field select,
+body.openxnet-ui-redesign-body .ox-vite-skills-field textarea,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-field input,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-field select,
+body.openxnet-ui-redesign-body .ox-vite-model-field input,
+body.openxnet-ui-redesign-body .ox-vite-model-field select,
+body.openxnet-ui-redesign-body .ox-vite-role-search input,
+body.openxnet-ui-redesign-body .ox-vite-role-field input,
+body.openxnet-ui-redesign-body .ox-vite-role-field select,
+body.openxnet-ui-redesign-body .ox-vite-role-field textarea {
+  background: var(--ox-vite-input-bg) !important;
+  color: var(--ox-vite-text-primary) !important;
+  border-color: var(--ox-vite-border) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-form {
+  width: min(100%, 960px) !important;
+  max-width: 960px !important;
+  margin-inline: auto !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-field--name {
+  grid-column: 1 / -1 !important;
+  width: min(100%, 540px) !important;
+  justify-self: center !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-field--name > span {
+  text-align: center !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-tab,
+body.openxnet-ui-redesign-body .ox-vite-skills-filter-pill,
+body.openxnet-ui-redesign-body .ox-vite-skills-secondary-btn,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-nav-item,
+body.openxnet-ui-redesign-body .ox-vite-model-tab,
+body.openxnet-ui-redesign-body .ox-vite-model-secondary-btn,
+body.openxnet-ui-redesign-body .ox-vite-role-secondary-btn {
+  background: var(--ox-vite-surface) !important;
+  color: var(--ox-vite-text-secondary) !important;
+  border-color: var(--ox-vite-border) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-tab.active,
+body.openxnet-ui-redesign-body .ox-vite-skills-filter-pill.active,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-nav-item.active,
+body.openxnet-ui-redesign-body .ox-vite-model-tab.active {
+  background: var(--ox-vite-accent-soft) !important;
+  color: var(--ox-vite-text-primary) !important;
+  border-color: var(--ox-border-accent, rgba(91, 163, 197, 0.18)) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-chip,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-chip,
+body.openxnet-ui-redesign-body .ox-vite-role-tag,
+body.openxnet-ui-redesign-body .ox-vite-role-chip,
+body.openxnet-ui-redesign-body .ox-vite-model-chip {
+  background: var(--ox-vite-accent-soft) !important;
+  color: var(--ox-vite-text-secondary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-header,
+body.openxnet-ui-redesign-body .ox-vite-chat-header__title,
+body.openxnet-ui-redesign-body .ox-vite-chat-header__badge,
+body.openxnet-ui-redesign-body .ox-vite-chat-message__time,
+body.openxnet-ui-redesign-body .ox-vite-chat-composer__count,
+body.openxnet-ui-redesign-body .ox-vite-role-shell h1,
+body.openxnet-ui-redesign-body .ox-vite-role-shell h2,
+body.openxnet-ui-redesign-body .ox-vite-role-shell h3,
+body.openxnet-ui-redesign-body .ox-vite-role-shell p,
+body.openxnet-ui-redesign-body .ox-vite-role-shell small,
+body.openxnet-ui-redesign-body .ox-vite-role-shell span,
+body.openxnet-ui-redesign-body .ox-vite-model-shell h1,
+body.openxnet-ui-redesign-body .ox-vite-model-shell h2,
+body.openxnet-ui-redesign-body .ox-vite-model-shell h3,
+body.openxnet-ui-redesign-body .ox-vite-model-shell p,
+body.openxnet-ui-redesign-body .ox-vite-model-shell small,
+body.openxnet-ui-redesign-body .ox-vite-model-shell span,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell h1,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell h2,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell h3,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell p,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell small,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell strong,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell span,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell h1,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell h2,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell h3,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell p,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell small,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell strong,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell span {
+  color: inherit;
+}
+
+/* Chat composer: keep the input text area fully visible above the toolbar. */
+body.openxnet-ui-redesign-body .oxc-input-card,
+.openxnet-redesign-app .oxc-input-card {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  padding: 10px 10px 8px !important;
+}
+
+body.openxnet-ui-redesign-body .oxc-input-card__textarea,
+.openxnet-redesign-app .oxc-input-card__textarea {
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 168px !important;
+  padding: 12px 14px !important;
+  line-height: 1.45 !important;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+body.openxnet-ui-redesign-body .oxc-input-toolbar,
+.openxnet-redesign-app .oxc-input-toolbar {
+  min-height: 42px !important;
+  flex: 0 0 auto !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* Role management native layout: avoid the legacy stacked-card feel. */
+body.openxnet-ui-redesign-body .ox-vite-role-content--memory,
+body.openxnet-ui-redesign-body .ox-vite-role-sidebar,
+body.openxnet-ui-redesign-body .ox-vite-role-editor,
+body.openxnet-ui-redesign-body .ox-vite-role-card,
+body.openxnet-ui-redesign-body .ox-vite-role-avatar-panel,
+.openxnet-redesign-app .ox-vite-role-content--memory,
+.openxnet-redesign-app .ox-vite-role-sidebar,
+.openxnet-redesign-app .ox-vite-role-editor,
+.openxnet-redesign-app .ox-vite-role-card,
+.openxnet-redesign-app .ox-vite-role-avatar-panel {
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-editor,
+.openxnet-redesign-app .ox-vite-role-editor {
+  border: 0 !important;
+  background: var(--ox-vite-shell-bg, var(--ox-bg-surface)) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-card,
+.openxnet-redesign-app .ox-vite-role-card {
+  background: transparent !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-card.active,
+.openxnet-redesign-app .ox-vite-role-card.active {
+  background: var(--ox-vite-accent-soft, rgba(91, 163, 197, 0.08)) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-sidebar__header,
+.openxnet-redesign-app .ox-vite-role-sidebar__header {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-search,
+.openxnet-redesign-app .ox-vite-role-search {
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-list,
+.openxnet-redesign-app .ox-vite-role-list {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-editor__header,
+body.openxnet-ui-redesign-body .ox-vite-role-editor__lead,
+.openxnet-redesign-app .ox-vite-role-editor__header,
+.openxnet-redesign-app .ox-vite-role-editor__lead {
+  width: min(100%, 1120px) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-editor__lead,
+.openxnet-redesign-app .ox-vite-role-editor__lead {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-avatar-panel,
+.openxnet-redesign-app .ox-vite-role-avatar-panel,
+body.openxnet-ui-redesign-body .ox-vite-role-avatar-panel__copy,
+.openxnet-redesign-app .ox-vite-role-avatar-panel__copy,
+body.openxnet-ui-redesign-body .ox-vite-role-avatar-upload,
+.openxnet-redesign-app .ox-vite-role-avatar-upload {
+  align-items: center !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-tags,
+.openxnet-redesign-app .ox-vite-role-tags {
+  justify-content: center !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-role-shell p,
+body.openxnet-ui-redesign-body .ox-vite-role-shell small,
+body.openxnet-ui-redesign-body .ox-vite-role-shell .ox-vite-role-card__meta,
+body.openxnet-ui-redesign-body .ox-vite-role-shell .ox-vite-role-card__desc,
+body.openxnet-ui-redesign-body .ox-vite-model-shell p,
+body.openxnet-ui-redesign-body .ox-vite-model-shell small,
+body.openxnet-ui-redesign-body .ox-vite-model-shell .ox-vite-model-provider-card__name,
+body.openxnet-ui-redesign-body .ox-vite-model-shell .ox-vite-model-provider-card__summary,
+body.openxnet-ui-redesign-body .ox-vite-model-shell .ox-vite-model-provider-card__status,
+body.openxnet-ui-redesign-body .ox-vite-model-shell .ox-vite-model-slot-status,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell p,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell small,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell .ox-vite-toolkit-card__desc,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell .ox-vite-toolkit-card__state,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell .ox-vite-toolkit-preview__stats span,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell .ox-vite-toolkit-preview__stats small,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell p,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell small,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell .ox-vite-skills-card__alias,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell .ox-vite-skills-card__desc,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell .ox-vite-skills-card__status,
+body.openxnet-ui-redesign-body .ox-vite-chat-message__time,
+body.openxnet-ui-redesign-body .ox-vite-chat-composer__count {
+  color: var(--ox-vite-text-secondary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-header__title,
+body.openxnet-ui-redesign-body .ox-vite-role-shell h1,
+body.openxnet-ui-redesign-body .ox-vite-role-shell h2,
+body.openxnet-ui-redesign-body .ox-vite-role-shell h3,
+body.openxnet-ui-redesign-body .ox-vite-model-shell h1,
+body.openxnet-ui-redesign-body .ox-vite-model-shell h2,
+body.openxnet-ui-redesign-body .ox-vite-model-shell h3,
+body.openxnet-ui-redesign-body .ox-vite-model-shell .ox-vite-model-provider-card__name,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell h1,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell h2,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell h3,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell h1,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell h2,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell h3 {
+  color: var(--ox-vite-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-preview__content,
+body.openxnet-ui-redesign-body .ox-vite-skills-preview__empty,
+body.openxnet-ui-redesign-body .ox-vite-skills-crystal-preview__content,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-preview__stats div,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-stat-card,
+body.openxnet-ui-redesign-body .ox-vite-model-validation,
+body.openxnet-ui-redesign-body .ox-vite-model-switch,
+body.openxnet-ui-redesign-body .ox-vite-model-slot-status,
+body.openxnet-ui-redesign-body .ox-vite-role-switch,
+body.openxnet-ui-redesign-body .ox-vite-role-inline-stats > div,
+body.openxnet-ui-redesign-body .ox-vite-role-demo-badge,
+body.openxnet-ui-redesign-body .ox-vite-role-vrm-upload,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-note {
+  background: var(--ox-vite-surface-subtle) !important;
+  border-color: var(--ox-vite-border) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-chat-shell .markdown-body pre,
+body.openxnet-ui-redesign-body .ox-vite-role-shell pre,
+body.openxnet-ui-redesign-body .ox-vite-model-shell pre,
+body.openxnet-ui-redesign-body .ox-vite-toolkit-shell pre,
+body.openxnet-ui-redesign-body .ox-vite-skills-shell pre {
+  scrollbar-width: thin;
+}

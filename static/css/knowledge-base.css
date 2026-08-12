@@ -1,0 +1,960 @@
+/* =========================================================
+   knowledge-base.css
+   ---------------------------------------------------------
+   独立"知识库"页样式，与 kernel-prototype.css 保持视觉
+   一致：pill tabs + metric 卡 + 表格/列表。前缀
+   body.openxnet-ui-redesign-body 提升优先级。
+   ========================================================= */
+
+body.openxnet-ui-redesign-body .ox-kb-page {
+  background: var(--ox-bg-base, #f3f5f9) !important;
+  padding: 24px 28px !important;
+  overflow-y: auto !important;
+}
+
+body.openxnet-ui-redesign-body .ox-kb {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+body.openxnet-ui-redesign-body .ox-kb__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+  line-height: 1.2;
+}
+
+body.openxnet-ui-redesign-body .ox-kb__subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ox-text-muted, #64748b);
+  line-height: 1.5;
+  max-width: 720px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb__header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Tabs */
+body.openxnet-ui-redesign-body .ox-kb__tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  align-self: flex-start;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ox-text-secondary, #475569);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-tab i {
+  font-size: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-tab:hover {
+  background: var(--ox-bg-surface-hover, #f1f3f9);
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-tab.active {
+  background: var(--ox-accent, #5BA3C5);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(91, 163, 197, 0.28);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ════ Overview metrics ════ */
+body.openxnet-ui-redesign-body .ox-kb-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-metric {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-metric__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: rgba(91, 163, 197, 0.12);
+  color: var(--ox-accent, #5BA3C5);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-metric__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-metric__label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ox-text-muted, #64748b);
+  text-transform: uppercase;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-metric__value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+  line-height: 1.1;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-metric__note {
+  font-size: 11px;
+  color: var(--ox-text-muted, #94a3b8);
+  margin-top: 2px;
+}
+
+/* ════ Built-in KB highlight ════ */
+body.openxnet-ui-redesign-body .ox-kb-builtin-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px;
+  border-radius: 18px;
+  border: 1px solid rgba(91, 163, 197, 0.32);
+  background:
+    radial-gradient(circle at top right, rgba(91, 163, 197, 0.12), transparent 60%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.92));
+  box-shadow: 0 12px 28px rgba(91, 163, 197, 0.08);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-builtin-card__head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-builtin-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(91, 163, 197, 0.16);
+  color: var(--ox-accent, #5BA3C5);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-builtin-card__head h3 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-builtin-card__head p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ox-text-secondary, #475569);
+  max-width: 920px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-builtin-card__meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-builtin-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-builtin-meta-item span {
+  font-size: 11px;
+  color: var(--ox-text-muted, #64748b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-builtin-meta-item strong {
+  font-size: 14px;
+  color: var(--ox-text-primary, #0f172a);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-builtin-card__cta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ════ Recent activity log ════ */
+body.openxnet-ui-redesign-body .ox-kb-events {
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+}
+
+body.openxnet-ui-redesign-body .ox-kb-events__head h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-events__log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-events__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(241, 245, 249, 0.5);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-events__time {
+  color: var(--ox-text-muted, #94a3b8);
+  flex-shrink: 0;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-events__badge {
+  display: inline-block;
+  min-width: 50px;
+  text-align: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+body.openxnet-ui-redesign-body .ox-kb-events__badge--info { background: rgba(91, 163, 197, 0.16); color: #2563eb; }
+body.openxnet-ui-redesign-body .ox-kb-events__badge--debug { background: rgba(148, 163, 184, 0.16); color: #64748b; }
+body.openxnet-ui-redesign-body .ox-kb-events__badge--warn { background: rgba(245, 158, 11, 0.16); color: #d97706; }
+
+body.openxnet-ui-redesign-body .ox-kb-events__text {
+  color: var(--ox-text-secondary, #475569);
+}
+
+/* ════ List ════ */
+body.openxnet-ui-redesign-body .ox-kb-list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-list-toolbar__count {
+  font-size: 12px;
+  color: var(--ox-text-muted, #94a3b8);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.04);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card:hover {
+  border-color: rgba(91, 163, 197, 0.4);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card.is-builtin {
+  border-color: rgba(91, 163, 197, 0.32);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(219, 234, 254, 0.42));
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card.is-disabled {
+  opacity: 0.7;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(91, 163, 197, 0.12);
+  color: var(--ox-accent, #5BA3C5);
+  font-size: 15px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card__icon.is-builtin {
+  background: linear-gradient(135deg, #5BA3C5, #7BB8D4);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(91, 163, 197, 0.28);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card__status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card__status--builtin { background: rgba(91, 163, 197, 0.16); color: #2563eb; }
+body.openxnet-ui-redesign-body .ox-kb-card__status--active { background: rgba(34, 197, 94, 0.14); color: #16a34a; }
+body.openxnet-ui-redesign-body .ox-kb-card__status--processing { background: rgba(245, 158, 11, 0.16); color: #d97706; }
+body.openxnet-ui-redesign-body .ox-kb-card__status--error { background: rgba(239, 68, 68, 0.14); color: #dc2626; }
+body.openxnet-ui-redesign-body .ox-kb-card__status--disabled { background: rgba(148, 163, 184, 0.18); color: #64748b; }
+
+body.openxnet-ui-redesign-body .ox-kb-card__name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card__intro {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ox-text-secondary, #475569);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 54px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--ox-text-muted, #64748b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card__meta i {
+  margin-right: 4px;
+  color: var(--ox-accent, #5BA3C5);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card--add {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 2px dashed rgba(91, 163, 197, 0.3);
+  background: rgba(91, 163, 197, 0.04);
+  cursor: pointer;
+  color: var(--ox-accent, #5BA3C5);
+  font-weight: 600;
+  min-height: 220px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card--add i {
+  font-size: 26px;
+  margin-bottom: 6px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-card--add:hover {
+  background: rgba(91, 163, 197, 0.08);
+  border-color: rgba(91, 163, 197, 0.5);
+  transform: translateY(-2px);
+}
+
+/* ════ Search ════ */
+body.openxnet-ui-redesign-body .ox-kb-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 36px;
+  border-radius: 14px;
+  background: rgba(241, 245, 249, 0.6);
+  color: var(--ox-text-muted, #94a3b8);
+  font-size: 13px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-empty i {
+  color: var(--ox-accent, #5BA3C5);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-error {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  color: #dc2626;
+  font-size: 13px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  transition: border-color 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-result:hover {
+  border-color: rgba(91, 163, 197, 0.4);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-result__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-result__rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--ox-accent, #5BA3C5);
+  color: #fff;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-result__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-result__similarity {
+  margin-left: auto;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14);
+  color: #16a34a;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-result__summary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ox-text-secondary, #475569);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-result__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--ox-text-muted, #64748b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-search-result__meta i {
+  margin-right: 4px;
+  color: var(--ox-accent, #5BA3C5);
+}
+
+/* ════ Settings ════ */
+body.openxnet-ui-redesign-body .ox-kb-settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-settings-card__head h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-settings-card__head p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ox-text-muted, #64748b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-settings-card__head--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-settings-card__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22);
+  font-size: 13px;
+  color: var(--ox-text-secondary, #475569);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-radio-row {
+  display: inline-flex;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail,
+body.openxnet-ui-redesign-body .ox-kb-add {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--ox-bg-surface-hover, #f7f8fb);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.06));
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__summary-item span,
+body.openxnet-ui-redesign-body .ox-kb-detail__files-head h3 {
+  color: var(--ox-text-muted, #64748b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__summary-item span {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__summary-item strong {
+  color: var(--ox-text-primary, #1e293b);
+  font-size: 13px;
+  word-break: break-word;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__desc {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(91, 163, 197, 0.06);
+  border: 1px solid rgba(91, 163, 197, 0.12);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ox-text-secondary, #475569);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__files {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__files-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__files-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ox-text-primary, #1e293b);
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__file-item {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--ox-bg-surface, #fff);
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08));
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__file-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-detail__mono {
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--ox-text-muted, #94a3b8);
+  word-break: break-all;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-weight-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+/* ────── Responsive ────── */
+@media (max-width: 1024px) {
+  body.openxnet-ui-redesign-body .ox-kb-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  body.openxnet-ui-redesign-body .ox-kb-builtin-card__meta {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  body.openxnet-ui-redesign-body .ox-kb-card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  body.openxnet-ui-redesign-body .ox-kb-metrics,
+  body.openxnet-ui-redesign-body .ox-kb-builtin-card__meta,
+  body.openxnet-ui-redesign-body .ox-kb-card-grid {
+    grid-template-columns: 1fr;
+  }
+  body.openxnet-ui-redesign-body .ox-kb-detail__summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ────── Dark theme ────── */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-page,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-page,
+html[data-theme="neon"] body.openxnet-ui-redesign-body .ox-kb-page,
+html[data-theme="ink"] body.openxnet-ui-redesign-body .ox-kb-page {
+  background: #0f172a !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb__title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb__title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-metric__value,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-metric__value,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-card__name,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-card__name,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-builtin-card__head h3,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-builtin-card__head h3,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-search-result__title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-search-result__title,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-settings-card__head h3,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-settings-card__head h3,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-builtin-meta-item strong,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-builtin-meta-item strong {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-metric,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-metric,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-card,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-events,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-events,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-search-bar,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-search-bar,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-search-result,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-search-result,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-settings-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-settings-card,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-detail__summary-item,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-detail__summary-item,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-detail__file-item,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-detail__file-item,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb__tabs,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb__tabs {
+  background: rgba(30, 41, 59, 0.78) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-builtin-card,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-builtin-card {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.88)) !important;
+  border-color: rgba(91, 163, 197, 0.32) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-builtin-meta-item,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-builtin-meta-item {
+  background: rgba(15, 23, 42, 0.5) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-events__line,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-events__line {
+  background: rgba(15, 23, 42, 0.6) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-detail__desc,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-detail__desc,
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-search-empty,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-search-empty {
+  background: rgba(15, 23, 42, 0.58) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-card.is-builtin,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-card.is-builtin {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.96), rgba(56, 96, 144, 0.32)) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-tab,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-tab {
+  color: #94a3b8 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-tab:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-tab:hover {
+  background: rgba(148, 163, 184, 0.12) !important;
+  color: #e2e8f0 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-kb-tab.active,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-kb-tab.active {
+  color: #fff !important;
+}
+
+/* =========================================================
+   开发者工作台（API 管理）单栏布局补丁 —— 移除左侧 tile-nav
+   后让内容铺满整页，与 D:/OpenXnet/UIPlan/pages/api-group.html
+   的视觉对齐
+   ========================================================= */
+body.openxnet-ui-redesign-body .ox-api-group-page .suite-layout.suite-layout--single {
+  display: block !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+}
+
+body.openxnet-ui-redesign-body .ox-api-group-page .suite-content.suite-content--full {
+  width: 100% !important;
+  flex: none !important;
+  padding: 24px 28px !important;
+  background: var(--ox-bg-base, #f3f5f9) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-api-group-page .prototype-page-shell--api {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* dev-subnav pill 样式，与原型一致 */
+body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api {
+  display: inline-flex !important;
+  flex-wrap: wrap;
+  gap: 4px !important;
+  padding: 4px !important;
+  border-radius: 999px !important;
+  background: var(--ox-bg-surface, #fff) !important;
+  border: 1px solid var(--ox-border, rgba(15, 23, 42, 0.08)) !important;
+  margin-top: 16px !important;
+}
+
+body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api .ox-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px !important;
+  border-radius: 999px !important;
+  border: none !important;
+  background: transparent !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--ox-text-secondary, #475569) !important;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api .ox-tab i {
+  font-size: 12px;
+}
+
+body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api .ox-tab:hover {
+  background: var(--ox-bg-surface-hover, #f1f3f9) !important;
+  color: var(--ox-text-primary, #1e293b) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api .ox-tab.ox-tab--active {
+  background: var(--ox-accent, #5BA3C5) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 10px rgba(91, 163, 197, 0.28) !important;
+}
+
+/* 头部"开发者 · 工作台"区与原型对齐 */
+body.openxnet-ui-redesign-body .ox-api-group-page .ox-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-api-group-page .ox-page-header__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ox-text-primary, #1e293b);
+  line-height: 1.2;
+}
+
+body.openxnet-ui-redesign-body .ox-api-group-page .ox-page-header__subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ox-text-muted, #64748b);
+  line-height: 1.5;
+}
+
+body.openxnet-ui-redesign-body .ox-api-group-page .ox-page-header__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* hero shell —— 让 detail summary 区呼吸更舒展 */
+body.openxnet-ui-redesign-body .ox-api-group-page .ox-api-detail-hero-shell {
+  margin-top: 18px;
+}
+
+/* dark theme */
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-api-group-page .suite-content,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-api-group-page .suite-content {
+  background: #0f172a !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-api-group-page .ox-page-header__title,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-api-group-page .ox-page-header__title {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api {
+  background: rgba(30, 41, 59, 0.78) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api .ox-tab,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api .ox-tab {
+  color: #94a3b8 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api .ox-tab:hover,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api .ox-tab:hover {
+  background: rgba(148, 163, 184, 0.12) !important;
+  color: #e2e8f0 !important;
+}
+html[data-theme="dark"] body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api .ox-tab.ox-tab--active,
+html[data-theme="midnight"] body.openxnet-ui-redesign-body .ox-api-group-page .prototype-tab-strip--api .ox-tab.ox-tab--active {
+  color: #fff !important;
+}

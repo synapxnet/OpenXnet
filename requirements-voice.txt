@@ -1,0 +1,12 @@
+sherpa-onnx==1.12.40
+soundfile>=0.13.1
+numpy>=2.0
+httpx>=0.28.1,<0.29
+openai>=2.0,<3
+websockets>=14,<17
+edge-tts>=7,<8
+pydub>=0.25.1,<0.26
+imageio-ffmpeg>=0.6,<0.7
+tetos>=0.4,<0.5
+elevenlabs>=2,<3
+pyttsx3>=2.90,<3

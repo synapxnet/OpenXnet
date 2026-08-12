@@ -1,0 +1,32 @@
+import path from 'node:path';
+import { defineConfig } from 'vite';
+import vue from '@vitejs/plugin-vue';
+
+export default defineConfig({
+  plugins: [vue()],
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+    'process.env': {},
+    global: 'globalThis',
+  },
+  build: {
+    emptyOutDir: true,
+    outDir: path.resolve(__dirname, '../../static/model-vite'),
+    cssCodeSplit: false,
+    lib: {
+      entry: path.resolve(__dirname, 'src/main.js'),
+      formats: ['es'],
+      fileName: () => 'openxnet-model.js',
+    },
+    rollupOptions: {
+      output: {
+        assetFileNames: (assetInfo) => {
+          if ((assetInfo.name || '').endsWith('.css')) {
+            return 'openxnet-model.css';
+          }
+          return 'assets/[name][extname]';
+        },
+      },
+    },
+  },
+});

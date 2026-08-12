@@ -1,0 +1,387 @@
+-- OpenXnet Neuro-Symbolic OS Kernel
+-- Inter-Process Communication
+-- Channel-based messaging with typed channels and broadcast support
+
+module IPC {|
+
+  requires :: [:memory, :scheduler]
+  version :: "0.1.0"
+
+  -- Channel direction types
+  enum ChannelType {|
+    :Send       -- unidirectional send-only
+    :Recv       -- unidirectional receive-only
+    :Duplex     -- bidirectional
+    :Broadcast  -- one-to-many
+  |}
+
+  -- Channel states
+  enum ChannelState {|
+    :Open
+    :Closed
+    :HalfClosed  -- one end closed
+    :Draining    -- closing, delivering remaining messages
+    :Error
+  |}
+
+  -- Message priority
+  enum MessagePriority {|
+    :Urgent     -- bypass queue, deliver immediately
+    :High       -- front of queue
+    :Normal     -- FIFO
+    :Low        -- back of queue, may be dropped under pressure
+  |}
+
+  -- Message envelope
+  struct Message {|
+    id :: UInt64
+    channel_id :: ChannelId
+    sender_pid :: UInt32
+    recipient_pid :: UInt32
+    priority :: MessagePriority
+    payload :: Any
+    timestamp :: Timestamp
+    ttl :: Option[Duration]          -- time-to-live, None = infinite
+    correlation_id :: Option[UInt64] -- for request/response patterns
+    reply_channel :: Option[ChannelId]
+  |}
+
+  -- Channel descriptor
+  struct Channel {|
+    id :: ChannelId
+    channel_type :: ChannelType
+    state :: ChannelState
+    owner_pid :: UInt32
+    peer_pid :: Option[UInt32]       -- None for broadcast
+    subscribers :: List[UInt32]      -- for broadcast channels
+    buffer :: Queue[Message]
+    buffer_capacity :: UInt32
+    messages_sent :: UInt64
+    messages_dropped :: UInt64
+    created_at :: Timestamp
+    backpressure :: Bool             -- true when buffer > 80% full
+  |}
+
+  -- IPC configuration
+  config IPCConfig {|
+    max_channels :: 8192
+    default_buffer_capacity :: 256
+    max_buffer_capacity :: 4096
+    max_message_size :: 65536        -- bytes
+    broadcast_max_subscribers :: 1024
+    message_ttl_default :: 30s
+    backpressure_threshold :: 0.8
+    drain_timeout :: 5s
+    broker_tick_interval :: 10ms
+  |}
+
+  -- Global state
+  state channel_table :: Map[ChannelId, Channel] = Map.empty()
+  state next_channel_id :: ChannelId = 1
+  state next_message_id :: UInt64 = 1
+  state pending_receives :: Map[UInt32, List[ChannelId]] = Map.empty()
+  state dead_letter_queue :: Queue[Message] = Queue.empty()
+
+  -- Create a new channel
+  syscall create_channel(owner :: UInt32, channel_type :: ChannelType,
+                         capacity :: Option[UInt32]) -> Result[ChannelId, Error] {|
+    if Map.size(channel_table) >= IPCConfig.max_channels {|
+      return Err(:ChannelLimitReached)
+    |}
+
+    let buf_cap = capacity.unwrap_or(IPCConfig.default_buffer_capacity)
+    if buf_cap > IPCConfig.max_buffer_capacity {|
+      return Err(:InvalidCapacity)
+    |}
+
+    let id = next_channel_id
+    next_channel_id = next_channel_id + 1
+
+    let channel = Channel {|
+      id :: id
+      channel_type :: channel_type
+      state :: :Open
+      owner_pid :: owner
+      peer_pid :: None
+      subscribers :: []
+      buffer :: Queue.empty()
+      buffer_capacity :: buf_cap
+      messages_sent :: 0
+      messages_dropped :: 0
+      created_at :: now()
+      backpressure :: false
+    |}
+
+    channel_table = Map.insert(channel_table, id, channel)
+    emit :ChannelCreated with {| id :: id, owner :: owner, type :: channel_type |}
+    return Ok(id)
+  |}
+
+  -- Connect a peer to a channel
+  syscall connect_channel(channel_id :: ChannelId, peer_pid :: UInt32) -> Result[Void, Error] {|
+    match Map.get(channel_table, channel_id) {|
+      Some(chan) -> {|
+        if chan.state != :Open {|
+          return Err(:ChannelNotOpen)
+        |}
+
+        match chan.channel_type {|
+          :Broadcast -> {|
+            if List.length(chan.subscribers) >= IPCConfig.broadcast_max_subscribers {|
+              return Err(:SubscriberLimitReached)
+            |}
+            let updated = chan with {|
+              subscribers :: List.append(chan.subscribers, peer_pid)
+            |}
+            channel_table = Map.insert(channel_table, channel_id, updated)
+          |}
+          _ -> {|
+            if chan.peer_pid != None {|
+              return Err(:ChannelAlreadyConnected)
+            |}
+            let updated = chan with {| peer_pid :: Some(peer_pid) |}
+            channel_table = Map.insert(channel_table, channel_id, updated)
+          |}
+        |}
+
+        emit :ChannelConnected with {| id :: channel_id, peer :: peer_pid |}
+        return Ok(())
+      |}
+      None -> return Err(:NoSuchChannel)
+    |}
+  |}
+
+  -- Send a message on a channel
+  syscall send(channel_id :: ChannelId, sender :: UInt32, payload :: Any,
+               priority :: MessagePriority) -> Result[UInt64, Error] {|
+    match Map.get(channel_table, channel_id) {|
+      Some(chan) -> {|
+        -- Validate channel state and direction
+        if chan.state == :Closed or chan.state == :Error {|
+          return Err(:ChannelClosed)
+        |}
+
+        if chan.channel_type == :Recv {|
+          return Err(:WrongDirection)
+        |}
+
+        -- Check backpressure
+        let usage = Queue.size(chan.buffer) as Float64 / chan.buffer_capacity as Float64
+        if usage >= 1.0 {|
+          if priority == :Low {|
+            -- Drop low priority messages when full
+            let updated = chan with {| messages_dropped :: chan.messages_dropped + 1 |}
+            channel_table = Map.insert(channel_table, channel_id, updated)
+            return Err(:BufferFull)
+          |}
+          -- For higher priority, try to evict a low-priority message
+          invoke evict_low_priority(chan)
+        |}
+
+        let msg_id = next_message_id
+        next_message_id = next_message_id + 1
+
+        let msg = Message {|
+          id :: msg_id
+          channel_id :: channel_id
+          sender_pid :: sender
+          recipient_pid :: chan.peer_pid.unwrap_or(0)
+          priority :: priority
+          payload :: payload
+          timestamp :: now()
+          ttl :: Some(IPCConfig.message_ttl_default)
+          correlation_id :: None
+          reply_channel :: None
+        |}
+
+        -- Insert based on priority
+        let new_buffer = match priority {|
+          :Urgent -> Queue.push_front(chan.buffer, msg)
+          :High   -> Queue.insert_after_urgent(chan.buffer, msg)
+          _       -> Queue.enqueue(chan.buffer, msg)
+        |}
+
+        let new_backpressure = Queue.size(new_buffer) as Float64 / chan.buffer_capacity as Float64 > IPCConfig.backpressure_threshold
+
+        let updated = chan with {|
+          buffer :: new_buffer
+          messages_sent :: chan.messages_sent + 1
+          backpressure :: new_backpressure
+        |}
+        channel_table = Map.insert(channel_table, channel_id, updated)
+
+        -- Wake up any blocked receivers
+        invoke wake_pending_receivers(channel_id)
+
+        emit :MessageSent with {| msg_id :: msg_id, channel :: channel_id |}
+        return Ok(msg_id)
+      |}
+      None -> return Err(:NoSuchChannel)
+    |}
+  |}
+
+  -- Receive a message from a channel (blocking)
+  syscall recv(channel_id :: ChannelId, receiver :: UInt32,
+               timeout :: Option[Duration]) -> Result[Message, Error] {|
+    match Map.get(channel_table, channel_id) {|
+      Some(chan) -> {|
+        if chan.state == :Closed and Queue.is_empty(chan.buffer) {|
+          return Err(:ChannelClosed)
+        |}
+
+        if chan.channel_type == :Send {|
+          return Err(:WrongDirection)
+        |}
+
+        -- Try immediate dequeue
+        match Queue.dequeue(chan.buffer) {|
+          Some(msg, remaining) -> {|
+            let updated = chan with {|
+              buffer :: remaining
+              backpressure :: false
+            |}
+            channel_table = Map.insert(channel_table, channel_id, updated)
+            return Ok(msg)
+          |}
+          None -> {|
+            -- Block the calling process
+            let pending = pending_receives.get(receiver).unwrap_or([])
+            pending_receives = Map.insert(pending_receives, receiver,
+                                          List.append(pending, channel_id))
+            invoke Scheduler.block_process(receiver, :WaitingForMessage, timeout)
+            -- Will be resumed by wake_pending_receivers
+            return Err(:Blocked)
+          |}
+        |}
+      |}
+      None -> return Err(:NoSuchChannel)
+    |}
+  |}
+
+  -- Broadcast a message to all subscribers
+  syscall broadcast(channel_id :: ChannelId, sender :: UInt32,
+                    payload :: Any) -> Result[UInt32, Error] {|
+    match Map.get(channel_table, channel_id) {|
+      Some(chan) where chan.channel_type == :Broadcast -> {|
+        if chan.state != :Open {|
+          return Err(:ChannelClosed)
+        |}
+
+        let delivered = 0
+        for subscriber_pid in chan.subscribers {|
+          let msg_id = next_message_id
+          next_message_id = next_message_id + 1
+
+          let msg = Message {|
+            id :: msg_id
+            channel_id :: channel_id
+            sender_pid :: sender
+            recipient_pid :: subscriber_pid
+            priority :: :Normal
+            payload :: payload
+            timestamp :: now()
+            ttl :: Some(IPCConfig.message_ttl_default)
+            correlation_id :: None
+            reply_channel :: None
+          |}
+
+          -- Deliver to subscriber's pending queue
+          invoke deliver_to_process(subscriber_pid, msg)
+          delivered = delivered + 1
+        |}
+
+        emit :BroadcastSent with {|
+          channel :: channel_id, recipients :: delivered
+        |}
+        return Ok(delivered)
+      |}
+      Some(_) -> return Err(:NotBroadcastChannel)
+      None -> return Err(:NoSuchChannel)
+    |}
+  |}
+
+  -- Close a channel
+  syscall close_channel(channel_id :: ChannelId) -> Result[Void, Error] {|
+    match Map.get(channel_table, channel_id) {|
+      Some(chan) -> {|
+        if Queue.is_empty(chan.buffer) {|
+          -- Immediate close
+          let closed = chan with {| state :: :Closed |}
+          channel_table = Map.insert(channel_table, channel_id, closed)
+        |} else {|
+          -- Drain remaining messages first
+          let draining = chan with {| state :: :Draining |}
+          channel_table = Map.insert(channel_table, channel_id, draining)
+          invoke schedule_drain(channel_id, IPCConfig.drain_timeout)
+        |}
+
+        emit :ChannelClosed with {| id :: channel_id |}
+        return Ok(())
+      |}
+      None -> return Err(:NoSuchChannel)
+    |}
+  |}
+
+  -- Wake blocked receivers when a message arrives
+  service wake_pending_receivers(channel_id :: ChannelId) -> Void {|
+    for pid, channels in pending_receives {|
+      if List.contains(channels, channel_id) {|
+        let remaining = List.remove(channels, channel_id)
+        if List.is_empty(remaining) {|
+          pending_receives = Map.remove(pending_receives, pid)
+        |} else {|
+          pending_receives = Map.insert(pending_receives, pid, remaining)
+        |}
+        invoke Scheduler.unblock_process(pid)
+      |}
+    |}
+  |}
+
+  -- Evict lowest priority message from buffer
+  service evict_low_priority(chan :: Channel) -> Void {|
+    match Queue.find_and_remove(chan.buffer, m -> m.priority == :Low) {|
+      Some(evicted, remaining) -> {|
+        dead_letter_queue = Queue.enqueue(dead_letter_queue, evicted)
+        let updated = chan with {|
+          buffer :: remaining
+          messages_dropped :: chan.messages_dropped + 1
+        |}
+        channel_table = Map.insert(channel_table, chan.id, updated)
+      |}
+      None -> ()  -- no low priority messages to evict
+    |}
+  |}
+
+  -- Broker loop: TTL expiry, draining, dead letter processing
+  service broker_loop() -> Void {|
+    on :BrokerTick {|
+      -- Expire stale messages
+      for id, chan in channel_table {|
+        let expired_removed = Queue.filter(chan.buffer, msg -> {|
+          match msg.ttl {|
+            Some(ttl) -> elapsed_since(msg.timestamp) < ttl
+            None -> true
+          |}
+        |})
+        if Queue.size(expired_removed) != Queue.size(chan.buffer) {|
+          let updated = chan with {| buffer :: expired_removed |}
+          channel_table = Map.insert(channel_table, id, updated)
+        |}
+      |}
+
+      -- Process draining channels
+      for id, chan in channel_table where chan.state == :Draining {|
+        if Queue.is_empty(chan.buffer) {|
+          let closed = chan with {| state :: :Closed |}
+          channel_table = Map.insert(channel_table, id, closed)
+        |}
+      |}
+
+      -- Trim dead letter queue
+      if Queue.size(dead_letter_queue) > 1000 {|
+        dead_letter_queue = Queue.take(dead_letter_queue, 500)
+      |}
+    |}
+  |}
+
+|}

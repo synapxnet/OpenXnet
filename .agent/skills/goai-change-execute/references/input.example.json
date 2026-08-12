@@ -1,0 +1,46 @@
+{
+  "schema": "goai.skill.change-execute.input.v1.1",
+  "incidentId": "inc_goai_demo",
+  "traceId": "trace_goai_demo",
+  "evidence": [
+    { "evidenceId": "ev_aiops", "toolName": "aiops.service.health", "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    { "evidenceId": "ev_dataops", "toolName": "dataops.schema.snapshot.get", "contentDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    { "evidenceId": "ev_mlops", "toolName": "mlops.inference.probe", "contentDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+  ],
+  "proposedPlan": {
+    "planId": "feature-drift-full-recovery-v2",
+    "planDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "steps": [
+      {
+        "stepId": "fallback-feature-apply",
+        "toolName": "mlops.feature.fallback.apply",
+        "resourceId": "deploy_risk_prod/feature-set",
+        "targetRevision": 18,
+        "expectedResourceVersion": "42",
+        "argumentsDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "dependsOn": []
+      },
+      {
+        "stepId": "feature-history-backfill",
+        "toolName": "dataops.feature.backfill.start",
+        "resourceId": "asset_risk_features_prod/backfill",
+        "targetRevision": 19,
+        "expectedResourceVersion": "42",
+        "argumentsDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "dependsOn": ["fallback-feature-apply"]
+      }
+    ],
+    "compensationSteps": [
+      {
+        "stepId": "risk-deployment-rollback",
+        "toolName": "mlops.deployment.rollback",
+        "resourceId": "deploy_risk_prod",
+        "targetRevision": 17,
+        "expectedResourceVersion": "44",
+        "argumentsDigest": "9999999999999999999999999999999999999999999999999999999999999999",
+        "dependsOn": []
+      }
+    ]
+  },
+  "approvalRequired": true
+}

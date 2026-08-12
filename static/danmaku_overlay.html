@@ -1,0 +1,382 @@
+<!doctype html>
+<!--
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+
+File: danmaku_overlay.html
+Purpose: OpenXnet danmaku overlay surface for lightweight overlay bus text delivery.
+Author: OpenAI Codex
+Date: 2026-04-23
+Version: 1.0.0
+Security Level: INTERNAL
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenXnet Danmaku Overlay</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --text: #f8fafc;
+      --muted: rgba(226, 232, 240, 0.72);
+      --line: rgba(255, 255, 255, 0.12);
+      --bg: rgba(10, 14, 24, 0.78);
+      --accent: #5eead4;
+      --accent-warm: #ffb86b;
+      --accent-danger: #fb7185;
+      --font: "Segoe UI Variable Display", "SF Pro Display", "HarmonyOS Sans SC", "Microsoft YaHei UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+      font-family: var(--font);
+    }
+
+    body {
+      pointer-events: none;
+    }
+
+    .monitor {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(8, 12, 20, 0.38);
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      opacity: 0.7;
+    }
+
+    .monitor::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--accent-danger);
+      box-shadow: 0 0 14px rgba(251, 113, 133, 0.4);
+      transition: background 180ms ease, box-shadow 180ms ease;
+    }
+
+    .monitor.online::before {
+      background: var(--accent);
+      box-shadow: 0 0 14px rgba(94, 234, 212, 0.4);
+    }
+
+    .track {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    .bullet {
+      position: absolute;
+      right: -10vw;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      max-width: min(72vw, 960px);
+      padding: 11px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
+        var(--bg);
+      color: var(--text);
+      box-shadow:
+        0 14px 34px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(16px) saturate(135%);
+      -webkit-backdrop-filter: blur(16px) saturate(135%);
+      white-space: nowrap;
+      text-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      will-change: transform;
+      animation: danmaku-flight var(--flight-duration, 12s) linear forwards;
+    }
+
+    .bullet[data-tone="warm"] {
+      border-color: rgba(255, 184, 107, 0.22);
+      box-shadow:
+        0 14px 34px rgba(0, 0, 0, 0.28),
+        0 0 0 1px rgba(255, 184, 107, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .bullet[data-tone="danger"] {
+      border-color: rgba(251, 113, 133, 0.22);
+      box-shadow:
+        0 14px 34px rgba(0, 0, 0, 0.28),
+        0 0 0 1px rgba(251, 113, 133, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(94, 234, 212, 0.18);
+      background: rgba(94, 234, 212, 0.08);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      flex: 0 0 auto;
+    }
+
+    .body {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+      flex: 0 0 auto;
+    }
+
+    @keyframes danmaku-flight {
+      from {
+        transform: translate3d(0, 0, 0);
+      }
+      to {
+        transform: translate3d(calc(-100vw - 120%), 0, 0);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .bullet {
+        max-width: calc(100vw - 24px);
+        padding: 10px 14px;
+      }
+
+      .title {
+        font-size: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="monitor" class="monitor">Danmaku overlay offline</div>
+  <div id="track" class="track"></div>
+
+  <script>
+    const monitor = document.getElementById('monitor');
+    const track = document.getElementById('track');
+
+    let socket = null;
+    let heartbeatTimer = 0;
+    let reconnectTimer = 0;
+    let laneBusyUntil = [];
+
+    function setConnectionState(online) {
+      monitor.classList.toggle('online', Boolean(online));
+      monitor.textContent = online ? 'Danmaku overlay online' : 'Danmaku overlay offline';
+    }
+
+    function toneOf(payload) {
+      const status = String(payload.status || payload.level || '').trim().toLowerCase();
+      if (['error', 'danger', 'failed'].includes(status)) {
+        return 'danger';
+      }
+      if (['warning', 'pending'].includes(status)) {
+        return 'warm';
+      }
+      return 'default';
+    }
+
+    function normalizePayload(payload) {
+      const rawText = String(
+        payload.text ||
+        payload.message ||
+        payload.content ||
+        ''
+      ).trim();
+
+      const title = String(payload.title || '').trim();
+      const summary = String(payload.summary || '').trim();
+      const primaryText = rawText || [title, summary].filter(Boolean).join(' · ');
+      const badge = String(payload.badge || payload.channel || payload.source || payload.sender || 'Overlay').trim();
+      const meta = String(payload.meta || payload.status || payload.level || '').trim();
+
+      return {
+        text: primaryText,
+        badge,
+        meta,
+        tone: toneOf(payload)
+      };
+    }
+
+    function getLaneCount() {
+      return Math.max(6, Math.floor(window.innerHeight / 56));
+    }
+
+    function pickLane(durationMs) {
+      const now = Date.now();
+      const laneCount = getLaneCount();
+      if (laneBusyUntil.length !== laneCount) {
+        laneBusyUntil = new Array(laneCount).fill(0);
+      }
+
+      let targetLane = 0;
+      let earliest = laneBusyUntil[0] || 0;
+
+      for (let index = 0; index < laneBusyUntil.length; index += 1) {
+        const busyUntil = laneBusyUntil[index] || 0;
+        if (busyUntil <= now) {
+          targetLane = index;
+          earliest = busyUntil;
+          break;
+        }
+        if (busyUntil < earliest) {
+          earliest = busyUntil;
+          targetLane = index;
+        }
+      }
+
+      laneBusyUntil[targetLane] = now + Math.round(durationMs * 0.52);
+      return targetLane;
+    }
+
+    function clearBullets() {
+      track.replaceChildren();
+      laneBusyUntil = [];
+    }
+
+    function spawnBullet(payload) {
+      const normalized = normalizePayload(payload);
+      if (!normalized.text) {
+        return;
+      }
+
+      const durationMs = Math.max(9000, Math.min(18000, 9000 + normalized.text.length * 150));
+      const lane = pickLane(durationMs);
+      const top = 24 + lane * 52;
+
+      const bullet = document.createElement('div');
+      bullet.className = 'bullet';
+      bullet.dataset.tone = normalized.tone;
+      bullet.style.top = `${top}px`;
+      bullet.style.setProperty('--flight-duration', `${durationMs}ms`);
+
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = normalized.badge;
+
+      const body = document.createElement('span');
+      body.className = 'body';
+
+      const title = document.createElement('span');
+      title.className = 'title';
+      title.textContent = normalized.text;
+      body.appendChild(title);
+
+      if (normalized.meta) {
+        const meta = document.createElement('span');
+        meta.className = 'meta';
+        meta.textContent = normalized.meta;
+        body.appendChild(meta);
+      }
+
+      bullet.appendChild(badge);
+      bullet.appendChild(body);
+      bullet.addEventListener('animationend', () => bullet.remove());
+      track.appendChild(bullet);
+    }
+
+    function handleOverlayMessage(message) {
+      if (!message || typeof message !== 'object') {
+        return;
+      }
+
+      if (message.action === 'clear') {
+        clearBullets();
+        return;
+      }
+
+      if (message.action !== 'show') {
+        return;
+      }
+
+      const payload = message.data && typeof message.data === 'object' ? message.data : {};
+      spawnBullet(payload);
+    }
+
+    function connect() {
+      window.clearTimeout(reconnectTimer);
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(`${protocol}//${window.location.host}/ws/overlay`);
+
+      socket.addEventListener('open', () => {
+        setConnectionState(true);
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = window.setInterval(() => {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send('ping');
+          }
+        }, 12000);
+      });
+
+      socket.addEventListener('message', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleOverlayMessage(data);
+        } catch (error) {
+          console.error('Danmaku overlay message parse failed:', error);
+        }
+      });
+
+      socket.addEventListener('close', () => {
+        setConnectionState(false);
+        window.clearInterval(heartbeatTimer);
+        reconnectTimer = window.setTimeout(connect, 1600);
+      });
+
+      socket.addEventListener('error', () => {
+        setConnectionState(false);
+      });
+    }
+
+    connect();
+
+    window.addEventListener('resize', () => {
+      laneBusyUntil = [];
+    });
+
+    window.addEventListener('beforeunload', () => {
+      window.clearInterval(heartbeatTimer);
+      window.clearTimeout(reconnectTimer);
+      if (socket) {
+        socket.close();
+      }
+    });
+  </script>
+</body>
+</html>

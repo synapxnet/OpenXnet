@@ -1,0 +1,4461 @@
+<!doctype html>
+<!--
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+
+File: dynamic_island.html
+Purpose: OpenXnet desktop dynamic-island overlay for task delivery display, observation flow console, and recall navigation.
+Author: maoyo
+Date: 2026-04-18
+Version: 1.2.7
+Security Level: INTERNAL
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenXnet Dynamic Island</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --island-width: min(480px, calc(100vw - 16px));
+      /* 紧凑态：完全按内容贴合，不强制 min-width */
+      --compact-width-max: 280px;
+      --body-max-height: 340px;
+      --radius-xl: 28px;
+      --radius-lg: 18px;
+      --radius-md: 14px;
+      --radius-sm: 999px;
+      /* OpenXnet 品牌色系（与主应用对齐） */
+      --bg-main: rgba(11, 18, 32, 0.92);
+      --bg-panel: rgba(23, 32, 51, 0.82);
+      --line-soft: rgba(255, 255, 255, 0.08);
+      --text-main: #E6EDF6;
+      --text-muted: rgba(203, 213, 225, 0.75);
+      --accent: #5BA3C5;          /* OpenXnet primary blue */
+      --accent-hi: #93C5FD;        /* lighter highlight */
+      --accent-warm: #7BB8D4;      /* gradient pair end */
+      --success: #22C55E;
+      --warning: #F59E0B;
+      --danger: #EF4444;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+      --font-ui: "Inter", "Segoe UI Variable Display", "SF Pro Display", "HarmonyOS Sans SC", "Microsoft YaHei UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: var(--font-ui);
+      user-select: none;
+    }
+
+    body {
+      pointer-events: none;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .shell {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+      pointer-events: auto;
+      width: var(--island-width);
+      margin-top: 0;
+      padding: 8px;
+      border-radius: 32px;
+      background:
+        radial-gradient(circle at top left, rgba(91, 163, 197, 0.20), transparent 44%),
+        radial-gradient(circle at top right, rgba(147, 197, 253, 0.14), transparent 40%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+        var(--bg-main);
+      border: 1px solid rgba(91, 163, 197, 0.18);
+      box-shadow:
+        var(--shadow),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 0 1px rgba(91, 163, 197, 0.10);
+      backdrop-filter: blur(20px) saturate(140%);
+      -webkit-backdrop-filter: blur(20px) saturate(140%);
+      transform-origin: top center;
+      transition:
+        width 320ms cubic-bezier(0.34, 1.56, 0.64, 1),
+        transform 260ms cubic-bezier(0.32, 0.72, 0, 1),
+        border-color 260ms ease,
+        box-shadow 260ms ease;
+      animation: shell-in 520ms cubic-bezier(.2, .8, .2, 1);
+    }
+
+    html.windows-overlay .shell {
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+        rgba(9, 14, 24, 0.95);
+      box-shadow:
+        0 14px 30px rgba(0, 0, 0, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    html.windows-overlay .shell::before,
+    html.windows-overlay .shell::after {
+      display: none;
+    }
+
+    html.windows-overlay .shell.compact {
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    html.windows-overlay .shell.highlight {
+      box-shadow:
+        0 0 0 1px rgba(94, 234, 212, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .shell::before,
+    .shell::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .shell::before {
+      width: 240px;
+      height: 240px;
+      top: -128px;
+      right: -72px;
+      background: radial-gradient(circle, rgba(91, 163, 197, 0.22), rgba(91, 163, 197, 0));
+      animation: island-shimmer-sweep 14s ease-in-out infinite;
+    }
+
+    .shell::after {
+      width: 180px;
+      height: 180px;
+      left: -52px;
+      bottom: -96px;
+      background: radial-gradient(circle, rgba(147, 197, 253, 0.18), rgba(147, 197, 253, 0));
+      animation: island-shimmer-sweep 16s ease-in-out infinite reverse;
+    }
+
+    .shell.compact {
+      width: max-content;
+      max-width: var(--compact-width-max);
+      border-radius: 999px;
+    }
+    /* Idle（无活动）：紧凑胶囊里只有品牌 + 关闭按钮，集中居中，不要 space-between
+       留出来的空白 */
+    .shell.compact:not(.has-activity) .header {
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .shell.highlight {
+      border-color: rgba(91, 163, 197, 0.40);
+      transform: translateY(0) scale(1.015);
+      box-shadow:
+        0 28px 96px rgba(0, 0, 0, 0.56),
+        0 0 0 1px rgba(91, 163, 197, 0.14),
+        0 0 24px rgba(91, 163, 197, 0.20),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .header {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 42px;
+      padding: 0 6px;
+      cursor: pointer;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .pulse-ring {
+      position: relative;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.55), transparent 55%),
+        linear-gradient(135deg, var(--accent), var(--accent-warm));
+      box-shadow:
+        0 0 16px rgba(91, 163, 197, 0.55),
+        inset 0 -2px 4px rgba(15, 23, 42, 0.25);
+      flex: 0 0 auto;
+    }
+
+    .pulse-ring::after {
+      content: "";
+      position: absolute;
+      inset: -6px;
+      border-radius: inherit;
+      border: 1px solid rgba(91, 163, 197, 0.40);
+      animation: pulse 2.2s ease-out infinite;
+    }
+    /* 离线时把脉冲球染成红色，紧凑态用单点即可表达状态 */
+    .shell.offline-state .pulse-ring {
+      background:
+        radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.45), transparent 55%),
+        linear-gradient(135deg, var(--danger), #FCA5A5);
+      box-shadow: 0 0 14px rgba(239, 68, 68, 0.5);
+    }
+    .shell.offline-state .pulse-ring::after {
+      border-color: rgba(239, 68, 68, 0.45);
+    }
+
+    .titles {
+      min-width: 0;
+      display: grid;
+      align-content: center;
+    }
+
+    .title {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: 0.02em;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .title-brand {
+      background: linear-gradient(135deg, var(--accent-hi), var(--accent));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      font-weight: 800;
+    }
+    .title-suffix {
+      margin-left: 4px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .subtitle {
+      margin-top: 2px;
+      font-size: 11px;
+      line-height: 1.2;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .shell.compact {
+      padding-top: 7px;
+      padding-bottom: 7px;
+    }
+
+    .shell.compact .header {
+      min-height: 40px;
+      gap: 10px;
+      padding: 0 6px 0 8px;
+    }
+
+    .shell.compact .brand,
+    .shell.compact .status-row {
+      min-height: 28px;
+    }
+
+    .shell.compact .titles {
+      display: flex;
+      align-items: center;
+      flex: 1 1 auto;
+      min-height: 28px;
+    }
+
+    .shell.compact .title {
+      display: flex;
+      align-items: center;
+      min-height: 28px;
+      line-height: 1.05;
+      padding-top: 0;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    /* 紧凑态：标题里的 “Dynamic Island” 部分隐藏，只留 “OpenXnet”，避免胶囊里被截断 */
+    .shell.compact .title-suffix {
+      display: none;
+    }
+
+    /* ⚡ 灵动岛核心：idle 状态绝对极简，只显 OpenXnet 品牌 + 关闭按钮
+       「待命/Idle」这种常驻文案在真正的 dynamic island 里是不出现的——
+       状态信息已经由左边的 pulse-ring 颜色 + 呼吸动画传达。
+       subtitle 只在有真实活动（任务投递 / 桌面控制 / 观察流）时才进入
+       紧凑胶囊，并以 morph 动画从 0 宽撑开。*/
+    .shell.compact .titles {
+      gap: 0;
+    }
+    .shell.compact .subtitle {
+      display: none;
+    }
+    /* 当胶囊带 `has-activity` 标记（JS 在有任务/投递时打上）才把 subtitle 显示出来 */
+    .shell.compact.has-activity .subtitle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 168px;
+      margin: 0 0 0 8px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: rgba(91, 163, 197, 0.14);
+      border: 1px solid rgba(91, 163, 197, 0.22);
+      color: var(--accent-hi);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.2;
+      letter-spacing: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      animation: island-subtitle-pop 360ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+    .shell.compact.has-activity .subtitle::before {
+      content: "";
+      flex: 0 0 auto;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--accent-hi);
+      box-shadow: 0 0 6px rgba(147, 197, 253, 0.6);
+      animation: pulse 1.6s ease-out infinite;
+    }
+    .shell.compact.has-activity .subtitle:empty {
+      display: none;
+    }
+    @keyframes island-subtitle-pop {
+      from { opacity: 0; transform: scale(0.6); max-width: 0; padding-left: 0; padding-right: 0; }
+      to   { opacity: 1; transform: scale(1);   max-width: 168px; }
+    }
+
+    /* 紧凑态：在线/离线 chip 隐藏，状态信息靠 pulse-ring 的颜色 + 呼吸传达 */
+    .shell.compact .chip {
+      display: none;
+    }
+
+    /* 紧凑态的 brand：脉冲球稍小一些，间距更紧凑 */
+    .shell.compact .brand {
+      gap: 8px;
+    }
+    .shell.compact .pulse-ring {
+      width: 14px;
+      height: 14px;
+    }
+    .shell.compact .pulse-ring::after {
+      inset: -5px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+
+    .surface-utility-button {
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-muted);
+      width: 26px;
+      height: 26px;
+      border-radius: 999px; /* 圆形更贴胶囊气质 */
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      transition:
+        transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1),
+        border-color 160ms ease,
+        background 160ms ease,
+        color 160ms ease;
+      flex: 0 0 auto;
+    }
+
+    .surface-utility-button:hover,
+    .surface-utility-button:focus-visible {
+      transform: scale(1.08);
+      border-color: rgba(239, 68, 68, 0.40);
+      background: rgba(239, 68, 68, 0.18);
+      color: #FCA5A5;
+      outline: none;
+    }
+
+    .surface-utility-button:active {
+      transform: scale(0.94);
+    }
+
+    .chip,
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 24px;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--text-main);
+    }
+
+    .pill {
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .chip.online {
+      background: rgba(34, 197, 94, 0.12);
+      border-color: rgba(34, 197, 94, 0.28);
+      color: #86EFAC;
+    }
+    .chip.offline {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.28);
+      color: #FCA5A5;
+    }
+
+    .chip .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      position: relative;
+    }
+
+    .chip.online .dot {
+      background: var(--success);
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.55);
+    }
+    /* 在线时给状态点加呼吸动画 */
+    .chip.online .dot::after {
+      content: "";
+      position: absolute;
+      inset: -3px;
+      border-radius: inherit;
+      border: 1px solid rgba(34, 197, 94, 0.45);
+      animation: pulse 1.8s ease-out infinite;
+    }
+
+    .chip.offline .dot {
+      background: var(--danger);
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.45);
+    }
+
+    .pill.success { color: #86EFAC; background: rgba(34, 197, 94, 0.10); border-color: rgba(34, 197, 94, 0.22); }
+    .pill.warning { color: #FCD34D; background: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.22); }
+    .pill.danger  { color: #FCA5A5; background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.22); }
+    .pill.idle    { color: var(--text-muted); }
+
+    .body {
+      position: relative;
+      z-index: 1;
+      pointer-events: auto;
+      overflow-x: hidden;
+      overflow-y: auto;
+      max-height: var(--body-max-height);
+      opacity: 1;
+      transition: max-height 240ms ease, opacity 180ms ease, margin-top 240ms ease;
+      margin-top: 8px;
+      padding-right: 2px;
+      padding-bottom: 8px;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+    }
+
+    .shell.compact .body {
+      max-height: 0;
+      opacity: 0;
+      margin-top: 0;
+    }
+
+    .body::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .body::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      padding: 14px;
+      border-radius: 20px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+        var(--bg-panel);
+      border: 1px solid rgba(91, 163, 197, 0.14);
+      box-shadow:
+        0 14px 28px rgba(0, 0, 0, 0.22),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      transition:
+        transform 200ms cubic-bezier(.22, 1, .36, 1),
+        border-color 200ms ease,
+        box-shadow 200ms ease;
+      animation: island-panel-float 620ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(91, 163, 197, 0.32);
+      box-shadow:
+        0 22px 42px rgba(0, 0, 0, 0.30),
+        0 0 0 1px rgba(91, 163, 197, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .card + .card {
+      margin-top: 10px;
+    }
+
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 760;
+      line-height: 1.25;
+      color: var(--text-main);
+    }
+
+    .meta {
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .summary {
+      margin: 14px 0 0;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .desktop-actions {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: var(--radius-lg);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .desktop-actions-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .desktop-actions-hint {
+      font-size: 11px;
+      color: rgba(232, 238, 249, 0.6);
+      text-align: right;
+    }
+
+    .desktop-actions-row {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .desktop-mission-recipes {
+      margin-top: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .desktop-mission-recipes-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .desktop-mission-recipes-hint {
+      font-size: 11px;
+      color: rgba(232, 238, 249, 0.56);
+      text-align: right;
+    }
+
+    .desktop-mission-recipe-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .desktop-mission-recipe-button {
+      display: grid;
+      gap: 6px;
+      min-height: 70px;
+      padding: 11px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-md);
+      background:
+        linear-gradient(135deg, rgba(94, 234, 212, 0.12), rgba(255, 184, 107, 0.12)),
+        rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, opacity 160ms ease;
+    }
+
+    .desktop-mission-recipe-button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      border-color: rgba(94, 234, 212, 0.28);
+    }
+
+    .desktop-mission-recipe-button:disabled {
+      opacity: 0.58;
+      cursor: wait;
+    }
+
+    .desktop-mission-recipe-button.is-loading {
+      border-color: rgba(94, 234, 212, 0.32);
+      color: var(--accent);
+    }
+
+    .desktop-mission-recipe-title {
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.35;
+      color: inherit;
+    }
+
+    .desktop-mission-recipe-step {
+      font-size: 11px;
+      line-height: 1.5;
+      color: rgba(232, 238, 249, 0.68);
+    }
+
+    .desktop-layout-presets {
+      margin-top: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .desktop-layout-presets-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .desktop-layout-presets-hint {
+      font-size: 11px;
+      color: rgba(232, 238, 249, 0.56);
+      text-align: right;
+    }
+
+    .desktop-layout-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .desktop-action-button {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-md);
+      background:
+        linear-gradient(135deg, rgba(94, 234, 212, 0.12), rgba(255, 184, 107, 0.12)),
+        rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
+      text-align: center;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      box-shadow: 0 14px 26px rgba(0, 0, 0, 0.18);
+      transition: transform 180ms cubic-bezier(.22, 1, .36, 1), border-color 180ms ease, opacity 160ms ease, box-shadow 180ms ease;
+    }
+
+    .desktop-action-button::after {
+      content: "";
+      position: absolute;
+      inset: 1px auto 1px -24%;
+      width: 42%;
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0));
+      opacity: 0;
+      transform: skewX(-20deg) translateX(0);
+      transition: transform 320ms ease, opacity 240ms ease;
+      pointer-events: none;
+    }
+
+    .desktop-action-button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      border-color: rgba(94, 234, 212, 0.28);
+      box-shadow: 0 18px 32px rgba(0, 0, 0, 0.24);
+    }
+
+    .desktop-action-button:hover:not(:disabled)::after {
+      opacity: 0.92;
+      transform: skewX(-20deg) translateX(290%);
+    }
+
+    .desktop-action-button:disabled {
+      cursor: wait;
+      opacity: 0.58;
+    }
+
+    .desktop-action-button.is-loading {
+      border-color: rgba(94, 234, 212, 0.3);
+      color: var(--accent);
+    }
+
+    .desktop-action-button.is-toggled:not(.is-loading) {
+      border-color: rgba(255, 184, 107, 0.32);
+      color: var(--accent-warm);
+      background:
+        linear-gradient(135deg, rgba(255, 184, 107, 0.16), rgba(94, 234, 212, 0.08)),
+        rgba(255, 255, 255, 0.06);
+    }
+
+    .desktop-layout-button {
+      min-height: 38px;
+      padding: 0 10px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .timeline {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .timeline-item {
+      position: relative;
+      overflow: hidden;
+      padding: 12px;
+      border-radius: var(--radius-lg);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      min-height: 78px;
+      box-shadow:
+        0 14px 28px rgba(0, 0, 0, 0.16),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      transition: transform 180ms cubic-bezier(.22, 1, .36, 1), border-color 180ms ease, box-shadow 180ms ease;
+      animation: island-panel-float 600ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+
+    .timeline-item:hover {
+      transform: translateY(-2px);
+      border-color: rgba(94, 234, 212, 0.14);
+      box-shadow:
+        0 18px 34px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    .timeline-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(232, 238, 249, 0.52);
+    }
+
+    .timeline-value {
+      margin-top: 7px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text-main);
+      word-break: break-word;
+    }
+
+    .observation-panel {
+      position: relative;
+      overflow: hidden;
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: var(--radius-lg);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+        rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow:
+        0 18px 36px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      display: grid;
+      gap: 12px;
+      animation: island-panel-float 660ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+
+    .observation-panel-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .observation-panel-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+
+    .observation-status {
+      margin-top: 6px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+
+    .observation-console-shell {
+      display: grid;
+      gap: 10px;
+    }
+
+    .observation-console-hero {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+      display: grid;
+      gap: 9px;
+      padding: 12px;
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(94, 234, 212, 0.14);
+      background:
+        radial-gradient(circle at top right, rgba(94, 234, 212, 0.16), transparent 34%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03)),
+        rgba(255, 255, 255, 0.04);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      animation: island-panel-float 700ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+
+    .observation-console-hero::before {
+      content: "";
+      position: absolute;
+      width: 170px;
+      height: 170px;
+      top: -84px;
+      right: -46px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(94, 234, 212, 0.18), rgba(94, 234, 212, 0));
+      pointer-events: none;
+      z-index: 0;
+      animation: island-shimmer-sweep 13s ease-in-out infinite;
+    }
+
+    .observation-console-hero > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .observation-console-kicker {
+      width: fit-content;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(94, 234, 212, 0.18);
+      background: rgba(94, 234, 212, 0.08);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .observation-summary {
+      font-size: 11px;
+      line-height: 1.7;
+      color: var(--text-muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .observation-refresh {
+      appearance: none;
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+      min-height: 30px;
+      padding: 0 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background:
+        linear-gradient(135deg, rgba(94, 234, 212, 0.12), rgba(255, 184, 107, 0.1)),
+        rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      font: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 12px 22px rgba(0, 0, 0, 0.16);
+      transition: transform 180ms cubic-bezier(.22, 1, .36, 1), border-color 180ms ease, opacity 160ms ease, box-shadow 180ms ease;
+    }
+
+    .observation-refresh::after {
+      content: "";
+      position: absolute;
+      inset: 1px auto 1px -24%;
+      width: 42%;
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0));
+      opacity: 0;
+      transform: skewX(-20deg) translateX(0);
+      transition: transform 320ms ease, opacity 240ms ease;
+      pointer-events: none;
+    }
+
+    .observation-refresh:hover:not(:disabled),
+    .observation-refresh:focus-visible {
+      transform: translateY(-2px);
+      border-color: rgba(94, 234, 212, 0.28);
+      box-shadow: 0 16px 28px rgba(0, 0, 0, 0.2);
+      outline: none;
+    }
+
+    .observation-refresh:hover:not(:disabled)::after,
+    .observation-refresh:focus-visible::after {
+      opacity: 0.92;
+      transform: skewX(-20deg) translateX(290%);
+    }
+
+    .observation-refresh:disabled {
+      opacity: 0.58;
+      cursor: progress;
+      transform: none;
+    }
+
+    .observation-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .observation-meta.console-meta span {
+      min-height: 22px;
+      font-size: 9px;
+      color: rgba(232, 238, 249, 0.72);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .observation-console-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .observation-console-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 24px;
+      padding: 0 9px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: rgba(232, 238, 249, 0.84);
+    }
+
+    .observation-console-badge::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.95;
+    }
+
+    .observation-console-badge.tone-info { color: var(--accent); border-color: rgba(94, 234, 212, 0.2); }
+    .observation-console-badge.tone-success { color: var(--success); border-color: rgba(74, 222, 128, 0.22); }
+    .observation-console-badge.tone-warning { color: var(--accent-warm); border-color: rgba(255, 184, 107, 0.24); }
+    .observation-console-badge.tone-danger { color: var(--danger); border-color: rgba(251, 113, 133, 0.24); }
+
+    .observation-meta span,
+    .observation-badges span {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 9px;
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(232, 238, 249, 0.88);
+    }
+
+    .observation-console-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .observation-metric {
+      position: relative;
+      overflow: hidden;
+      min-height: 82px;
+      padding: 10px 11px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03)),
+        rgba(255, 255, 255, 0.04);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      display: grid;
+      gap: 5px;
+      transition: transform 180ms cubic-bezier(.22, 1, .36, 1), border-color 180ms ease, box-shadow 180ms ease;
+      animation: island-panel-float 620ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+
+    .observation-metric:hover {
+      transform: translateY(-2px);
+      border-color: rgba(94, 234, 212, 0.16);
+      box-shadow:
+        0 16px 28px rgba(0, 0, 0, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .observation-metric-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(232, 238, 249, 0.54);
+    }
+
+    .observation-metric-value {
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--text-main);
+    }
+
+    .observation-metric-note {
+      font-size: 10px;
+      line-height: 1.5;
+      color: var(--text-muted);
+      word-break: break-word;
+    }
+
+    .observation-list {
+      display: grid;
+      gap: 8px;
+      max-height: none;
+      overflow: visible;
+      padding-right: 0;
+    }
+
+    .observation-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .observation-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.18);
+      border-radius: var(--radius-sm);
+    }
+
+    .observation-item {
+      position: relative;
+      overflow: hidden;
+      padding: 11px 12px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      transition: transform 180ms cubic-bezier(.22, 1, .36, 1), border-color 180ms ease, box-shadow 180ms ease;
+      animation: island-panel-float 520ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+
+    .observation-item::before {
+      content: "";
+      position: absolute;
+      inset: 10px auto 10px 0;
+      width: 4px;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(180deg, rgba(94, 234, 212, 0.95), rgba(94, 234, 212, 0));
+    }
+
+    .observation-item.is-latest {
+      border-color: rgba(94, 234, 212, 0.22);
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .observation-item:hover {
+      transform: translateY(-2px);
+      border-color: rgba(94, 234, 212, 0.16);
+      box-shadow:
+        0 16px 28px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .observation-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .observation-title {
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.4;
+      color: var(--text-main);
+    }
+
+    .observation-time {
+      flex: 0 0 auto;
+      font-size: 11px;
+      color: rgba(232, 238, 249, 0.56);
+      white-space: nowrap;
+    }
+
+    .observation-badges {
+      margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .observation-detail {
+      margin-top: 9px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text-muted);
+      word-break: break-word;
+    }
+
+    .observation-detail-secondary {
+      color: rgba(232, 238, 249, 0.58);
+    }
+
+    .observation-note {
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.04);
+      font-size: 10px;
+      line-height: 1.6;
+      color: var(--text-muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .observation-note.warning {
+      border-color: rgba(255, 184, 107, 0.22);
+      background: rgba(255, 184, 107, 0.08);
+      color: rgba(255, 216, 176, 0.92);
+    }
+
+    .observation-meta-row {
+      margin-top: 8px;
+      font-size: 10px;
+      line-height: 1.55;
+      color: rgba(232, 238, 249, 0.56);
+    }
+
+    .history {
+      margin-top: 14px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .history-item {
+      display: grid;
+      gap: 8px;
+      padding: 11px 12px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+      animation: rise-in 260ms ease;
+    }
+
+    .history-item:hover,
+    .history-item:focus-within {
+      transform: translateY(-1px);
+      border-color: rgba(94, 234, 212, 0.24);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .history-item.is-active {
+      border-color: rgba(94, 234, 212, 0.34);
+      background:
+        linear-gradient(135deg, rgba(94, 234, 212, 0.14), rgba(255, 184, 107, 0.12)),
+        rgba(255, 255, 255, 0.06);
+      box-shadow: inset 0 0 0 1px rgba(94, 234, 212, 0.08);
+    }
+
+    .history-select {
+      appearance: none;
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .history-select:focus-visible {
+      outline: none;
+    }
+
+    .history-main {
+      min-width: 0;
+    }
+
+    .history-title {
+      font-size: 12px;
+      color: var(--text-main);
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .history-summary {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--text-muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .history-time {
+      font-size: 11px;
+      color: rgba(232, 238, 249, 0.56);
+      white-space: nowrap;
+      align-self: start;
+    }
+
+    .history-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+
+    .history-controls {
+      display: grid;
+      gap: 8px;
+    }
+
+    .history-action-button {
+      appearance: none;
+      min-width: 42px;
+      min-height: 28px;
+      padding: 5px 9px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      font: inherit;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease;
+    }
+
+    .history-action-button:hover,
+    .history-action-button:focus-visible {
+      transform: translateY(-1px);
+      border-color: rgba(94, 234, 212, 0.28);
+      background: rgba(94, 234, 212, 0.12);
+      outline: none;
+    }
+
+    .history-action-button.is-toggled {
+      color: var(--accent);
+      border-color: rgba(94, 234, 212, 0.22);
+      background: rgba(94, 234, 212, 0.1);
+    }
+
+    .history-action-button:disabled {
+      opacity: 0.58;
+      cursor: progress;
+      transform: none;
+    }
+
+    .history-action-button.is-loading {
+      color: var(--accent-warm);
+    }
+
+    .history-layout-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .history-layout-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(232, 238, 249, 0.48);
+    }
+
+    .history-layout-select {
+      appearance: none;
+      min-width: 168px;
+      min-height: 30px;
+      padding: 0 30px 0 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background:
+        linear-gradient(135deg, rgba(94, 234, 212, 0.08), rgba(255, 184, 107, 0.08)),
+        rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      font: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, opacity 160ms ease;
+    }
+
+    .history-layout-select:hover,
+    .history-layout-select:focus-visible {
+      border-color: rgba(94, 234, 212, 0.26);
+      background:
+        linear-gradient(135deg, rgba(94, 234, 212, 0.12), rgba(255, 184, 107, 0.1)),
+        rgba(255, 255, 255, 0.06);
+      outline: none;
+    }
+
+    .history-layout-select:disabled {
+      opacity: 0.58;
+      cursor: progress;
+    }
+
+    .empty {
+      padding: 16px;
+      border-radius: var(--radius-xl);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 560px) {
+      .desktop-actions-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .desktop-mission-recipe-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .desktop-layout-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .timeline {
+        grid-template-columns: 1fr;
+      }
+
+      .history-select {
+        grid-template-columns: 1fr;
+      }
+
+      .history-actions {
+        justify-content: flex-start;
+      }
+
+      .history-layout-row {
+        justify-content: flex-start;
+      }
+
+      .history-layout-select {
+        width: 100%;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .shell,
+      .card,
+      .timeline-item,
+      .observation-panel,
+      .observation-console-hero,
+      .observation-metric,
+      .observation-item {
+        animation: none !important;
+        transition-duration: 0s !important;
+      }
+
+      .shell::before,
+      .shell::after,
+      .observation-console-hero::before {
+        animation: none !important;
+        transform: none !important;
+      }
+
+      .desktop-action-button::after,
+      .observation-refresh::after {
+        display: none !important;
+      }
+    }
+
+    @keyframes shell-in {
+      from {
+        opacity: 0;
+        transform: translateY(-14px) scale(0.92);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes island-panel-float {
+      from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.985);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes island-shimmer-sweep {
+      0%,
+      100% {
+        transform: translate3d(-16px, 0, 0) scale(1);
+        opacity: 0.24;
+      }
+      50% {
+        transform: translate3d(16px, -6px, 0) scale(1.04);
+        opacity: 0.48;
+      }
+    }
+
+    @keyframes pulse {
+      0% {
+        transform: scale(0.88);
+        opacity: 0.9;
+      }
+      70% {
+        transform: scale(1.55);
+        opacity: 0;
+      }
+      100% {
+        opacity: 0;
+      }
+    }
+
+    @keyframes rise-in {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="shell" class="shell compact">
+    <div id="header" class="header" title="Click to expand or collapse">
+      <div class="brand">
+        <div class="pulse-ring"></div>
+        <div class="titles">
+          <div id="headerTitle" class="title"><span class="title-brand">OpenXnet</span><span class="title-suffix"> 灵动岛</span></div>
+          <div id="headerSubtitle" class="subtitle">Waiting for scheduled deliveries</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div id="connectionChip" class="chip offline">
+          <span class="dot"></span>
+          <span id="connectionText">Offline</span>
+        </div>
+        <button id="closeIslandButton" class="surface-utility-button" type="button" title="Hide Dynamic Island" aria-label="Hide Dynamic Island">
+          ×
+        </button>
+      </div>
+    </div>
+
+    <div id="body" class="body">
+      <div class="card">
+        <div class="card-top">
+          <div>
+            <h1 id="taskTitle" class="card-title">No deliveries yet</h1>
+            <div class="meta">
+              <span id="statusPill" class="pill">Idle</span>
+              <span id="targetPill" class="pill">Dynamic Island</span>
+              <span id="schedulePill" class="pill">Auto</span>
+            </div>
+          </div>
+        </div>
+        <p id="taskSummary" class="summary">After the scheduler or overlay API publishes a task delivery event, the latest result will expand here.</p>
+        <div id="desktopActionBar" class="desktop-actions" hidden>
+          <div class="desktop-actions-top">
+            <div id="desktopActionBarTitle" class="timeline-label">Quick Controls</div>
+            <div id="desktopActionHint" class="desktop-actions-hint">Operate the selected desktop window without leaving Dynamic Island.</div>
+          </div>
+          <div class="desktop-actions-row">
+            <button
+              id="desktopActionFocus"
+              class="desktop-action-button"
+              type="button"
+              data-dynamic-desktop-action="focus"
+            >
+              Focus
+            </button>
+            <button
+              id="desktopActionPin"
+              class="desktop-action-button"
+              type="button"
+              data-dynamic-desktop-action="toggle_always_on_top"
+            >
+              Pin
+            </button>
+            <button
+              id="desktopActionMinimize"
+              class="desktop-action-button"
+              type="button"
+              data-dynamic-desktop-action="minimize"
+            >
+              Minimize
+            </button>
+            <button
+              id="desktopActionPrevious"
+              class="desktop-action-button"
+              type="button"
+              data-dynamic-desktop-action="move_to_previous_monitor"
+            >
+              Prev Display
+            </button>
+            <button
+              id="desktopActionNext"
+              class="desktop-action-button"
+              type="button"
+              data-dynamic-desktop-action="move_to_next_monitor"
+            >
+              Next Display
+            </button>
+            <button
+              id="desktopActionSnapLeft"
+              class="desktop-action-button"
+              type="button"
+              data-dynamic-desktop-action="snap_left"
+            >
+              Left Half
+            </button>
+            <button
+              id="desktopActionSnapMaximize"
+              class="desktop-action-button"
+              type="button"
+              data-dynamic-desktop-action="snap_maximize"
+            >
+              Fill Work Area
+            </button>
+            <button
+              id="desktopActionSnapRight"
+              class="desktop-action-button"
+              type="button"
+              data-dynamic-desktop-action="snap_right"
+            >
+              Right Half
+            </button>
+          </div>
+          <div class="desktop-mission-recipes">
+            <div class="desktop-mission-recipes-top">
+              <div class="timeline-label">Mission Recipes</div>
+              <div class="desktop-mission-recipes-hint">Run multi-step desktop maneuvers from the island.</div>
+            </div>
+            <div id="desktopMissionRecipeGrid" class="desktop-mission-recipe-grid"></div>
+          </div>
+          <div class="desktop-layout-presets">
+            <div class="desktop-layout-presets-top">
+              <div class="timeline-label">Advanced Layouts</div>
+              <div class="desktop-layout-presets-hint">Top, bottom, center, corners, and thirds.</div>
+            </div>
+            <div id="desktopLayoutPresetGrid" class="desktop-layout-grid"></div>
+          </div>
+        </div>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div id="taskIdLabel" class="timeline-label">Task ID</div>
+            <div id="taskIdValue" class="timeline-value">Waiting</div>
+          </div>
+          <div class="timeline-item">
+            <div id="timestampLabel" class="timeline-label">Timestamp</div>
+            <div id="timestampValue" class="timeline-value">Waiting</div>
+          </div>
+          <div class="timeline-item">
+            <div id="channelLabel" class="timeline-label">Channel</div>
+            <div id="channelValue" class="timeline-value">dynamic_island</div>
+          </div>
+        </div>
+        <div class="observation-panel" data-island-observation-console="true">
+          <div class="observation-panel-top">
+            <div>
+              <div class="timeline-label">Observation Flow Console</div>
+              <div id="observationStatus" class="observation-status">Waiting for a task-aware delivery.</div>
+            </div>
+            <div class="observation-panel-actions">
+              <button id="observationOpenHomeFlow" class="observation-refresh" type="button">Home Flow</button>
+              <button id="observationOpenTaskDetail" class="observation-refresh" type="button">Task Detail</button>
+              <button id="observationOpenRecall" class="observation-refresh" type="button">Recall Center</button>
+              <button id="observationRefresh" class="observation-refresh" type="button">Refresh</button>
+            </div>
+          </div>
+          <div class="observation-console-shell">
+            <section class="observation-console-hero">
+              <div id="observationKicker" class="observation-console-kicker">Workspace Current Flow</div>
+              <div id="observationSummary" class="observation-summary">Select a task-aware delivery to surface recovery clues, privacy trims, and the latest observation stage directly from Dynamic Island.</div>
+              <div id="observationBadgesPanel" class="observation-console-badges"></div>
+              <div id="observationMeta" class="observation-meta console-meta"></div>
+            </section>
+            <section id="observationMetrics" class="observation-console-metrics"></section>
+          </div>
+          <div id="observationList" class="observation-list">
+            <div class="empty">Select a delivery with a Task ID to preview the latest observation trail.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div id="historyTitle" class="timeline-label">Recent Deliveries</div>
+        <div id="history" class="history">
+          <div class="empty">Recent task deliveries will accumulate here so the overlay stays useful even after the compact animation collapses.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const HOME_CURRENT_FLOW_LAUNCH_STORAGE_KEY = 'openxnet-home-current-flow-launch';
+    const RECALL_LAUNCH_STORAGE_KEY = 'openxnet-recall-center-launch';
+    const TASK_DETAIL_LAUNCH_STORAGE_KEY = 'openxnet-task-detail-launch';
+    const ROLE_CARD_STATE_STORAGE_KEY = 'openxnet-dynamic-island-role-card';
+    const shell = document.getElementById('shell');
+    const header = document.getElementById('header');
+    const islandBody = document.getElementById('body');
+    const closeIslandButton = document.getElementById('closeIslandButton');
+    const headerTitle = document.getElementById('headerTitle');
+    const headerSubtitle = document.getElementById('headerSubtitle');
+    const connectionChip = document.getElementById('connectionChip');
+    const connectionText = document.getElementById('connectionText');
+    const taskTitle = document.getElementById('taskTitle');
+    const taskSummary = document.getElementById('taskSummary');
+    const statusPill = document.getElementById('statusPill');
+    const targetPill = document.getElementById('targetPill');
+    const schedulePill = document.getElementById('schedulePill');
+    const taskIdLabel = document.getElementById('taskIdLabel');
+    const taskIdValue = document.getElementById('taskIdValue');
+    const timestampLabel = document.getElementById('timestampLabel');
+    const timestampValue = document.getElementById('timestampValue');
+    const channelLabel = document.getElementById('channelLabel');
+    const channelValue = document.getElementById('channelValue');
+    const observationStatus = document.getElementById('observationStatus');
+    const observationSummary = document.getElementById('observationSummary');
+    const observationBadgesPanel = document.getElementById('observationBadgesPanel');
+    const observationMeta = document.getElementById('observationMeta');
+    const observationMetrics = document.getElementById('observationMetrics');
+    const observationList = document.getElementById('observationList');
+    const observationOpenHomeFlow = document.getElementById('observationOpenHomeFlow');
+    const observationOpenTaskDetail = document.getElementById('observationOpenTaskDetail');
+    const observationOpenRecall = document.getElementById('observationOpenRecall');
+    const observationRefresh = document.getElementById('observationRefresh');
+    const desktopActionBar = document.getElementById('desktopActionBar');
+    const desktopActionBarTitle = document.getElementById('desktopActionBarTitle');
+    const desktopActionHint = document.getElementById('desktopActionHint');
+    const desktopMissionRecipeGrid = document.getElementById('desktopMissionRecipeGrid');
+    const desktopLayoutPresetGrid = document.getElementById('desktopLayoutPresetGrid');
+    const history = document.getElementById('history');
+    const historyTitle = document.getElementById('historyTitle');
+    const observationKicker = document.getElementById('observationKicker');
+    const observationConsoleTitle = document.querySelector('.observation-panel-top .timeline-label');
+    const desktopMissionRecipesTitle = document.querySelector('.desktop-mission-recipes .timeline-label');
+    const desktopMissionRecipesHint = document.querySelector('.desktop-mission-recipes-hint');
+    const desktopLayoutTitle = document.querySelector('.desktop-layout-presets .timeline-label');
+    const desktopLayoutHint = document.querySelector('.desktop-layout-presets-hint');
+    let currentLocaleTag = String((navigator.languages && navigator.languages[0]) || navigator.language || 'en-US');
+    let currentLocaleKey = /^zh/i.test(currentLocaleTag) ? 'zh' : 'en';
+    const LOCALE_MESSAGES_ZH = {
+      headerTitleStatic: 'OpenXnet 灵动岛',
+      roleCardActive: '角色卡已启用',
+      islandIdleShort: '待命中',
+      waitingScheduled: '等待计划投递',
+      offline: '离线',
+      online: '在线',
+      idle: '空闲',
+      auto: '自动',
+      once: '单次',
+      recurring: '循环',
+      live: '实时',
+      noDeliveriesYet: '暂无任务投递',
+      noDeliverySummary: '调度器或覆盖层 API 发布任务投递事件后，最新结果会在这里展开。',
+      taskId: '任务 ID',
+      action: '动作',
+      timestamp: '时间',
+      window: '窗口',
+      channel: '通道',
+      display: '屏幕',
+      waiting: '等待中',
+      quickControls: '快捷控制',
+      quickControlsHint: '无需离开灵动岛，即可操作当前选中的桌面窗口。',
+      focus: '聚焦',
+      pin: '置顶',
+      unpin: '取消置顶',
+      minimize: '最小化',
+      prevDisplay: '上一屏',
+      nextDisplay: '下一屏',
+      leftHalf: '左半屏',
+      rightHalf: '右半屏',
+      fillWorkArea: '填满工作区',
+      topHalf: '上半屏',
+      bottomHalf: '下半屏',
+      center: '居中',
+      topLeft: '左上',
+      topRight: '右上',
+      bottomLeft: '左下',
+      bottomRight: '右下',
+      leftThird: '左三分之一',
+      centerThird: '中三分之一',
+      rightThird: '右三分之一',
+      fillShort: '铺满',
+      leftShort: '左半',
+      rightShort: '右半',
+      topShort: '上半',
+      bottomShort: '下半',
+      centerShort: '居中',
+      topLeftShort: '左上',
+      topRightShort: '右上',
+      bottomLeftShort: '左下',
+      bottomRightShort: '右下',
+      leftThirdShort: '左 1/3',
+      centerThirdShort: '中 1/3',
+      rightThirdShort: '右 1/3',
+      missionRecipes: '任务编排',
+      missionRecipesHint: '直接从灵动岛执行多步桌面动作。',
+      advancedLayouts: '高级布局',
+      advancedLayoutsHint: '顶部、底部、居中、角落与三等分布局。',
+      soloFocus: '专注单窗',
+      soloFocusSteps: '聚焦 -> 铺满',
+      compareLeft: '左侧对比',
+      compareLeftSteps: '聚焦 -> 左半屏',
+      referenceRail: '右侧资料栏',
+      referenceRailSteps: '聚焦 -> 右 1/3 -> 置顶',
+      centerStage: '居中舞台',
+      centerStageSteps: '发送 -> 居中',
+      observationConsole: '观察流控制台',
+      waitingTaskAware: '等待任务感知投递。',
+      workspaceCurrentFlow: '工作区当前观察流',
+      observationSummaryIdle: '选择一个任务感知投递，即可从灵动岛直接查看恢复线索、隐私裁剪和最新观察阶段。',
+      observationTrailIdle: '选择一个带任务 ID 的投递，即可预览最新观察轨迹。',
+      homeFlow: '主页流',
+      taskDetail: '任务详情',
+      recallCenter: '续接中心',
+      refresh: '刷新',
+      recentDeliveries: '最近投递',
+      recentDeliveriesEmpty: '最近的任务投递会在这里累积，即使面板收起后也能继续查看。',
+      statusCompleted: '已完成',
+      statusRunning: '执行中',
+      statusFailed: '失败',
+      statusPending: '待处理',
+      dynamicIsland: '灵动岛',
+      desktopNotification: '桌面通知',
+      taskCenter: '任务中心',
+      taskHud: '任务 HUD',
+      windowControl: '窗口控制',
+      unknown: '未知',
+      justNow: '刚刚',
+      incoming: '即将到来',
+      observationsMetric: '观察点',
+      observationItem: '观察项',
+      observationCount: '观察点 {count}',
+      current: '当前状态：{value}',
+      interruption: '中断：{value}',
+      origin: '来源：{value}',
+      lastActive: '最近活跃：{value}',
+      lastProgress: '最近进度：{value}%',
+      lastActiveAt: '最近活跃时间：{value}',
+      terminal: '终止原因：{value}',
+      postCancelError: '取消后错误：{value}',
+      ignoredError: '已忽略错误：{value}',
+      ignoredResult: '已忽略结果：{value}',
+      noRecoveryLeads: '暂无恢复线索',
+      selectTaskSummary: '选择一个任务感知投递，即可展示它的工作区观察流、恢复线索和隐私裁剪。',
+      selectedTaskSummary: '已选中任务 {taskId}。灵动岛已准备好将当前观察流预览切换到这条任务线上。',
+      syncingTaskSummary: '正在从工作区记忆同步任务 {taskId} 的当前观察流。',
+      taskLinkedNoNodes: '任务 {taskId} 已关联工作区记忆，但还没有写入观察节点。',
+      failure: '失败：{value}',
+      recovery: '恢复：{value}',
+      noObservationSummary: '任务 {taskId} 已连接到当前观察流，但最新观察还没有摘要。',
+      surface: '{value} 界面',
+      refreshed: '已刷新 {value}',
+      reviewLatestSync: '请检查最新同步',
+      taskAwareRequired: '需要任务关联投递',
+      taskLinkRequired: '需要任务关联',
+      flowReady: '观察流待同步',
+      syncingFlow: '观察流同步中',
+      syncNeedsAttention: '同步需要关注',
+      latestEvent: '最新事件：{value}',
+      stageLabel: '阶段：{value}',
+      lastUpdate: '最后更新：{value}',
+      stageCoverage: '阶段覆盖',
+      recoveryLeads: '恢复线索',
+      privateTrimmed: '隐私裁剪',
+      preparingCurrentFlow: '准备当前观察流',
+      syncingWorkspaceMemory: '正在同步工作区记忆',
+      awaitingTaskLink: '等待任务关联',
+      switchingActiveFlow: '正在切换当前观察流',
+      loadingLatestStage: '正在加载最新阶段',
+      awaitingCurrentFlow: '等待当前观察流',
+      waitingRecoverySignals: '等待恢复信号',
+      loadingRecoveryClues: '正在加载恢复线索',
+      sensitiveFragmentsProtected: '敏感片段已保护',
+      noFlowLoaded: '尚未加载观察流',
+      waitingCurrentFlow: '等待当前观察流',
+      checkingPrivacyTrim: '正在检查隐私裁剪',
+      noPrivateTrimming: '暂无隐私裁剪',
+      noSummary: '暂无摘要',
+      privateTrimmedCount: '隐私裁剪 x{count}',
+      derived: '派生',
+      latestSignal: '最新信号',
+      ignoredAt: '忽略时间：{value}',
+      currentDeliveryNoTask: '当前投递还没有任务 ID，因此没有可查询的观察轨迹。',
+      taskAwareReveal: '来自任务中心或其他任务感知界面的投递，会在这里展示最新工作区观察节点。',
+      switchingTask: '观察流正在切换到任务 {taskId}。',
+      preparingSelectedDelivery: '正在为新选中的投递准备最新工作区当前观察流。',
+      loadingObservation: '正在加载任务 {taskId} 的观察流…',
+      pullingObservation: '正在从工作区记忆中拉取最新观察节点、恢复线索与隐私裁剪。',
+      observationNeedsAttention: '任务 {taskId} 的观察流需要关注。',
+      currentWorkspaceLive: '{title} 的当前工作区观察流已就绪。',
+      noObservationNodes: '任务 {taskId} 暂无已存储的观察节点。',
+      noObservationNodesEmpty: '该任务已建立关联，但工作区记忆中还没有观察节点。',
+      taskCenterFlowSynced: '任务中心观察流已同步',
+      recallFlowSynced: '续接中心观察流已同步',
+      dynamicIslandFlowSynced: '灵动岛观察流已同步',
+      taskHudFlowSynced: '任务 HUD 观察流已同步',
+      currentFlowSynced: '当前观察流已同步',
+      overlayConnected: '覆盖层 WebSocket 已连接',
+      overlayReconnecting: '正在重新连接覆盖层 WebSocket',
+      taskDeliveryReceived: '收到任务投递',
+      liveOverlaySurface: '实时悬浮面板',
+      noSummaryProvided: '暂无摘要',
+      generatedByOverlayApi: '由覆盖层 API 生成',
+      unknownWindow: '未知窗口',
+      desktopAction: '桌面动作',
+      selectedWindow: '已选窗口',
+      pinned: '已置顶',
+      executing: '正在执行 {value}',
+      desktopRecipeFailed: '桌面编排执行失败',
+      untitledTask: '未命名任务',
+      applyLayoutPreset: '应用布局预设…',
+      layout: '布局',
+      switchCurrentTarget: '切换当前目标到 {value}',
+      sendToDisplay: '发送到屏幕',
+      sendShort: '发送',
+      prevShort: '上屏',
+      nextShort: '下屏',
+      minShort: '最小',
+      disableAlwaysOnTop: '取消所选窗口置顶',
+      keepAlwaysOnTop: '让所选窗口保持最前',
+      recipeReady: '{value} 已就绪',
+      clickToExpand: '点击展开或收起',
+      hideDynamicIsland: '关闭灵动岛',
+    };
+    const TOKEN_LABELS_ZH = {
+      dynamic_island: '灵动岛',
+      desktop_notification: '桌面通知',
+      task_center: '任务中心',
+      recall_center: '续接中心',
+      floating_task_hud: '任务 HUD',
+      window_control: '窗口控制',
+      live: '实时',
+      once: '单次',
+      recurring: '循环',
+      auto: '自动',
+      completed: '已完成',
+      delivered: '已送达',
+      running: '执行中',
+      processing: '处理中',
+      failed: '失败',
+      error: '错误',
+      pending: '待处理',
+      cancelled: '已取消',
+      canceled: '已取消',
+      observation: '观察项',
+      task_delivery: '任务投递',
+      workspace: '工作区',
+      recovery: '恢复',
+      ignored_stale_update: '忽略过期更新',
+      left: '左侧',
+      right: '右侧',
+      top: '顶部',
+      bottom: '底部',
+      center: '居中',
+      top_left: '左上',
+      top_right: '右上',
+      bottom_left: '左下',
+      bottom_right: '右下',
+      left_third: '左三分之一',
+      center_third: '中三分之一',
+      right_third: '右三分之一',
+      maximize: '铺满',
+      foreground: '前台',
+      background: '后台',
+    };
+    const desktopAllLayoutPresets = [
+      { action: 'snap_maximize', position: 'maximize', label: 'Fill Work Area', compactLabel: 'Fill', labelKey: 'fillWorkArea', compactKey: 'fillShort' },
+      { action: 'snap_left', position: 'left', label: 'Left Half', compactLabel: 'Left', labelKey: 'leftHalf', compactKey: 'leftShort' },
+      { action: 'snap_right', position: 'right', label: 'Right Half', compactLabel: 'Right', labelKey: 'rightHalf', compactKey: 'rightShort' },
+      { action: 'snap_top', position: 'top', label: 'Top Half', compactLabel: 'Top', labelKey: 'topHalf', compactKey: 'topShort' },
+      { action: 'snap_bottom', position: 'bottom', label: 'Bottom Half', compactLabel: 'Bottom', labelKey: 'bottomHalf', compactKey: 'bottomShort' },
+      { action: 'snap_center', position: 'center', label: 'Center', compactLabel: 'Center', labelKey: 'center', compactKey: 'centerShort' },
+      { action: 'snap_top_left', position: 'top_left', label: 'Top Left', compactLabel: 'Top L', labelKey: 'topLeft', compactKey: 'topLeftShort' },
+      { action: 'snap_top_right', position: 'top_right', label: 'Top Right', compactLabel: 'Top R', labelKey: 'topRight', compactKey: 'topRightShort' },
+      { action: 'snap_bottom_left', position: 'bottom_left', label: 'Bottom Left', compactLabel: 'Bot L', labelKey: 'bottomLeft', compactKey: 'bottomLeftShort' },
+      { action: 'snap_bottom_right', position: 'bottom_right', label: 'Bottom Right', compactLabel: 'Bot R', labelKey: 'bottomRight', compactKey: 'bottomRightShort' },
+      { action: 'snap_left_third', position: 'left_third', label: 'Left Third', compactLabel: 'Left 1/3', labelKey: 'leftThird', compactKey: 'leftThirdShort' },
+      { action: 'snap_center_third', position: 'center_third', label: 'Center Third', compactLabel: 'Mid 1/3', labelKey: 'centerThird', compactKey: 'centerThirdShort' },
+      { action: 'snap_right_third', position: 'right_third', label: 'Right Third', compactLabel: 'Right 1/3', labelKey: 'rightThird', compactKey: 'rightThirdShort' },
+    ];
+    const desktopAdvancedLayoutPresets = desktopAllLayoutPresets.filter((item) => (
+      item.action !== 'snap_left'
+      && item.action !== 'snap_maximize'
+      && item.action !== 'snap_right'
+    ));
+    const desktopMissionRecipes = [
+      { id: 'solo_focus', title: 'Solo Focus', stepsLabel: 'Focus -> Fill', titleKey: 'soloFocus', stepsKey: 'soloFocusSteps' },
+      { id: 'compare_left', title: 'Compare Left', stepsLabel: 'Focus -> Left Half', titleKey: 'compareLeft', stepsKey: 'compareLeftSteps' },
+      { id: 'reference_rail', title: 'Reference Rail', stepsLabel: 'Focus -> Right 1/3 -> Pin', titleKey: 'referenceRail', stepsKey: 'referenceRailSteps' },
+      { id: 'center_stage', title: 'Center Stage', stepsLabel: 'Send -> Center', titleKey: 'centerStage', stepsKey: 'centerStageSteps' },
+    ];
+    const desktopSnapPositions = {
+      snap_left: 'left',
+      snap_maximize: 'maximize',
+      snap_right: 'right',
+      snap_top: 'top',
+      snap_bottom: 'bottom',
+      snap_center: 'center',
+      snap_top_left: 'top_left',
+      snap_top_right: 'top_right',
+      snap_bottom_left: 'bottom_left',
+      snap_bottom_right: 'bottom_right',
+      snap_left_third: 'left_third',
+      snap_center_third: 'center_third',
+      snap_right_third: 'right_third',
+    };
+    const desktopActionButtons = {
+      focus: document.getElementById('desktopActionFocus'),
+      toggle_always_on_top: document.getElementById('desktopActionPin'),
+      minimize: document.getElementById('desktopActionMinimize'),
+      move_to_previous_monitor: document.getElementById('desktopActionPrevious'),
+      move_to_next_monitor: document.getElementById('desktopActionNext'),
+      snap_left: document.getElementById('desktopActionSnapLeft'),
+      snap_maximize: document.getElementById('desktopActionSnapMaximize'),
+      snap_right: document.getElementById('desktopActionSnapRight'),
+    };
+    const historyInlineActions = ['focus', 'toggle_always_on_top', 'snap_left', 'snap_maximize', 'snap_right'];
+
+    const historyItems = [];
+    let socket = null;
+    let heartbeatTimer = null;
+    let reconnectTimer = null;
+    let autoCollapseTimer = null;
+    let forceExpanded = false;
+    let latestDelivery = null;
+    let currentDelivery = null;
+    let linkedObservationTarget = null;
+    let observationItems = [];
+    let observationState = { taskId: '', title: '', loading: false, error: '', loadedAt: '' };
+    let observationRequestToken = 0;
+    let desktopActionLoading = '';
+    let desktopActionLoadingDeliveryId = '';
+    let desktopRecipeLoading = '';
+    let desktopRecipeLoadingDeliveryId = '';
+    let historySequence = 0;
+    const observationCache = new Map();
+    let roleCardState = { enabled: false, memoryId: '', name: '', updatedAt: 0 };
+    let roleCardStateChannel = null;
+    let roleCardStateStorageListener = null;
+    const dynamicIslandHost = window.electronAPI
+      && typeof window.electronAPI.setDynamicIslandSurfaceState === 'function'
+      ? window.electronAPI
+      : null;
+    let surfaceSyncTimer = null;
+    let surfaceSettleTimer = null;
+    let surfaceResizeObserver = null;
+    let lastSurfaceStateKey = '';
+    const surfacePresetSize = {
+      compactWidth: 188,
+      compactHeight: 58,
+      expandedWidth: 468,
+      expandedMinHeight: 180,
+      expandedMaxHeight: 448,
+      expandedChromeHeight: 82,
+      bottomSafeInset: 10,
+    };
+
+    function t(key, fallback = '', variables = {}) {
+      const source = currentLocaleKey === 'zh' ? LOCALE_MESSAGES_ZH : null;
+      const template = (source && Object.prototype.hasOwnProperty.call(source, key) ? source[key] : '') || fallback || key;
+      return String(template).replace(/\{(\w+)\}/g, (_, name) => {
+        const value = variables[name];
+        return value === undefined || value === null ? '' : String(value);
+      });
+    }
+
+    function humanizeLabel(value) {
+      return String(value || '').trim().replaceAll('_', ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function titleCaseLabel(value) {
+      return humanizeLabel(value).replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+
+    function toLocaleTokenLabel(value, fallback = '') {
+      const raw = String(value || fallback || '').trim();
+      if (!raw) {
+        return fallback;
+      }
+      const normalized = raw.toLowerCase().replace(/\s+/g, '_');
+      if (currentLocaleKey === 'zh' && Object.prototype.hasOwnProperty.call(TOKEN_LABELS_ZH, normalized)) {
+        return TOKEN_LABELS_ZH[normalized];
+      }
+      return currentLocaleKey === 'zh' ? humanizeLabel(raw) : titleCaseLabel(raw);
+    }
+
+    function getDesktopLayoutLabel(preset, variant = 'default') {
+      if (!preset) {
+        return '';
+      }
+      if (variant === 'short') {
+        return t(preset.compactKey, preset.compactLabel || preset.label);
+      }
+      return t(preset.labelKey, preset.label);
+    }
+
+    function getDesktopRecipeTitle(recipe) {
+      return recipe ? t(recipe.titleKey, recipe.title) : '';
+    }
+
+    function getDesktopRecipeSteps(recipe) {
+      return recipe ? t(recipe.stepsKey, recipe.stepsLabel) : '';
+    }
+
+    function normalizeRoleCardState(input = {}) {
+      const source = input && typeof input === 'object' ? input : {};
+      const name = String(source.name || '').trim();
+      const memoryId = String(source.memoryId || '').trim();
+      const enabled = Boolean(source.enabled && name);
+      return {
+        enabled,
+        memoryId: enabled ? memoryId : '',
+        name: enabled ? name : '',
+        updatedAt: Number(source.updatedAt) || 0,
+      };
+    }
+
+    function readStoredRoleCardState() {
+      try {
+        const raw = localStorage.getItem(ROLE_CARD_STATE_STORAGE_KEY);
+        if (!raw) {
+          return normalizeRoleCardState();
+        }
+        return normalizeRoleCardState(JSON.parse(raw));
+      } catch (error) {
+        console.warn('Read dynamic island role card state failed:', error);
+        return normalizeRoleCardState();
+      }
+    }
+
+    function getIdleHeaderTitle() {
+      return roleCardState.enabled && roleCardState.name
+        ? roleCardState.name
+        : t('headerTitleStatic', 'OpenXnet Dynamic Island');
+    }
+
+    /**
+     * 安全更新 #headerTitle 内容：
+     *   - 默认 "OpenXnet …" 字串 → 拆 brand + suffix 两段（紧凑态只显 brand 部分）
+     *   - 其它动态文本（任务投递标题等）→ 直接 textContent
+     */
+    function setHeaderTitle(text) {
+      if (!headerTitle) return;
+      const raw = String(text || '');
+      // 默认品牌字串 "OpenXnet 灵动岛" / "OpenXnet Dynamic Island"
+      const brandMatch = raw.match(/^OpenXnet(?:\s+|$)/);
+      if (brandMatch) {
+        const brand = 'OpenXnet';
+        const suffix = raw.slice(brand.length); // 可能为空（仅 brand 时）
+        headerTitle.textContent = '';
+        const brandSpan = document.createElement('span');
+        brandSpan.className = 'title-brand';
+        brandSpan.textContent = brand;
+        headerTitle.appendChild(brandSpan);
+        if (suffix) {
+          const suffixSpan = document.createElement('span');
+          suffixSpan.className = 'title-suffix';
+          suffixSpan.textContent = suffix;
+          headerTitle.appendChild(suffixSpan);
+        }
+        return;
+      }
+      headerTitle.textContent = raw;
+    }
+
+    function getIdleHeaderSubtitle() {
+      // 紧凑态里这条会被渲染成右侧的小药丸，所以要简短
+      return roleCardState.enabled && roleCardState.name
+        ? t('roleCardActive', 'Role card active')
+        : t('islandIdleShort', 'Idle');
+    }
+
+    function updateIdleHeaderContent() {
+      if (currentDelivery || linkedObservationTarget) {
+        return;
+      }
+      setHeaderTitle(getIdleHeaderTitle());
+      headerSubtitle.textContent = getIdleHeaderSubtitle();
+      queueSurfaceStateSync();
+    }
+
+    function applyRoleCardState(nextState, options = {}) {
+      const normalized = normalizeRoleCardState(nextState);
+      const previousKey = JSON.stringify(roleCardState);
+      const nextKey = JSON.stringify(normalized);
+      roleCardState = normalized;
+      if (options.silent || previousKey === nextKey) {
+        return;
+      }
+      updateIdleHeaderContent();
+    }
+
+    function ensureRoleCardStateSync() {
+      applyRoleCardState(readStoredRoleCardState(), { silent: true });
+      if (!roleCardStateStorageListener) {
+        roleCardStateStorageListener = (event) => {
+          if (event.key !== ROLE_CARD_STATE_STORAGE_KEY) {
+            return;
+          }
+          applyRoleCardState(readStoredRoleCardState());
+        };
+        window.addEventListener('storage', roleCardStateStorageListener);
+      }
+      if (!roleCardStateChannel && typeof BroadcastChannel === 'function') {
+        roleCardStateChannel = new BroadcastChannel(ROLE_CARD_STATE_STORAGE_KEY);
+        roleCardStateChannel.onmessage = (event) => {
+          applyRoleCardState(event && event.data ? event.data : {});
+        };
+      }
+    }
+
+    function applyStaticTranslations() {
+      document.documentElement.lang = currentLocaleKey === 'zh' ? 'zh-CN' : 'en';
+      document.title = t('headerTitleStatic', 'OpenXnet Dynamic Island');
+      header.setAttribute('title', t('clickToExpand', 'Click to expand or collapse'));
+      if (closeIslandButton) {
+        const hideLabel = t('hideDynamicIsland', 'Hide Dynamic Island');
+        closeIslandButton.setAttribute('title', hideLabel);
+        closeIslandButton.setAttribute('aria-label', hideLabel);
+      }
+      if (!latestDelivery) {
+        updateIdleHeaderContent();
+      }
+      connectionText.textContent = connectionChip.classList.contains('online')
+        ? t('online', 'Online')
+        : t('offline', 'Offline');
+      if (desktopActionBarTitle) desktopActionBarTitle.textContent = t('quickControls', 'Quick Controls');
+      if (desktopActionHint && !currentDelivery) desktopActionHint.textContent = t('quickControlsHint', 'Operate the selected desktop window without leaving Dynamic Island.');
+      if (observationConsoleTitle) observationConsoleTitle.textContent = t('observationConsole', 'Observation Flow Console');
+      if (observationKicker) observationKicker.textContent = t('workspaceCurrentFlow', 'Workspace Current Flow');
+      if (desktopMissionRecipesTitle) desktopMissionRecipesTitle.textContent = t('missionRecipes', 'Mission Recipes');
+      if (desktopMissionRecipesHint) desktopMissionRecipesHint.textContent = t('missionRecipesHint', 'Run multi-step desktop maneuvers from the island.');
+      if (desktopLayoutTitle) desktopLayoutTitle.textContent = t('advancedLayouts', 'Advanced Layouts');
+      if (desktopLayoutHint) desktopLayoutHint.textContent = t('advancedLayoutsHint', 'Top, bottom, center, corners, and thirds.');
+      if (historyTitle) historyTitle.textContent = t('recentDeliveries', 'Recent Deliveries');
+      observationOpenHomeFlow.textContent = t('homeFlow', 'Home Flow');
+      observationOpenTaskDetail.textContent = t('taskDetail', 'Task Detail');
+      observationOpenRecall.textContent = t('recallCenter', 'Recall Center');
+      observationRefresh.textContent = t('refresh', 'Refresh');
+      if (desktopActionButtons.focus) desktopActionButtons.focus.textContent = t('focus', 'Focus');
+      if (desktopActionButtons.toggle_always_on_top) desktopActionButtons.toggle_always_on_top.textContent = t('pin', 'Pin');
+      if (desktopActionButtons.minimize) desktopActionButtons.minimize.textContent = t('minimize', 'Minimize');
+      if (desktopActionButtons.move_to_previous_monitor) desktopActionButtons.move_to_previous_monitor.textContent = t('prevDisplay', 'Prev Display');
+      if (desktopActionButtons.move_to_next_monitor) desktopActionButtons.move_to_next_monitor.textContent = t('nextDisplay', 'Next Display');
+      if (desktopActionButtons.snap_left) desktopActionButtons.snap_left.textContent = t('leftHalf', 'Left Half');
+      if (desktopActionButtons.snap_maximize) desktopActionButtons.snap_maximize.textContent = t('fillWorkArea', 'Fill Work Area');
+      if (desktopActionButtons.snap_right) desktopActionButtons.snap_right.textContent = t('rightHalf', 'Right Half');
+    }
+
+    async function hydrateRuntimeLanguage() {
+      if (!window.electronAPI || typeof window.electronAPI.getCurrentLanguage !== 'function') {
+        applyStaticTranslations();
+        return;
+      }
+      try {
+        const runtimeLanguage = await window.electronAPI.getCurrentLanguage();
+        if (runtimeLanguage) {
+          currentLocaleTag = String(runtimeLanguage);
+          currentLocaleKey = /^zh/i.test(currentLocaleTag) ? 'zh' : 'en';
+        }
+      } catch (error) {
+        console.warn('Dynamic island language sync failed:', error);
+      }
+      applyStaticTranslations();
+    }
+
+    function applyPlatformAppearanceFallback() {
+      const runningOnWindows = Boolean(window.electron && window.electron.isWindows);
+      if (runningOnWindows) {
+        document.documentElement.classList.add('windows-overlay');
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function cloneValue(value) {
+      if (value === null || value === undefined) {
+        return value;
+      }
+      return JSON.parse(JSON.stringify(value));
+    }
+
+    function setCompact(compact) {
+      shell.classList.toggle('compact', compact && !forceExpanded);
+      queueSurfaceStateSync();
+      window.clearTimeout(surfaceSettleTimer);
+      surfaceSettleTimer = window.setTimeout(() => {
+        queueSurfaceStateSync({ immediate: true });
+      }, 320);
+    }
+
+    function collapseDynamicIslandSurface() {
+      forceExpanded = false;
+      setCompact(true);
+      queueSurfaceStateSync({ interactive: false, immediate: true });
+      scheduleAutoCollapse();
+    }
+
+    async function requestCloseDynamicIsland() {
+      if (window.electronAPI && typeof window.electronAPI.closeDynamicIslandWindow === 'function') {
+        try {
+          await window.electronAPI.closeDynamicIslandWindow();
+          return;
+        } catch (error) {
+          console.error('Close dynamic island window failed:', error);
+        }
+      }
+      window.close();
+    }
+
+    function queueSurfaceStateSync(options = {}) {
+      if (!dynamicIslandHost) {
+        return;
+      }
+      const delay = options.immediate ? 0 : 40;
+      window.clearTimeout(surfaceSyncTimer);
+      surfaceSyncTimer = window.setTimeout(() => {
+        syncSurfaceState(options);
+      }, delay);
+    }
+
+    function syncSurfaceState(options = {}) {
+      if (!dynamicIslandHost) {
+        return;
+      }
+
+      window.requestAnimationFrame(() => {
+        const compact = shell.classList.contains('compact');
+        const interactive = typeof options.interactive === 'boolean'
+          ? options.interactive
+          : (!compact || forceExpanded || shell.matches(':hover'));
+        const bodyScrollHeight = islandBody ? islandBody.scrollHeight : 0;
+        const bodyClientHeight = islandBody ? islandBody.clientHeight : 0;
+        const shellRect = shell.getBoundingClientRect();
+        const shellComputedStyle = window.getComputedStyle(shell);
+        const shellMarginTop = Number.parseFloat(shellComputedStyle.marginTop) || 0;
+        const shellMarginBottom = Number.parseFloat(shellComputedStyle.marginBottom) || 0;
+        const measuredWidth = Math.max(
+          compact ? surfacePresetSize.compactWidth : surfacePresetSize.expandedWidth,
+          Math.ceil(shellRect.width)
+        );
+        const measuredHeight = Math.ceil(
+          shellRect.height
+          + shellMarginTop
+          + shellMarginBottom
+          + (!compact && bodyScrollHeight > bodyClientHeight ? surfacePresetSize.bottomSafeInset : 0)
+        );
+        const expandedHeight = Math.min(
+          surfacePresetSize.expandedMaxHeight,
+          Math.max(
+            surfacePresetSize.expandedMinHeight,
+            measuredHeight || (bodyScrollHeight + surfacePresetSize.expandedChromeHeight)
+          )
+        );
+        const nextState = {
+          compact,
+          interactive,
+          width: measuredWidth,
+          height: compact ? Math.max(surfacePresetSize.compactHeight, measuredHeight) : expandedHeight,
+        };
+        const stateKey = JSON.stringify(nextState);
+        if (stateKey === lastSurfaceStateKey) {
+          return;
+        }
+        lastSurfaceStateKey = stateKey;
+        dynamicIslandHost.setDynamicIslandSurfaceState(nextState).catch((error) => {
+          console.error('Dynamic island surface sync failed:', error);
+        });
+      });
+    }
+
+    function pulseHighlight() {
+      shell.classList.add('highlight');
+      window.clearTimeout(shell._highlightTimer);
+      shell._highlightTimer = window.setTimeout(() => {
+        shell.classList.remove('highlight');
+      }, 1600);
+    }
+
+    function ensureSurfaceResizeObserver() {
+      if (!dynamicIslandHost || typeof window.ResizeObserver !== 'function' || surfaceResizeObserver) {
+        return;
+      }
+
+      surfaceResizeObserver = new window.ResizeObserver(() => {
+        queueSurfaceStateSync({
+          interactive: forceExpanded || !shell.classList.contains('compact') || shell.matches(':hover'),
+          immediate: true,
+        });
+      });
+
+      surfaceResizeObserver.observe(shell);
+      surfaceResizeObserver.observe(islandBody);
+    }
+
+    function toReadableStatus(status) {
+      const normalized = String(status || 'completed').trim().toLowerCase();
+      if (normalized === 'completed' || normalized === 'delivered') return { label: t('statusCompleted', 'Completed'), className: 'success' };
+      if (normalized === 'running' || normalized === 'processing') return { label: t('statusRunning', 'Running'), className: 'warning' };
+      if (normalized === 'failed' || normalized === 'error') return { label: t('statusFailed', 'Failed'), className: 'danger' };
+      return { label: toLocaleTokenLabel(normalized || 'pending', t('statusPending', 'Pending')), className: '' };
+    }
+
+    function toReadableSchedule(scheduleType) {
+      const normalized = String(scheduleType || '').trim().toLowerCase();
+      if (!normalized) return t('auto', 'Auto');
+      if (normalized === 'once') return t('once', 'Once');
+      if (normalized === 'recurring') return t('recurring', 'Recurring');
+      if (normalized === 'live') return t('live', 'Live');
+      return toLocaleTokenLabel(normalized, normalized);
+    }
+
+    function toReadableChannel(channel) {
+      const normalized = String(channel || 'dynamic_island').trim().toLowerCase();
+      if (normalized === 'dynamic_island') return t('dynamicIsland', 'Dynamic Island');
+      if (normalized === 'desktop_notification') return t('desktopNotification', 'Desktop Notification');
+      if (normalized === 'task_center') return t('taskCenter', 'Task Center');
+      if (normalized === 'recall_center') return t('recallCenter', 'Recall Center');
+      if (normalized === 'floating_task_hud') return t('taskHud', 'Task HUD');
+      return toLocaleTokenLabel(normalized, normalized);
+    }
+
+    function observationSyncBadgeLabel(delivery) {
+      const route = String(
+        delivery?.focus_source
+        || delivery?.target
+        || delivery?.channel
+        || ''
+      ).trim().toLowerCase();
+      if (route === 'task_center') return t('taskCenterFlowSynced', 'Task Center Flow Synced');
+      if (route === 'recall_center') return t('recallFlowSynced', 'Recall Flow Synced');
+      if (route === 'dynamic_island') return t('dynamicIslandFlowSynced', 'Dynamic Island Flow Synced');
+      if (route === 'floating_task_hud') return t('taskHudFlowSynced', 'Task HUD Flow Synced');
+      return t('currentFlowSynced', 'Current Flow Synced');
+    }
+
+    function formatTimestamp(value) {
+      if (!value) return t('unknown', 'Unknown');
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return String(value);
+      return new Intl.DateTimeFormat(currentLocaleTag, {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).format(parsed);
+    }
+
+    function formatRelativeTimestamp(value) {
+      if (!value) return '';
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return '';
+      const deltaSeconds = Math.round((Date.now() - parsed.getTime()) / 1000);
+      const absSeconds = Math.abs(deltaSeconds);
+      if (absSeconds < 45) return deltaSeconds >= 0 ? t('justNow', 'just now') : t('incoming', 'incoming');
+      const formatter = new Intl.RelativeTimeFormat(currentLocaleTag, { numeric: 'auto' });
+      if (absSeconds < 3600) {
+        const minutes = Math.round(absSeconds / 60);
+        return formatter.format(deltaSeconds >= 0 ? -minutes : minutes, 'minute');
+      }
+      if (absSeconds < 86400) {
+        const hours = Math.round(absSeconds / 3600);
+        return formatter.format(deltaSeconds >= 0 ? -hours : hours, 'hour');
+      }
+      const days = Math.round(absSeconds / 86400);
+      return formatter.format(deltaSeconds >= 0 ? -days : days, 'day');
+    }
+
+    function toObservationLabel(value, fallback = '') {
+      return toLocaleTokenLabel(value, fallback);
+    }
+
+    function toObservationTitleLabel(value, fallback = '') {
+      return toLocaleTokenLabel(value, fallback);
+    }
+
+    function formatObservationCount(value) {
+      const numericValue = Number(value);
+      const count = Number.isFinite(numericValue) && numericValue >= 0
+        ? Math.floor(numericValue)
+        : 0;
+      return t('observationCount', 'Observations {count}', { count });
+    }
+
+    function getObservationTaskId(delivery) {
+      return delivery && typeof delivery === 'object'
+        ? String(delivery.task_id || '').trim()
+        : '';
+    }
+
+    function getObservationTitle(delivery) {
+      return delivery && typeof delivery === 'object'
+        ? String(delivery.title || '').trim()
+        : '';
+    }
+
+    function normalizeObservationConsoleTarget(payload, fallbackSource = 'recall_center') {
+      if (!payload || typeof payload !== 'object') {
+        return null;
+      }
+      const taskId = String(payload.task_id || '').trim();
+      const sessionId = String(payload.session_id || '').trim();
+      const digest = String(payload.digest || '').trim();
+      if (!taskId && !sessionId && !digest) {
+        return null;
+      }
+      const title = String(payload.title || payload.task_title || (taskId ? `Task ${taskId}` : 'Observation Flow')).trim();
+      return {
+        kind: String(payload.kind || 'observation_focus').trim() || 'observation_focus',
+        title: title || (taskId ? `Task ${taskId}` : 'Observation Flow'),
+        summary: String(payload.summary || '').trim(),
+        status: String(payload.status || 'running').trim() || 'running',
+        schedule_type: String(payload.schedule_type || 'live').trim() || 'live',
+        task_id: taskId,
+        session_id: sessionId,
+        digest,
+        timestamp: String(payload.timestamp || new Date().toISOString()).trim(),
+        target: String(payload.target || payload.channel || fallbackSource).trim().toLowerCase() || fallbackSource,
+        channel: String(payload.channel || payload.target || fallbackSource).trim().toLowerCase() || fallbackSource,
+        focus_source: String(payload.focus_source || payload.source || fallbackSource).trim() || fallbackSource,
+        observation_focus: true,
+      };
+    }
+
+    function getObservationConsoleTarget(delivery = currentDelivery) {
+      return linkedObservationTarget || delivery || null;
+    }
+
+    function clearLinkedObservationTarget() {
+      linkedObservationTarget = null;
+    }
+
+    function mergeObservationPayloadIntoDelivery(targetDelivery, payload) {
+      if (!targetDelivery || typeof targetDelivery !== 'object' || !payload || typeof payload !== 'object') {
+        return false;
+      }
+      if (payload.title) targetDelivery.title = String(payload.title).trim();
+      if (payload.summary) targetDelivery.summary = String(payload.summary).trim();
+      if (payload.status) targetDelivery.status = String(payload.status).trim();
+      if (payload.timestamp) targetDelivery.timestamp = String(payload.timestamp).trim();
+      if (payload.task_id && !targetDelivery.task_id) targetDelivery.task_id = String(payload.task_id).trim();
+      return true;
+    }
+
+    function hydrateObservationSnapshotFromPayload(payload, target = null) {
+      const normalizedTarget = target || normalizeObservationConsoleTarget(payload, payload?.focus_source || payload?.source || 'workspace_memory');
+      const taskId = getObservationTaskId(normalizedTarget);
+      if (!taskId || !payload || typeof payload !== 'object') {
+        return false;
+      }
+
+      const normalizedItems = Array.isArray(payload.observations)
+        ? payload.observations.filter((item) => item && typeof item === 'object').slice(0, 4)
+        : [];
+      const nextState = {
+        taskId,
+        title: getObservationTitle(normalizedTarget),
+        loading: false,
+        error: '',
+        loadedAt: String(payload.timestamp || new Date().toISOString()).trim(),
+      };
+
+      observationCache.set(taskId, {
+        items: cloneValue(normalizedItems),
+        state: { ...nextState },
+      });
+
+      if (observationState.taskId === taskId || getObservationTaskId(getObservationConsoleTarget()) === taskId) {
+        observationItems = cloneValue(normalizedItems);
+        observationState = { ...nextState };
+      }
+      return true;
+    }
+
+    function buildRecallLaunchTarget(delivery) {
+      const taskId = getObservationTaskId(delivery);
+      if (!taskId) {
+        return null;
+      }
+      const title = getObservationTitle(delivery) || `Task ${taskId}`;
+      return {
+        task_id: taskId,
+        session_id: String(delivery?.session_id || '').trim(),
+        digest: String(delivery?.digest || '').trim(),
+        title,
+        task_title: title,
+        item_type: String(delivery?.kind || 'task_delivery').trim(),
+        source: String(delivery?.focus_source || delivery?.target || 'dynamic_island').trim() || 'dynamic_island',
+      };
+    }
+
+    function queueRecallCenterLaunch(delivery) {
+      const target = buildRecallLaunchTarget(delivery);
+      if (!target) {
+        return null;
+      }
+      const request = {
+        id: `recall-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        created_at: new Date().toISOString(),
+        target,
+      };
+      try {
+        localStorage.setItem(RECALL_LAUNCH_STORAGE_KEY, JSON.stringify(request));
+        return request;
+      } catch (error) {
+        console.error('Queue recall center launch failed from dynamic island:', error);
+        return null;
+      }
+    }
+
+    async function broadcastRecallCenterLaunch(request) {
+      if (!request || typeof BroadcastChannel !== 'function') {
+        return false;
+      }
+      return await new Promise((resolve) => {
+        const channel = new BroadcastChannel(RECALL_LAUNCH_STORAGE_KEY);
+        const timer = window.setTimeout(() => {
+          channel.close();
+          resolve(false);
+        }, 360);
+        channel.onmessage = (event) => {
+          if (event && event.data && event.data.type === 'ack' && event.data.id === request.id) {
+            window.clearTimeout(timer);
+            channel.close();
+            resolve(true);
+          }
+        };
+        channel.postMessage(request);
+      });
+    }
+
+    function buildHomeCurrentFlowLaunchTarget(delivery) {
+      const taskId = String(delivery?.task_id || '').trim();
+      const sessionId = String(delivery?.session_id || '').trim();
+      const digest = String(delivery?.digest || '').trim();
+      if (!taskId && !sessionId && !digest) {
+        return null;
+      }
+      const title = getObservationTitle(delivery) || (taskId ? `Task ${taskId}` : 'Observation Flow');
+      return {
+        task_id: taskId,
+        session_id: sessionId,
+        digest,
+        title,
+        task_title: title,
+        status: String(delivery?.status || '').trim(),
+        summary: String(delivery?.summary || '').trim(),
+        source: String(delivery?.focus_source || delivery?.target || 'dynamic_island').trim() || 'dynamic_island',
+      };
+    }
+
+    function queueHomeCurrentFlowLaunch(delivery) {
+      const target = buildHomeCurrentFlowLaunchTarget(delivery);
+      if (!target) {
+        return null;
+      }
+      const request = {
+        id: `home-current-flow-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        created_at: new Date().toISOString(),
+        target,
+      };
+      try {
+        localStorage.setItem(HOME_CURRENT_FLOW_LAUNCH_STORAGE_KEY, JSON.stringify(request));
+        return request;
+      } catch (error) {
+        console.error('Queue home current flow launch failed from dynamic island:', error);
+        return null;
+      }
+    }
+
+    async function broadcastHomeCurrentFlowLaunch(request) {
+      if (!request || typeof BroadcastChannel !== 'function') {
+        return false;
+      }
+      return await new Promise((resolve) => {
+        const channel = new BroadcastChannel(HOME_CURRENT_FLOW_LAUNCH_STORAGE_KEY);
+        const timer = window.setTimeout(() => {
+          channel.close();
+          resolve(false);
+        }, 360);
+        channel.onmessage = (event) => {
+          if (event && event.data && event.data.type === 'ack' && event.data.id === request.id) {
+            window.clearTimeout(timer);
+            channel.close();
+            resolve(true);
+          }
+        };
+        channel.postMessage(request);
+      });
+    }
+
+    function buildTaskDetailLaunchTarget(delivery) {
+      const target = buildRecallLaunchTarget(delivery);
+      if (!target) {
+        return null;
+      }
+      return {
+        ...target,
+        summary: String(delivery?.summary || '').trim(),
+        status: String(delivery?.status || '').trim(),
+      };
+    }
+
+    function queueTaskDetailLaunch(delivery) {
+      const target = buildTaskDetailLaunchTarget(delivery);
+      if (!target) {
+        return null;
+      }
+      const request = {
+        id: `task-detail-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        created_at: new Date().toISOString(),
+        target,
+      };
+      try {
+        localStorage.setItem(TASK_DETAIL_LAUNCH_STORAGE_KEY, JSON.stringify(request));
+        return request;
+      } catch (error) {
+        console.error('Queue task detail launch failed from dynamic island:', error);
+        return null;
+      }
+    }
+
+    async function broadcastTaskDetailLaunch(request) {
+      if (!request || typeof BroadcastChannel !== 'function') {
+        return false;
+      }
+      return await new Promise((resolve) => {
+        const channel = new BroadcastChannel(TASK_DETAIL_LAUNCH_STORAGE_KEY);
+        const timer = window.setTimeout(() => {
+          channel.close();
+          resolve(false);
+        }, 360);
+        channel.onmessage = (event) => {
+          if (event && event.data && event.data.type === 'ack' && event.data.id === request.id) {
+            window.clearTimeout(timer);
+            channel.close();
+            resolve(true);
+          }
+        };
+        channel.postMessage(request);
+      });
+    }
+
+    function resetObservationSnapshot(clearCache = false) {
+      observationItems = [];
+      observationState = { taskId: '', title: '', loading: false, error: '', loadedAt: '' };
+      observationRequestToken += 1;
+      if (clearCache) {
+        observationCache.clear();
+      }
+    }
+
+    function getObservationLatestItem(items = observationItems) {
+      return Array.isArray(items)
+        ? items.find((item) => item && typeof item === 'object') || null
+        : null;
+    }
+
+    function getObservationLatestStageLabel(items = observationItems) {
+      const latest = getObservationLatestItem(items);
+      if (latest?.stage) {
+        return toObservationTitleLabel(latest.stage);
+      }
+      if (latest?.status) {
+        return toObservationTitleLabel(latest.status);
+      }
+      return 'Awaiting Flow';
+    }
+
+    function getObservationLatestEventLabel(items = observationItems) {
+      const latest = getObservationLatestItem(items);
+      return latest?.event_type ? toObservationTitleLabel(latest.event_type) : '';
+    }
+
+    function getObservationLatestTime(items = observationItems) {
+      const latest = getObservationLatestItem(items);
+      return String(latest?.timestamp || latest?.created_at || '').trim();
+    }
+
+    function getObservationUniqueStageCount(items = observationItems) {
+      return new Set(
+        (Array.isArray(items) ? items : [])
+          .map((item) => String(item?.stage || '').trim().toLowerCase())
+          .filter(Boolean)
+      ).size;
+    }
+
+    function formatObservationGuardDetails(item) {
+      if (!item || typeof item !== 'object') {
+        return '';
+      }
+      const parts = [];
+      if (item.current_status) parts.push(t('current', 'Current: {value}', { value: toObservationTitleLabel(item.current_status) }));
+      if (item.interrupted_reason) parts.push(t('interruption', 'Interruption: {value}', { value: item.interrupted_reason }));
+      if (item.interrupted_origin) parts.push(t('origin', 'Origin: {value}', { value: toObservationTitleLabel(item.interrupted_origin) }));
+      if (item.last_active_status) parts.push(t('lastActive', 'Last active: {value}', { value: toObservationTitleLabel(item.last_active_status) }));
+      if (item.last_active_progress !== null && item.last_active_progress !== undefined && item.last_active_progress !== '') {
+        parts.push(t('lastProgress', 'Last progress: {value}%', { value: item.last_active_progress }));
+      }
+      if (item.last_active_at) {
+        parts.push(t('lastActiveAt', 'Last active at: {value}', { value: formatTimestamp(item.last_active_at) }));
+      }
+      if (item.terminal_reason) parts.push(t('terminal', 'Terminal: {value}', { value: toObservationTitleLabel(item.terminal_reason) }));
+      if (item.post_cancel_error) parts.push(t('postCancelError', 'Post-cancel error: {value}', { value: item.post_cancel_error }));
+      else if (item.last_error && String(item.event_type || '').trim().toLowerCase() === 'ignored_stale_update') parts.push(t('ignoredError', 'Ignored error: {value}', { value: item.last_error }));
+      if (item.result_preview && String(item.event_type || '').trim().toLowerCase() === 'ignored_stale_update') parts.push(t('ignoredResult', 'Ignored result: {value}', { value: item.result_preview }));
+      return parts.join(' | ');
+    }
+
+    function getObservationRecoveryLeadCount(items = observationItems) {
+      return (Array.isArray(items) ? items : []).filter((item) => Boolean(
+        String(item?.failure_label || '').trim()
+        || String(item?.recovery_action || '').trim()
+        || String(item?.interrupted_reason || '').trim()
+        || String(formatObservationGuardDetails(item) || '').trim()
+      )).length;
+    }
+
+    function getObservationLatestRecoveryLead(items = observationItems) {
+      const lead = (Array.isArray(items) ? items : []).find((item) => Boolean(
+        String(item?.recovery_action || '').trim()
+        || String(item?.failure_label || '').trim()
+      ));
+      if (!lead) {
+        return t('noRecoveryLeads', 'No recovery leads yet');
+      }
+      return String(lead.recovery_action || lead.failure_label || '').trim() || t('noRecoveryLeads', 'No recovery leads yet');
+    }
+
+    function getObservationRedactedCount(items = observationItems) {
+      return (Array.isArray(items) ? items : []).reduce((total, item) => {
+        if (String(item?.privacy_mode || '').trim().toLowerCase() !== 'redacted') {
+          return total;
+        }
+        const privateCount = Number(item?.private_segment_count);
+        return total + (Number.isFinite(privateCount) && privateCount > 0 ? Math.floor(privateCount) : 1);
+      }, 0);
+    }
+
+    function getObservationHeroSummary(delivery, items, state, sameTask) {
+      const taskId = getObservationTaskId(delivery);
+      if (!taskId) {
+        return t('selectTaskSummary', 'Select a task-aware delivery to surface its workspace observation flow, recovery clues, and privacy trims.');
+      }
+      if (!sameTask) {
+        return t('selectedTaskSummary', 'Task {taskId} is selected. Dynamic Island is ready to switch its current flow preview to this delivery.', { taskId });
+      }
+      if (state.loading) {
+        return t('syncingTaskSummary', 'Syncing the current flow for Task {taskId} from workspace memory.', { taskId });
+      }
+      if (state.error) {
+        return state.error;
+      }
+      const latest = getObservationLatestItem(items);
+      if (!latest) {
+        return t('taskLinkedNoNodes', 'Task {taskId} is linked to workspace memory, but no observation nodes have been written yet.', { taskId });
+      }
+      if (latest.failure_label || latest.recovery_action) {
+        const parts = [];
+        if (latest.failure_label) parts.push(t('failure', 'Failure: {value}', { value: latest.failure_label }));
+        if (latest.recovery_action) parts.push(t('recovery', 'Recovery: {value}', { value: latest.recovery_action }));
+        return parts.join(' | ');
+      }
+      const guardDetails = formatObservationGuardDetails(latest);
+      if (guardDetails) {
+        return guardDetails;
+      }
+      if (latest.summary) {
+        return latest.summary;
+      }
+      if (latest.detail) {
+        return latest.detail;
+      }
+      return t('noObservationSummary', 'Task {taskId} is connected to the current flow, but the latest observation does not include a summary yet.', { taskId });
+    }
+
+    function renderObservationMeta(delivery, items, state) {
+      const meta = [];
+      if (delivery) {
+        const route = String(delivery.channel || delivery.target || '').trim();
+        if (route) {
+          meta.push(t('surface', '{value} surface', { value: toObservationTitleLabel(route) }));
+        }
+        const desktopControl = getDesktopControlMeta(delivery);
+        const scheduleType = String(delivery.schedule_type || '').trim();
+        if (scheduleType) {
+          meta.push(toObservationTitleLabel(scheduleType));
+        }
+        const desktopAction = String(desktopControl?.last_action_label || desktopControl?.action_label || desktopControl?.action || '').trim();
+        const desktopWindow = getDesktopControlWindowLabel(desktopControl);
+        const desktopMonitor = getDesktopControlMonitorLabel(desktopControl);
+        if (desktopAction) meta.push(desktopAction);
+        if (desktopWindow) meta.push(desktopWindow);
+        if (desktopMonitor) meta.push(desktopMonitor);
+      }
+      if (items.length) {
+        meta.push(formatObservationCount(items.length));
+      }
+      if (state.loadedAt) {
+        meta.push(t('refreshed', 'Refreshed {value}', { value: formatRelativeTimestamp(state.loadedAt) || formatTimestamp(state.loadedAt) }));
+      }
+      if (state.error) {
+        meta.push(t('reviewLatestSync', 'Review latest sync'));
+      }
+      if (!meta.length) {
+        meta.push(t('taskAwareRequired', 'Task-aware delivery required'));
+      }
+      observationMeta.innerHTML = meta.slice(0, 5).map((item) => `<span>${escapeHtml(item)}</span>`).join('');
+    }
+
+    function renderObservationBadges(delivery, items, state, sameTask) {
+      const taskId = getObservationTaskId(delivery);
+      const badges = [{ tone: 'info', text: t('workspaceCurrentFlow', 'Workspace Current Flow') }];
+      if (taskId) badges.push({ tone: 'danger', text: `Task ${taskId}` });
+      else badges.push({ tone: 'warning', text: t('taskLinkRequired', 'Task Link Required') });
+
+      if (taskId) {
+        if (!sameTask) badges.push({ tone: 'warning', text: t('flowReady', 'Flow Ready to Sync') });
+        else if (state.loading) badges.push({ tone: 'warning', text: t('syncingFlow', 'Syncing Flow') });
+        else if (state.error) badges.push({ tone: 'warning', text: t('syncNeedsAttention', 'Sync Needs Attention') });
+        else if (items.length) badges.push({ tone: 'success', text: observationSyncBadgeLabel(delivery) });
+      }
+
+      const latestEvent = getObservationLatestEventLabel(items);
+      if (latestEvent) badges.push({ tone: 'default', text: t('latestEvent', 'Latest Event: {value}', { value: latestEvent }) });
+      if (items.length) badges.push({ tone: 'default', text: t('stageLabel', 'Stage: {value}', { value: getObservationLatestStageLabel(items) }) });
+      const latestTime = getObservationLatestTime(items) || (sameTask ? String(state.loadedAt || '').trim() : '');
+      if (latestTime) badges.push({ tone: 'default', text: t('lastUpdate', 'Last Update: {value}', { value: formatTimestamp(latestTime) }) });
+
+      observationBadgesPanel.innerHTML = badges
+        .slice(0, 6)
+        .map((badge) => `<span class="observation-console-badge tone-${escapeHtml(badge.tone || 'default')}">${escapeHtml(badge.text)}</span>`)
+        .join('');
+    }
+
+    function renderObservationMetrics(delivery, items, state, sameTask) {
+      const taskId = getObservationTaskId(delivery);
+      const waitingForSync = Boolean(taskId && !sameTask);
+      const syncing = Boolean(taskId && sameTask && state.loading);
+      const needsAttention = Boolean(taskId && sameTask && state.error && !items.length);
+      const redactedCount = getObservationRedactedCount(items);
+      const cards = [
+        {
+          label: t('observationsMetric', 'Observations'),
+          value: items.length,
+          note: !taskId ? t('taskLinkRequired', 'Task link required') : (waitingForSync ? t('preparingCurrentFlow', 'Preparing current flow') : (syncing ? t('syncingWorkspaceMemory', 'Syncing workspace memory') : formatObservationCount(items.length))),
+        },
+        {
+          label: t('stageCoverage', 'Stage Coverage'),
+          value: getObservationUniqueStageCount(items),
+          note: !taskId ? t('awaitingTaskLink', 'Awaiting task link') : (waitingForSync ? t('switchingActiveFlow', 'Switching active flow') : (syncing ? t('loadingLatestStage', 'Loading latest stage') : getObservationLatestStageLabel(items))),
+        },
+        {
+          label: t('recoveryLeads', 'Recovery Leads'),
+          value: getObservationRecoveryLeadCount(items),
+          note: !taskId ? t('awaitingCurrentFlow', 'Awaiting current flow') : (waitingForSync ? t('waitingRecoverySignals', 'Waiting for recovery signals') : (syncing ? t('loadingRecoveryClues', 'Loading recovery clues') : getObservationLatestRecoveryLead(items))),
+        },
+        {
+          label: t('privateTrimmed', 'Private Trimmed'),
+          value: redactedCount,
+          note: needsAttention ? t('syncNeedsAttention', 'Sync needs attention') : (redactedCount ? t('sensitiveFragmentsProtected', 'Sensitive fragments protected') : (!taskId ? t('noFlowLoaded', 'No flow loaded') : (waitingForSync ? t('waitingCurrentFlow', 'Waiting for current flow') : (syncing ? t('checkingPrivacyTrim', 'Checking privacy trim') : t('noPrivateTrimming', 'No private trimming'))))),
+        },
+      ];
+      observationMetrics.innerHTML = cards.map((card) => `
+        <article class="observation-metric" data-island-observation-metric="true">
+          <div class="observation-metric-label">${escapeHtml(card.label)}</div>
+          <div class="observation-metric-value">${escapeHtml(String(card.value))}</div>
+          <div class="observation-metric-note">${escapeHtml(card.note)}</div>
+        </article>
+      `).join('');
+    }
+
+    function renderObservationItem(item, index) {
+      const summary = String(item?.summary || item?.detail || t('noSummary', 'No summary provided.')).trim() || t('noSummary', 'No summary provided.');
+      const detail = String(item?.detail || '').trim();
+      const issueParts = [];
+      if (item?.failure_label) issueParts.push(t('failure', 'Failure: {value}', { value: item.failure_label }));
+      if (item?.recovery_action) issueParts.push(t('recovery', 'Recovery: {value}', { value: item.recovery_action }));
+      const guardDetails = formatObservationGuardDetails(item);
+      const issueNote = issueParts.join(' | ');
+      const isRedacted = String(item?.privacy_mode || '').trim().toLowerCase() === 'redacted';
+      const privateCount = Number(item?.private_segment_count);
+      const privacyLabel = isRedacted
+        ? (Number.isFinite(privateCount) && privateCount > 0
+          ? t('privateTrimmedCount', 'Private Trimmed x{count}', { count: Math.floor(privateCount) })
+          : t('privateTrimmed', 'Private Trimmed'))
+        : '';
+      return `
+        <article class="observation-item ${index === 0 ? 'is-latest' : ''}" data-island-observation-item="true">
+          <div class="observation-head">
+            <div class="observation-title">${escapeHtml(String(item?.title || item?.task_title || t('observationItem', 'Observation')).trim() || t('observationItem', 'Observation'))}</div>
+            <div class="observation-time">${escapeHtml(formatTimestamp(item?.timestamp || item?.created_at))}</div>
+          </div>
+          <div class="observation-badges">
+            <span>${escapeHtml(toObservationTitleLabel(item?.item_type, 'Observation'))}</span>
+            ${item?.stage ? `<span>${escapeHtml(toObservationTitleLabel(item.stage))}</span>` : ''}
+            ${item?.source ? `<span>${escapeHtml(item.source)}</span>` : ''}
+            ${item?.event_type ? `<span>${escapeHtml(toObservationTitleLabel(item.event_type))}</span>` : ''}
+            ${item?.status ? `<span>${escapeHtml(toObservationTitleLabel(item.status))}</span>` : ''}
+            ${privacyLabel ? `<span>${escapeHtml(privacyLabel)}</span>` : ''}
+            ${item?.derived ? `<span>${escapeHtml(t('derived', 'Derived'))}</span>` : ''}
+            ${index === 0 ? `<span>${escapeHtml(t('latestSignal', 'Latest Signal'))}</span>` : ''}
+          </div>
+          <div class="observation-detail">${escapeHtml(summary)}</div>
+          ${isRedacted ? `<div class="observation-note warning">${escapeHtml(privacyLabel || t('privateTrimmed', 'Private Trimmed'))}</div>` : ''}
+          ${issueNote ? `<div class="observation-note">${escapeHtml(issueNote)}</div>` : ''}
+          ${guardDetails ? `<div class="observation-note">${escapeHtml(guardDetails)}</div>` : ''}
+          ${detail && detail !== summary ? `<div class="observation-detail observation-detail-secondary">${escapeHtml(detail)}</div>` : ''}
+          ${item?.ignored_at ? `<div class="observation-meta-row">${escapeHtml(t('ignoredAt', 'Ignored at: {value}', { value: formatTimestamp(item.ignored_at) }))}</div>` : ''}
+        </article>
+      `;
+    }
+
+    function renderObservationSnapshot(delivery) {
+      const activeTaskId = getObservationTaskId(delivery);
+      const sameTask = Boolean(activeTaskId && observationState.taskId === activeTaskId);
+      const scopedItems = sameTask ? observationItems : [];
+      const scopedState = sameTask
+        ? observationState
+        : { taskId: activeTaskId, title: getObservationTitle(delivery), loading: false, error: '', loadedAt: '' };
+
+      observationOpenHomeFlow.disabled = !buildHomeCurrentFlowLaunchTarget(delivery);
+      observationOpenTaskDetail.disabled = !activeTaskId;
+      observationOpenRecall.disabled = !activeTaskId;
+      observationRefresh.disabled = !activeTaskId || scopedState.loading;
+      observationSummary.textContent = getObservationHeroSummary(delivery, scopedItems, scopedState, sameTask);
+      renderObservationMeta(delivery, scopedItems, scopedState);
+      renderObservationBadges(delivery, scopedItems, scopedState, sameTask);
+      renderObservationMetrics(delivery, scopedItems, scopedState, sameTask);
+
+      if (!activeTaskId) {
+        observationStatus.textContent = t('currentDeliveryNoTask', 'The current delivery has no task ID yet, so there is no observation trail to query.');
+        observationList.innerHTML = `<div class="empty">${escapeHtml(t('taskAwareReveal', 'Deliveries from Task Center or other task-aware surfaces will reveal the latest workspace observation nodes here.'))}</div>`;
+        queueSurfaceStateSync();
+        return;
+      }
+
+      if (!sameTask) {
+        observationStatus.textContent = t('switchingTask', 'Observation flow is switching to Task {taskId}.', { taskId: activeTaskId });
+        observationList.innerHTML = `<div class="empty">${escapeHtml(t('preparingSelectedDelivery', 'Preparing the latest workspace current flow for the newly selected delivery.'))}</div>`;
+        queueSurfaceStateSync();
+        return;
+      }
+
+      if (scopedState.loading) {
+        observationStatus.textContent = t('loadingObservation', 'Loading observation flow for Task {taskId}...', { taskId: activeTaskId });
+        observationList.innerHTML = `<div class="empty">${escapeHtml(t('pullingObservation', 'Pulling the latest observation nodes, recovery clues, and privacy trims from workspace memory.'))}</div>`;
+        queueSurfaceStateSync();
+        return;
+      }
+
+      if (scopedState.error) {
+        observationStatus.textContent = t('observationNeedsAttention', 'Observation flow needs attention for Task {taskId}.', { taskId: activeTaskId });
+        observationList.innerHTML = `<div class="empty">${escapeHtml(scopedState.error)}</div>`;
+        queueSurfaceStateSync();
+        return;
+      }
+
+      observationStatus.textContent = scopedItems.length
+        ? t('currentWorkspaceLive', 'Current workspace flow is live for {title}.', { title: getObservationTitle(delivery) || scopedState.title || `Task ${activeTaskId}` })
+        : t('noObservationNodes', 'No observation nodes are stored for Task {taskId} yet.', { taskId: activeTaskId });
+
+      if (!scopedItems.length) {
+        observationList.innerHTML = `<div class="empty">${escapeHtml(t('noObservationNodesEmpty', 'This task is linked, but workspace memory does not have observation nodes for it yet.'))}</div>`;
+        queueSurfaceStateSync();
+        return;
+      }
+
+      observationList.innerHTML = scopedItems.map((item, index) => renderObservationItem(item, index)).join('');
+      queueSurfaceStateSync();
+    }
+
+    async function syncObservationSnapshotForDelivery(delivery, force = false) {
+      const taskId = getObservationTaskId(delivery);
+      observationRequestToken += 1;
+      const requestToken = observationRequestToken;
+
+      if (!taskId) {
+        observationItems = [];
+        observationState = { taskId: '', title: '', loading: false, error: '', loadedAt: '' };
+        renderObservationSnapshot(delivery);
+        return;
+      }
+
+      if (!force && observationCache.has(taskId)) {
+        const cached = observationCache.get(taskId);
+        observationItems = cloneValue(cached.items || []);
+        observationState = {
+          ...(cached.state || {}),
+          title: getObservationTitle(delivery) || (cached.state && cached.state.title) || '',
+        };
+        renderObservationSnapshot(delivery);
+        return;
+      }
+
+      observationItems = [];
+      observationState = {
+        taskId,
+        title: getObservationTitle(delivery),
+        loading: true,
+        error: '',
+        loadedAt: '',
+      };
+      renderObservationSnapshot(delivery);
+
+      try {
+        const response = await fetch(`/v1/memory/observations?task_id=${encodeURIComponent(taskId)}&limit=4`);
+        const data = await response.json();
+        if (requestToken !== observationRequestToken) {
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(String(data.error || '').trim() || 'Failed to load observation flow.');
+        }
+        observationItems = Array.isArray(data.observations) ? data.observations.slice(0, 4) : [];
+        observationState = {
+          taskId,
+          title: getObservationTitle(delivery),
+          loading: false,
+          error: '',
+          loadedAt: new Date().toISOString(),
+        };
+        observationCache.set(taskId, {
+          items: cloneValue(observationItems),
+          state: { ...observationState },
+        });
+      } catch (error) {
+        if (requestToken !== observationRequestToken) {
+          return;
+        }
+        observationItems = [];
+        observationState = {
+          taskId,
+          title: getObservationTitle(delivery),
+          loading: false,
+          error: String(error && error.message || 'Failed to load observation flow.').trim() || 'Failed to load observation flow.',
+          loadedAt: '',
+        };
+        observationCache.delete(taskId);
+      }
+
+      renderObservationSnapshot(delivery);
+    }
+
+    function getDesktopControlMeta(delivery) {
+      return delivery && delivery.desktop_control && typeof delivery.desktop_control === 'object'
+        ? delivery.desktop_control
+        : null;
+    }
+
+    function getDesktopControlWindowLabel(desktopControl) {
+      if (!desktopControl || typeof desktopControl !== 'object') return '';
+      const windowMeta = desktopControl.window && typeof desktopControl.window === 'object'
+        ? desktopControl.window
+        : {};
+      return String(windowMeta.title || windowMeta.process_name || `HWND ${desktopControl.hwnd || ''}`).trim();
+    }
+
+    function getDesktopControlMonitorLabel(desktopControl) {
+      if (!desktopControl || typeof desktopControl !== 'object') return '';
+      const monitorMeta = desktopControl.monitor && typeof desktopControl.monitor === 'object'
+        ? desktopControl.monitor
+        : {};
+      return String(monitorMeta.label || '').trim();
+    }
+
+    function getDesktopControlPositionLabel(desktopControl) {
+      if (!desktopControl || typeof desktopControl !== 'object') return '';
+      return toLocaleTokenLabel(desktopControl.position || '', '');
+    }
+
+    function getDesktopControlHwnd(desktopControl) {
+      if (!desktopControl || typeof desktopControl !== 'object') return 0;
+      const hwnd = Number(desktopControl.hwnd || desktopControl.window?.hwnd || 0);
+      return Number.isFinite(hwnd) && hwnd > 0 ? hwnd : 0;
+    }
+
+    function getDesktopControlWindowRect(desktopControl) {
+      if (!desktopControl || typeof desktopControl !== 'object') return null;
+      const rect = desktopControl.window && typeof desktopControl.window === 'object'
+        ? desktopControl.window.rect
+        : null;
+      const left = Number(rect?.left);
+      const top = Number(rect?.top);
+      const width = Number(rect?.width);
+      const height = Number(rect?.height);
+      if (![left, top, width, height].every(Number.isFinite)) {
+        return null;
+      }
+      return { left, top, width, height };
+    }
+
+    function canRunDesktopActions(delivery) {
+      const desktopControl = getDesktopControlMeta(delivery);
+      if (!desktopControl) return false;
+      if (String(delivery?.status || '').trim().toLowerCase() === 'failed') return false;
+      return getDesktopControlHwnd(desktopControl) > 0;
+    }
+
+    function getDesktopLayoutPresetMeta(actionName) {
+      const normalizedAction = String(actionName || '').trim();
+      return desktopAllLayoutPresets.find((item) => item.action === normalizedAction) || null;
+    }
+
+    function getDesktopMissionRecipeMeta(recipeId) {
+      const normalizedRecipeId = String(recipeId || '').trim();
+      return desktopMissionRecipes.find((item) => item.id === normalizedRecipeId) || null;
+    }
+
+    function getDesktopActionLabel(actionName, delivery = currentDelivery, variant = 'default') {
+      const normalizedAction = String(actionName || '').trim();
+      if (normalizedAction === 'toggle_always_on_top') {
+        const isTopMost = Boolean(getDesktopControlMeta(delivery)?.window?.always_on_top);
+        return isTopMost ? 'Unpin' : 'Pin';
+      }
+
+      const presetMeta = getDesktopLayoutPresetMeta(normalizedAction);
+      if (presetMeta) {
+        return variant === 'short'
+          ? getDesktopLayoutLabel(presetMeta, 'short')
+          : getDesktopLayoutLabel(presetMeta);
+      }
+
+      if (variant === 'short') {
+        if (normalizedAction === 'move_to_monitor') return t('sendShort', 'Send');
+        if (normalizedAction === 'move_to_previous_monitor') return t('prevShort', 'Prev');
+        if (normalizedAction === 'move_to_next_monitor') return t('nextShort', 'Next');
+        if (normalizedAction === 'minimize') return t('minShort', 'Min');
+      }
+
+      if (normalizedAction === 'move_to_monitor') {
+        return t('sendToDisplay', 'Send to Display');
+      }
+
+      const button = desktopActionButtons[normalizedAction];
+      const label = button ? String(button.textContent || '').trim() : '';
+      return label || t('desktopAction', 'Desktop Action');
+    }
+
+    function getHistoryLayoutOptionsMarkup() {
+      return desktopAllLayoutPresets.map((preset) => (
+        `<option value="${escapeHtml(preset.action)}">${escapeHtml(getDesktopLayoutLabel(preset))}</option>`
+      )).join('');
+    }
+
+    function renderDesktopLayoutPresetGrid(delivery) {
+      if (!desktopLayoutPresetGrid) {
+        return;
+      }
+
+      const enabled = canRunDesktopActions(delivery);
+      desktopLayoutPresetGrid.innerHTML = desktopAdvancedLayoutPresets.map((preset) => {
+        const isLoading = isDesktopActionLoading(preset.action, delivery);
+        return `
+          <button
+            class="desktop-action-button desktop-layout-button${isLoading ? ' is-loading' : ''}"
+            type="button"
+            data-dynamic-layout-action="${escapeHtml(preset.action)}"
+            title="${escapeHtml(getDesktopLayoutLabel(preset))}"
+            ${enabled && !desktopActionLoading && !desktopRecipeLoading ? '' : 'disabled'}
+            ${isLoading ? 'aria-busy="true"' : ''}
+          >
+            ${escapeHtml(getDesktopLayoutLabel(preset, 'short'))}
+          </button>
+        `;
+      }).join('');
+    }
+
+    function renderDesktopMissionRecipeGrid(delivery) {
+      if (!desktopMissionRecipeGrid) {
+        return;
+      }
+
+      const enabled = canRunDesktopActions(delivery);
+      desktopMissionRecipeGrid.innerHTML = desktopMissionRecipes.map((recipe) => {
+        const isLoading = isDesktopRecipeLoading(recipe.id, delivery);
+        return `
+          <button
+            class="desktop-mission-recipe-button${isLoading ? ' is-loading' : ''}"
+            type="button"
+            data-dynamic-desktop-recipe="${escapeHtml(recipe.id)}"
+            title="${escapeHtml(`${getDesktopRecipeTitle(recipe)} / ${getDesktopRecipeSteps(recipe)}`)}"
+            ${enabled && !desktopActionLoading && !desktopRecipeLoading ? '' : 'disabled'}
+            ${isLoading ? 'aria-busy="true"' : ''}
+          >
+            <span class="desktop-mission-recipe-title">${escapeHtml(getDesktopRecipeTitle(recipe))}</span>
+            <span class="desktop-mission-recipe-step">${escapeHtml(getDesktopRecipeSteps(recipe))}</span>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function syncDesktopActionButtons(delivery) {
+      const desktopControl = getDesktopControlMeta(delivery);
+      const windowMeta = desktopControl && desktopControl.window && typeof desktopControl.window === 'object'
+        ? desktopControl.window
+        : {};
+      const pinButton = desktopActionButtons.toggle_always_on_top;
+      if (pinButton) {
+        const isTopMost = Boolean(windowMeta.always_on_top);
+        pinButton.textContent = isTopMost ? t('unpin', 'Unpin') : t('pin', 'Pin');
+        pinButton.classList.toggle('is-toggled', isTopMost);
+        pinButton.setAttribute('aria-pressed', isTopMost ? 'true' : 'false');
+        pinButton.title = isTopMost
+          ? t('disableAlwaysOnTop', 'Disable always on top for the selected window')
+          : t('keepAlwaysOnTop', 'Keep the selected window above other windows');
+      }
+    }
+
+    function locateDesktopControlMonitor(monitors, windowRect) {
+      if (!Array.isArray(monitors) || !windowRect) {
+        return null;
+      }
+
+      const centerX = Number(windowRect.left) + (Number(windowRect.width) / 2);
+      const centerY = Number(windowRect.top) + (Number(windowRect.height) / 2);
+      let nearestMonitor = null;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+
+      for (const monitor of monitors) {
+        if (!monitor || typeof monitor !== 'object') {
+          continue;
+        }
+        const bounds = monitor.bounds && typeof monitor.bounds === 'object'
+          ? monitor.bounds
+          : null;
+        if (!bounds) {
+          continue;
+        }
+
+        const left = Number(bounds.left);
+        const top = Number(bounds.top);
+        const right = Number(bounds.right);
+        const bottom = Number(bounds.bottom);
+        if (![left, top, right, bottom].every(Number.isFinite)) {
+          continue;
+        }
+
+        if (centerX >= left && centerX <= right && centerY >= top && centerY <= bottom) {
+          return monitor;
+        }
+
+        const monitorCenterX = left + ((right - left) / 2);
+        const monitorCenterY = top + ((bottom - top) / 2);
+        const distance = Math.hypot(centerX - monitorCenterX, centerY - monitorCenterY);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestMonitor = monitor;
+        }
+      }
+
+      return nearestMonitor;
+    }
+
+    async function resolveDesktopControlMonitorIndex(desktopControl) {
+      const explicitMonitorIndex = Number(desktopControl?.monitor?.index);
+      if (Number.isFinite(explicitMonitorIndex) && explicitMonitorIndex >= 0) {
+        return explicitMonitorIndex;
+      }
+
+      const windowRect = getDesktopControlWindowRect(desktopControl);
+      if (!windowRect) {
+        return null;
+      }
+
+      try {
+        const response = await fetch('/api/desktop/monitors');
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+          return null;
+        }
+
+        const matchedMonitor = locateDesktopControlMonitor(data.monitors, windowRect);
+        const matchedMonitorIndex = Number(matchedMonitor?.index);
+        return Number.isFinite(matchedMonitorIndex) && matchedMonitorIndex >= 0
+          ? matchedMonitorIndex
+          : null;
+      } catch (error) {
+        console.error('Failed to resolve desktop monitor for dynamic island action:', error);
+        return null;
+      }
+    }
+
+    async function getDesktopActionPayload(actionName, delivery) {
+      const desktopControl = getDesktopControlMeta(delivery);
+      if (desktopSnapPositions[actionName]) {
+        const monitorIndex = await resolveDesktopControlMonitorIndex(desktopControl);
+        return {
+          position: desktopSnapPositions[actionName],
+          use_work_area: true,
+          ...(Number.isFinite(monitorIndex) && monitorIndex >= 0
+            ? { monitor_index: monitorIndex }
+            : {}),
+        };
+      }
+      if (actionName === 'move_to_monitor') {
+        const monitorIndex = await resolveDesktopControlMonitorIndex(desktopControl);
+        return Number.isFinite(monitorIndex) && monitorIndex >= 0
+          ? { monitor_index: monitorIndex, use_work_area: true }
+          : { use_work_area: true };
+      }
+      if (actionName === 'move_to_previous_monitor' || actionName === 'move_to_next_monitor') {
+        return { use_work_area: true };
+      }
+      if (actionName === 'toggle_always_on_top') {
+        const windowMeta = desktopControl && desktopControl.window && typeof desktopControl.window === 'object'
+          ? desktopControl.window
+          : {};
+        return { enabled: !Boolean(windowMeta.always_on_top) };
+      }
+      return null;
+    }
+
+    function ensureHistoryDeliveryId(delivery) {
+      if (!delivery || typeof delivery !== 'object') {
+        return '';
+      }
+      if (!delivery.history_delivery_id) {
+        historySequence += 1;
+        delivery.history_delivery_id = `delivery-${historySequence}`;
+      }
+      return String(delivery.history_delivery_id);
+    }
+
+    function getHistoryDeliveryId(delivery) {
+      return delivery && typeof delivery === 'object'
+        ? String(delivery.history_delivery_id || '').trim()
+        : '';
+    }
+
+    function isCurrentDelivery(delivery) {
+      const currentId = getHistoryDeliveryId(currentDelivery);
+      const deliveryId = getHistoryDeliveryId(delivery);
+      return Boolean(currentId && deliveryId && currentId === deliveryId);
+    }
+
+    function isDesktopActionLoading(actionName = '', delivery = null) {
+      const normalizedAction = String(actionName || '').trim();
+      if (!normalizedAction || normalizedAction !== desktopActionLoading) {
+        return false;
+      }
+      if (!delivery) {
+        return !desktopActionLoadingDeliveryId;
+      }
+      const deliveryId = getHistoryDeliveryId(delivery);
+      return Boolean(deliveryId && deliveryId === desktopActionLoadingDeliveryId);
+    }
+
+    function isDesktopRecipeLoading(recipeId = '', delivery = null) {
+      const normalizedRecipeId = String(recipeId || '').trim();
+      if (!normalizedRecipeId || normalizedRecipeId !== desktopRecipeLoading) {
+        return false;
+      }
+      if (!delivery) {
+        return !desktopRecipeLoadingDeliveryId;
+      }
+      const deliveryId = getHistoryDeliveryId(delivery);
+      return Boolean(deliveryId && deliveryId === desktopRecipeLoadingDeliveryId);
+    }
+
+    function getHistoryActionTitle(actionName, delivery) {
+      const windowLabel = getDesktopControlWindowLabel(getDesktopControlMeta(delivery)) || t('selectedWindow', 'selected window');
+      return `${getDesktopActionLabel(actionName, delivery)} ${windowLabel}`;
+    }
+
+    function updateDesktopActionBar(delivery) {
+      const desktopControl = getDesktopControlMeta(delivery);
+      const enabled = canRunDesktopActions(delivery);
+      syncDesktopActionButtons(delivery);
+      renderDesktopLayoutPresetGrid(delivery);
+      renderDesktopMissionRecipeGrid(delivery);
+      desktopActionBar.hidden = !enabled;
+
+      if (!enabled) {
+        desktopActionHint.textContent = t('quickControlsHint', 'Operate the selected desktop window without leaving Dynamic Island.');
+        Object.values(desktopActionButtons).forEach((button) => {
+          button.disabled = true;
+          button.classList.remove('is-loading');
+          button.removeAttribute('aria-busy');
+        });
+        return;
+      }
+
+      const windowLabel = getDesktopControlWindowLabel(desktopControl) || `HWND ${getDesktopControlHwnd(desktopControl)}`;
+      const monitorLabel = getDesktopControlMonitorLabel(desktopControl);
+      const pinStateLabel = desktopControl?.window?.always_on_top ? t('pinned', 'Pinned') : '';
+      const recipeMeta = getDesktopMissionRecipeMeta(desktopRecipeLoading);
+      if (recipeMeta && isDesktopRecipeLoading(recipeMeta.id, delivery)) {
+        desktopActionHint.textContent = t('executing', 'Executing {value}', { value: `${getDesktopRecipeTitle(recipeMeta)} / ${windowLabel}` });
+      } else if (desktopActionLoading) {
+        desktopActionHint.textContent = t('executing', 'Executing {value}', { value: `${getDesktopActionLabel(desktopActionLoading, delivery)} / ${windowLabel}` });
+      } else {
+        desktopActionHint.textContent = [windowLabel, monitorLabel, pinStateLabel].filter(Boolean).join(' / ');
+      }
+
+      Object.entries(desktopActionButtons).forEach(([actionName, button]) => {
+        const isLoading = isDesktopActionLoading(actionName, delivery);
+        button.disabled = Boolean(desktopActionLoading || desktopRecipeLoading);
+        button.classList.toggle('is-loading', isLoading);
+        if (isLoading) {
+          button.setAttribute('aria-busy', 'true');
+        } else {
+          button.removeAttribute('aria-busy');
+        }
+      });
+    }
+
+    function setDesktopActionLoading(actionName = '', delivery = null) {
+      desktopActionLoading = String(actionName || '').trim();
+      desktopActionLoadingDeliveryId = desktopActionLoading && delivery
+        ? ensureHistoryDeliveryId(delivery)
+        : '';
+      updateDesktopActionBar(currentDelivery);
+      renderHistory();
+    }
+
+    function setDesktopRecipeLoading(recipeId = '', delivery = null) {
+      desktopRecipeLoading = String(recipeId || '').trim();
+      desktopRecipeLoadingDeliveryId = desktopRecipeLoading && delivery
+        ? ensureHistoryDeliveryId(delivery)
+        : '';
+      updateDesktopActionBar(currentDelivery);
+      renderHistory();
+    }
+
+    async function requestDesktopWindowAction(actionName, hwnd, payload = null) {
+      const endpointMap = {
+        focus: `/api/desktop/windows/${hwnd}/focus`,
+        toggle_always_on_top: `/api/desktop/windows/${hwnd}/always-on-top`,
+        minimize: `/api/desktop/windows/${hwnd}/minimize`,
+        move_to_monitor: `/api/desktop/windows/${hwnd}/move-to-monitor`,
+        move_to_previous_monitor: `/api/desktop/windows/${hwnd}/move-to-previous-monitor`,
+        move_to_next_monitor: `/api/desktop/windows/${hwnd}/move-to-next-monitor`,
+        snap_left: `/api/desktop/windows/${hwnd}/snap`,
+        snap_maximize: `/api/desktop/windows/${hwnd}/snap`,
+        snap_right: `/api/desktop/windows/${hwnd}/snap`,
+        snap_top: `/api/desktop/windows/${hwnd}/snap`,
+        snap_bottom: `/api/desktop/windows/${hwnd}/snap`,
+        snap_center: `/api/desktop/windows/${hwnd}/snap`,
+        snap_top_left: `/api/desktop/windows/${hwnd}/snap`,
+        snap_top_right: `/api/desktop/windows/${hwnd}/snap`,
+        snap_bottom_left: `/api/desktop/windows/${hwnd}/snap`,
+        snap_bottom_right: `/api/desktop/windows/${hwnd}/snap`,
+        snap_left_third: `/api/desktop/windows/${hwnd}/snap`,
+        snap_center_third: `/api/desktop/windows/${hwnd}/snap`,
+        snap_right_third: `/api/desktop/windows/${hwnd}/snap`,
+      };
+      const endpoint = endpointMap[actionName];
+      if (!endpoint) {
+        throw new Error(`Unsupported desktop action: ${actionName}`);
+      }
+
+      const options = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      };
+      if (payload && typeof payload === 'object' && Object.keys(payload).length) {
+        options.body = JSON.stringify(payload);
+      }
+
+      const response = await fetch(endpoint, options);
+      const data = await response.json();
+      if (!response.ok || data.success === false) {
+        throw new Error(data.detail || data.error || 'Desktop action failed');
+      }
+      return data;
+    }
+
+    function syncDeliveryAfterAction(delivery, actionName, responseData) {
+      const desktopControl = getDesktopControlMeta(delivery);
+      if (!desktopControl || typeof desktopControl !== 'object') {
+        return;
+      }
+
+      if (!desktopControl.window || typeof desktopControl.window !== 'object') {
+        desktopControl.window = {};
+      }
+
+      if (responseData?.window && typeof responseData.window === 'object') {
+        desktopControl.window = {
+          ...desktopControl.window,
+          ...responseData.window,
+        };
+      }
+
+      if (responseData?.monitor && typeof responseData.monitor === 'object') {
+        desktopControl.monitor = responseData.monitor;
+      }
+
+      if (typeof responseData?.position === 'string' && responseData.position.trim()) {
+        desktopControl.position = responseData.position.trim();
+      }
+
+      if (actionName === 'toggle_always_on_top') {
+        const nextPinned =
+          typeof responseData?.always_on_top === 'boolean' ? responseData.always_on_top
+          : typeof responseData?.enabled === 'boolean' ? responseData.enabled
+          : typeof responseData?.window?.always_on_top === 'boolean' ? responseData.window.always_on_top
+          : typeof responseData?.result?.always_on_top === 'boolean' ? responseData.result.always_on_top
+          : !Boolean(desktopControl.window.always_on_top);
+        desktopControl.window.always_on_top = nextPinned;
+      }
+    }
+
+    async function runDesktopActionForDelivery(actionName, delivery) {
+      if (!canRunDesktopActions(delivery)) {
+        return;
+      }
+
+      const desktopControl = getDesktopControlMeta(delivery);
+      const hwnd = getDesktopControlHwnd(desktopControl);
+      if (!hwnd) {
+        return;
+      }
+
+      currentDelivery = delivery;
+      renderPrimary(delivery);
+      renderHistory();
+      setCompact(false);
+      scheduleAutoCollapse();
+
+      try {
+        setDesktopActionLoading(actionName, delivery);
+        const payload = await getDesktopActionPayload(actionName, delivery);
+        const responseData = await requestDesktopWindowAction(actionName, hwnd, payload);
+        syncDeliveryAfterAction(delivery, actionName, responseData);
+        renderPrimary(delivery);
+        renderHistory();
+        pulseHighlight();
+      } catch (error) {
+        console.error('Dynamic island desktop action failed:', error);
+        desktopActionHint.textContent = error?.message || 'Desktop action failed';
+      } finally {
+        setDesktopActionLoading('', null);
+      }
+    }
+
+    async function buildDesktopRecipeSteps(recipeId, delivery) {
+      const desktopControl = getDesktopControlMeta(delivery);
+      const monitorIndex = await resolveDesktopControlMonitorIndex(desktopControl);
+      const withMonitor = Number.isFinite(monitorIndex) && monitorIndex >= 0
+        ? { monitor_index: monitorIndex, use_work_area: true }
+        : { use_work_area: true };
+      const recipeMap = {
+        solo_focus: [
+          { action: 'focus', payload: null },
+          { action: 'snap_maximize', payload: { ...withMonitor, position: 'maximize' } },
+        ],
+        compare_left: [
+          { action: 'focus', payload: null },
+          { action: 'snap_left', payload: { ...withMonitor, position: 'left' } },
+        ],
+        reference_rail: [
+          { action: 'focus', payload: null },
+          { action: 'snap_right_third', payload: { ...withMonitor, position: 'right_third' } },
+          { action: 'toggle_always_on_top', payload: { enabled: true } },
+        ],
+        center_stage: [
+          { action: 'focus', payload: null },
+          { action: 'move_to_monitor', payload: { ...withMonitor } },
+          { action: 'snap_center', payload: { ...withMonitor, position: 'center' } },
+          { action: 'toggle_always_on_top', payload: { enabled: false } },
+        ],
+      };
+      return recipeMap[String(recipeId || '').trim()] || [];
+    }
+
+    async function runDesktopRecipeForDelivery(recipeId, delivery) {
+      if (!canRunDesktopActions(delivery)) {
+        return;
+      }
+
+      const recipeMeta = getDesktopMissionRecipeMeta(recipeId);
+      const desktopControl = getDesktopControlMeta(delivery);
+      const hwnd = getDesktopControlHwnd(desktopControl);
+      if (!recipeMeta || !hwnd) {
+        return;
+      }
+
+      currentDelivery = delivery;
+      renderPrimary(delivery);
+      renderHistory();
+      setCompact(false);
+      scheduleAutoCollapse();
+
+      try {
+        setDesktopRecipeLoading(recipeMeta.id, delivery);
+        const steps = await buildDesktopRecipeSteps(recipeMeta.id, delivery);
+        for (const step of steps) {
+          setDesktopActionLoading(step.action, delivery);
+          const responseData = await requestDesktopWindowAction(step.action, hwnd, step.payload);
+          syncDeliveryAfterAction(delivery, step.action, responseData);
+          renderPrimary(delivery);
+          renderHistory();
+        }
+        desktopActionHint.textContent = t('recipeReady', '{value} ready', { value: `${getDesktopRecipeTitle(recipeMeta)} / ${getDesktopControlWindowLabel(desktopControl) || `HWND ${hwnd}`}` });
+        pulseHighlight();
+      } catch (error) {
+        console.error('Dynamic island desktop recipe failed:', error);
+        desktopActionHint.textContent = error?.message || t('desktopRecipeFailed', 'Desktop mission recipe failed');
+      } finally {
+        setDesktopActionLoading('', null);
+        setDesktopRecipeLoading('', null);
+      }
+    }
+
+    async function runDesktopActionFromIsland(actionName) {
+      await runDesktopActionForDelivery(actionName, currentDelivery);
+    }
+
+    async function runDesktopRecipeFromIsland(recipeId) {
+      await runDesktopRecipeForDelivery(recipeId, currentDelivery);
+    }
+
+    async function runDesktopActionFromHistory(deliveryId, actionName) {
+      const normalizedId = String(deliveryId || '').trim();
+      if (!normalizedId) {
+        return;
+      }
+      const selectedDelivery = historyItems.find((item) => getHistoryDeliveryId(item) === normalizedId);
+      if (!selectedDelivery) {
+        return;
+      }
+      await runDesktopActionForDelivery(actionName, selectedDelivery);
+    }
+
+    function getHistoryTitle(item) {
+      const desktopControl = getDesktopControlMeta(item);
+      if (!desktopControl) {
+        return item.title || t('untitledTask', 'Untitled task');
+      }
+      const actionLabel = String(desktopControl.action_label || item.title || t('desktopAction', 'Desktop Action')).trim();
+      const windowLabel = getDesktopControlWindowLabel(desktopControl);
+      return [actionLabel, windowLabel].filter(Boolean).join(' / ') || t('desktopAction', 'Desktop Action');
+    }
+
+    function getHistorySummary(item) {
+      const desktopControl = getDesktopControlMeta(item);
+      if (!desktopControl) {
+        return item.summary || t('noSummaryProvided', 'No summary provided');
+      }
+      const monitorLabel = getDesktopControlMonitorLabel(desktopControl);
+      const positionLabel = getDesktopControlPositionLabel(desktopControl);
+      return [monitorLabel, positionLabel, item.summary || t('noSummaryProvided', 'No summary provided')].filter(Boolean).join(' / ');
+    }
+
+    function renderHistory() {
+      if (!historyItems.length) {
+        history.innerHTML = `<div class="empty">${escapeHtml(t('recentDeliveriesEmpty', 'Recent task deliveries will accumulate here so the overlay stays useful even after the compact animation collapses.'))}</div>`;
+        queueSurfaceStateSync();
+        return;
+      }
+
+      history.innerHTML = historyItems.slice(0, 4).map((item) => {
+        const deliveryId = ensureHistoryDeliveryId(item);
+        const active = isCurrentDelivery(item);
+        const actionable = canRunDesktopActions(item);
+        const controlsMarkup = actionable
+          ? `
+            <div class="history-controls">
+              <div class="history-actions">
+                ${historyInlineActions.map((actionName) => {
+                  const isLoading = isDesktopActionLoading(actionName, item);
+                  const isToggled = actionName === 'toggle_always_on_top' && Boolean(getDesktopControlMeta(item)?.window?.always_on_top);
+                  return `
+                    <button
+                      class="history-action-button${isLoading ? ' is-loading' : ''}${isToggled ? ' is-toggled' : ''}"
+                      type="button"
+                      data-history-desktop-action="${escapeHtml(actionName)}"
+                      data-history-delivery-id="${escapeHtml(deliveryId)}"
+                      ${actionName === 'toggle_always_on_top' ? `aria-pressed="${isToggled ? 'true' : 'false'}"` : ''}
+                      ${isLoading ? 'aria-busy="true"' : ''}
+                      ${desktopActionLoading || desktopRecipeLoading ? 'disabled' : ''}
+                      title="${escapeHtml(getHistoryActionTitle(actionName, item))}"
+                    >
+                      ${escapeHtml(getDesktopActionLabel(actionName, item, 'short'))}
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+              <div class="history-layout-row">
+                <label class="history-layout-label" for="historyLayoutSelect-${escapeHtml(deliveryId)}">${escapeHtml(t('layout', 'Layout'))}</label>
+                <select
+                  id="historyLayoutSelect-${escapeHtml(deliveryId)}"
+                  class="history-layout-select"
+                  data-history-layout-select="true"
+                  data-history-delivery-id="${escapeHtml(deliveryId)}"
+                  title="${escapeHtml(t('applyLayoutPreset', 'Apply layout preset...'))} ${escapeHtml(getHistoryTitle(item))}"
+                  ${desktopActionLoading || desktopRecipeLoading ? 'disabled' : ''}
+                >
+                  <option value="">${escapeHtml(t('applyLayoutPreset', 'Apply layout preset...'))}</option>
+                  ${getHistoryLayoutOptionsMarkup()}
+                </select>
+              </div>
+            </div>
+          `
+          : '';
+        return `
+          <div class="history-item${active ? ' is-active' : ''}${actionable ? ' has-actions' : ''}" data-history-delivery-id="${escapeHtml(deliveryId)}">
+            <button
+              class="history-select"
+              type="button"
+              data-history-select="true"
+              data-history-delivery-id="${escapeHtml(deliveryId)}"
+              aria-pressed="${active ? 'true' : 'false'}"
+              title="${escapeHtml(t('switchCurrentTarget', 'Switch current target to {value}', { value: getHistoryTitle(item) }))}"
+            >
+              <div class="history-main">
+                <div class="history-title">${escapeHtml(getHistoryTitle(item))}</div>
+                <div class="history-summary">${escapeHtml(getHistorySummary(item))}</div>
+              </div>
+              <div class="history-time">${escapeHtml(formatTimestamp(item.timestamp))}</div>
+            </button>
+            ${controlsMarkup}
+          </div>
+        `;
+      }).join('');
+      queueSurfaceStateSync();
+    }
+
+    function renderPrimary(delivery) {
+      const activePrimary = delivery || linkedObservationTarget || null;
+      // 灵动岛 has-activity 类：JS 单一信号源——有任务/观察流时挂上，紧凑胶囊
+      // 会从最简 idle 形态 (~132px) morph 出右侧活动药丸，事毕自动缩回。
+      shell.classList.toggle('has-activity', !!activePrimary);
+      if (!activePrimary) {
+        setHeaderTitle(getIdleHeaderTitle());
+        headerSubtitle.textContent = getIdleHeaderSubtitle();
+        taskTitle.textContent = t('noDeliveriesYet', 'No deliveries yet');
+        taskSummary.textContent = t('noDeliverySummary', 'After the scheduler or overlay API publishes a task delivery event, the latest result will expand here.');
+        statusPill.textContent = t('idle', 'Idle');
+        statusPill.className = 'pill idle';
+        targetPill.textContent = t('dynamicIsland', 'Dynamic Island');
+        schedulePill.textContent = t('auto', 'Auto');
+        taskIdLabel.textContent = t('taskId', 'Task ID');
+        taskIdValue.textContent = t('waiting', 'Waiting');
+        timestampLabel.textContent = t('timestamp', 'Timestamp');
+        timestampValue.textContent = t('waiting', 'Waiting');
+        channelLabel.textContent = t('channel', 'Channel');
+        channelValue.textContent = 'dynamic_island';
+        updateDesktopActionBar(null);
+        renderObservationSnapshot(getObservationConsoleTarget(null));
+        queueSurfaceStateSync();
+        return;
+      }
+
+      const statusMeta = toReadableStatus(activePrimary.status);
+      const readableChannel = toReadableChannel(activePrimary.target || activePrimary.channel);
+      const desktopControl = getDesktopControlMeta(activePrimary);
+
+      setHeaderTitle(activePrimary.title || t('taskDeliveryReceived', 'Task Delivery Received'));
+      headerSubtitle.textContent = `${desktopControl ? t('windowControl', 'Window Control') : readableChannel} / ${formatTimestamp(activePrimary.timestamp)}`;
+      taskTitle.textContent = activePrimary.title || t('taskDeliveryReceived', 'Task Delivery Received');
+      taskSummary.textContent = activePrimary.summary || t('noSummaryProvided', 'No summary provided');
+      statusPill.textContent = statusMeta.label;
+      statusPill.className = `pill ${statusMeta.className}`.trim();
+      targetPill.textContent = desktopControl ? t('windowControl', 'Window Control') : readableChannel;
+      schedulePill.textContent = desktopControl
+        ? String(desktopControl.action_label || t('desktop', 'Desktop')).trim() || t('desktop', 'Desktop')
+        : toReadableSchedule(activePrimary.schedule_type);
+
+      if (desktopControl) {
+        taskIdLabel.textContent = t('action', 'Action');
+        taskIdValue.textContent = String(desktopControl.action_label || t('desktopAction', 'Desktop Action')).trim() || t('desktopAction', 'Desktop Action');
+        timestampLabel.textContent = t('window', 'Window');
+        timestampValue.textContent = getDesktopControlWindowLabel(desktopControl) || t('unknownWindow', 'Unknown window');
+        channelLabel.textContent = t('display', 'Display');
+        channelValue.textContent =
+          getDesktopControlMonitorLabel(desktopControl)
+          || getDesktopControlPositionLabel(desktopControl)
+          || readableChannel;
+        updateDesktopActionBar(activePrimary);
+        renderObservationSnapshot(getObservationConsoleTarget(activePrimary));
+        queueSurfaceStateSync();
+        return;
+      }
+
+      taskIdLabel.textContent = t('taskId', 'Task ID');
+      taskIdValue.textContent = activePrimary.task_id || t('generatedByOverlayApi', 'Generated by overlay API');
+      timestampLabel.textContent = t('timestamp', 'Timestamp');
+      timestampValue.textContent = formatTimestamp(activePrimary.timestamp);
+      channelLabel.textContent = t('channel', 'Channel');
+      channelValue.textContent = String(activePrimary.target || activePrimary.channel || 'dynamic_island');
+      updateDesktopActionBar(activePrimary);
+      renderObservationSnapshot(getObservationConsoleTarget(activePrimary));
+      queueSurfaceStateSync();
+    }
+
+    function addHistory(delivery) {
+      ensureHistoryDeliveryId(delivery);
+      historyItems.unshift(delivery);
+      if (historyItems.length > 8) {
+        historyItems.length = 8;
+      }
+      renderHistory();
+    }
+
+    function isDesktopFeedbackDelivery(delivery) {
+      const desktopControl = getDesktopControlMeta(delivery);
+      return Boolean(desktopControl && String(desktopControl.action || '').trim());
+    }
+
+    function promoteHistoryDelivery(delivery) {
+      const index = historyItems.indexOf(delivery);
+      if (index > 0) {
+        historyItems.splice(index, 1);
+        historyItems.unshift(delivery);
+      }
+    }
+
+    function findHistoryFeedbackMergeTarget(delivery) {
+      if (!isDesktopFeedbackDelivery(delivery)) {
+        return null;
+      }
+
+      const incomingDesktopControl = getDesktopControlMeta(delivery);
+      const incomingHwnd = getDesktopControlHwnd(incomingDesktopControl);
+      if (!incomingHwnd) {
+        return null;
+      }
+
+      const currentHwnd = getDesktopControlHwnd(getDesktopControlMeta(currentDelivery));
+      if (currentDelivery && currentHwnd === incomingHwnd) {
+        return currentDelivery;
+      }
+
+      return historyItems.find((item) => getDesktopControlHwnd(getDesktopControlMeta(item)) === incomingHwnd) || null;
+    }
+
+    function mergeDesktopFeedbackIntoDelivery(targetDelivery, incomingDelivery) {
+      const targetDesktopControl = getDesktopControlMeta(targetDelivery);
+      const incomingDesktopControl = getDesktopControlMeta(incomingDelivery);
+      if (!targetDesktopControl || !incomingDesktopControl) {
+        return false;
+      }
+
+      targetDelivery.summary = incomingDelivery.summary || targetDelivery.summary;
+      targetDelivery.status = incomingDelivery.status || targetDelivery.status;
+      targetDelivery.timestamp = incomingDelivery.timestamp || targetDelivery.timestamp;
+      targetDelivery.target = incomingDelivery.target || targetDelivery.target;
+      targetDelivery.schedule_type = incomingDelivery.schedule_type || targetDelivery.schedule_type;
+      targetDelivery.task_id = targetDelivery.task_id || incomingDelivery.task_id || '';
+
+      if (incomingDesktopControl.window && typeof incomingDesktopControl.window === 'object') {
+        targetDesktopControl.window = {
+          ...(targetDesktopControl.window || {}),
+          ...incomingDesktopControl.window,
+        };
+      }
+
+      if (incomingDesktopControl.monitor && typeof incomingDesktopControl.monitor === 'object') {
+        targetDesktopControl.monitor = incomingDesktopControl.monitor;
+      }
+
+      if (incomingDesktopControl.position) {
+        targetDesktopControl.position = incomingDesktopControl.position;
+      }
+
+      if (incomingDesktopControl.action) {
+        targetDesktopControl.action = incomingDesktopControl.action;
+      }
+
+      if (incomingDesktopControl.status) {
+        targetDesktopControl.status = incomingDesktopControl.status;
+      }
+
+      if (incomingDesktopControl.status_label) {
+        targetDesktopControl.status_label = incomingDesktopControl.status_label;
+      }
+
+      if (incomingDesktopControl.action_label) {
+        targetDesktopControl.last_action_label = incomingDesktopControl.action_label;
+      }
+
+      if (incomingDelivery.title) {
+        targetDesktopControl.last_feedback_title = incomingDelivery.title;
+      }
+
+      return true;
+    }
+
+    function handleObservationFocus(message) {
+      const payload = message && message.data && typeof message.data === 'object' ? message.data : {};
+      if (payload.clear) {
+        clearLinkedObservationTarget();
+        renderObservationSnapshot(getObservationConsoleTarget());
+        return;
+      }
+
+      const normalizedTarget = normalizeObservationConsoleTarget(payload, 'recall_center');
+      if (!normalizedTarget) {
+        return;
+      }
+
+      linkedObservationTarget = normalizedTarget;
+      const hydrated = hydrateObservationSnapshotFromPayload(payload, normalizedTarget);
+      if (currentDelivery && getObservationTaskId(currentDelivery) === getObservationTaskId(normalizedTarget)) {
+        mergeObservationPayloadIntoDelivery(currentDelivery, payload);
+        renderHistory();
+      }
+      renderPrimary(getObservationConsoleTarget(currentDelivery));
+      renderObservationSnapshot(getObservationConsoleTarget());
+      pulseHighlight();
+      setCompact(false);
+      scheduleAutoCollapse();
+      void syncObservationSnapshotForDelivery(getObservationConsoleTarget(), !hydrated);
+    }
+
+    /** 订阅 Electron Main 的 Recall 焦点；无输入，无返回，Browser 环境保持 WebSocket fallback。 */
+    function subscribeApplicationRecallObservationFocus() {
+      if (!window.electronAPI || typeof window.electronAPI.onApplicationRecallObservationFocus !== 'function') {
+        return;
+      }
+      window.electronAPI.onApplicationRecallObservationFocus((payload) => {
+        handleObservationFocus({ action: 'observation_focus', data: payload });
+      });
+    }
+
+    function handleObservationUpdate(message) {
+      const payload = message && message.data && typeof message.data === 'object' ? message.data : {};
+      const normalizedTarget = normalizeObservationConsoleTarget(
+        payload,
+        String(payload.focus_source || payload.source || 'workspace_memory').trim() || 'workspace_memory'
+      );
+      if (!normalizedTarget) {
+        return;
+      }
+
+      const taskId = getObservationTaskId(normalizedTarget);
+      if (!taskId) {
+        return;
+      }
+
+      if (!linkedObservationTarget && !currentDelivery && !latestDelivery) {
+        linkedObservationTarget = normalizedTarget;
+      } else if (linkedObservationTarget && getObservationTaskId(linkedObservationTarget) === taskId) {
+        linkedObservationTarget = {
+          ...linkedObservationTarget,
+          ...normalizedTarget,
+          summary: normalizedTarget.summary || linkedObservationTarget.summary,
+          timestamp: normalizedTarget.timestamp || linkedObservationTarget.timestamp,
+        };
+      }
+
+      if (currentDelivery && getObservationTaskId(currentDelivery) === taskId) {
+        mergeObservationPayloadIntoDelivery(currentDelivery, payload);
+      }
+      if (latestDelivery && getObservationTaskId(latestDelivery) === taskId) {
+        mergeObservationPayloadIntoDelivery(latestDelivery, payload);
+      }
+      const historyMatch = historyItems.find((item) => getObservationTaskId(item) === taskId) || null;
+      if (historyMatch) {
+        mergeObservationPayloadIntoDelivery(historyMatch, payload);
+      }
+
+      hydrateObservationSnapshotFromPayload(
+        payload,
+        linkedObservationTarget && getObservationTaskId(linkedObservationTarget) === taskId
+          ? linkedObservationTarget
+          : (historyMatch || currentDelivery || normalizedTarget)
+      );
+
+      const consoleTarget = getObservationConsoleTarget();
+      if (getObservationTaskId(consoleTarget) === taskId) {
+        renderPrimary(getObservationConsoleTarget(currentDelivery));
+        renderObservationSnapshot(consoleTarget);
+      }
+      if (currentDelivery && getObservationTaskId(currentDelivery) === taskId) {
+        renderHistory();
+        updateDesktopActionBar(currentDelivery);
+      }
+    }
+
+    function activateDelivery(deliveryId) {
+      const normalizedId = String(deliveryId || '').trim();
+      if (!normalizedId) {
+        return;
+      }
+      const selectedDelivery = historyItems.find((item) => getHistoryDeliveryId(item) === normalizedId);
+      if (!selectedDelivery) {
+        return;
+      }
+      clearLinkedObservationTarget();
+      currentDelivery = selectedDelivery;
+      renderPrimary(selectedDelivery);
+      renderHistory();
+      setCompact(false);
+      pulseHighlight();
+      scheduleAutoCollapse();
+      void syncObservationSnapshotForDelivery(selectedDelivery, false);
+    }
+
+    function scheduleAutoCollapse() {
+      window.clearTimeout(autoCollapseTimer);
+      autoCollapseTimer = window.setTimeout(() => {
+        if (!forceExpanded) {
+          setCompact(true);
+        }
+      }, 9000);
+    }
+
+    function handleDelivery(message) {
+      const payload = message && message.data && typeof message.data === 'object' ? message.data : {};
+      const channel = String(message.channel || payload.target || '').trim().toLowerCase();
+      const presentation = String(payload.presentation || '').trim().toLowerCase();
+      if (channel && channel !== 'dynamic_island' && presentation !== 'dynamic_island') {
+        return;
+      }
+
+      const delivery = {
+        kind: String(payload.kind || 'task_delivery').trim(),
+        title: String(payload.title || t('taskDeliveryReceived', 'Task Delivery Received')).trim(),
+        summary: String(payload.summary || t('noSummaryProvided', 'No summary provided')).trim(),
+        status: String(payload.status || 'completed').trim(),
+        schedule_type: String(payload.schedule_type || '').trim(),
+        task_id: String(payload.task_id || '').trim(),
+        timestamp: String(payload.timestamp || new Date().toISOString()).trim(),
+        target: channel || 'dynamic_island',
+        desktop_control: payload.desktop_control && typeof payload.desktop_control === 'object'
+          ? payload.desktop_control
+          : null,
+      };
+
+      const mergeTarget = findHistoryFeedbackMergeTarget(delivery);
+      if (mergeTarget && mergeDesktopFeedbackIntoDelivery(mergeTarget, delivery)) {
+        latestDelivery = mergeTarget;
+        currentDelivery = mergeTarget;
+        promoteHistoryDelivery(mergeTarget);
+        renderPrimary(mergeTarget);
+        renderHistory();
+        pulseHighlight();
+        setCompact(false);
+        scheduleAutoCollapse();
+        void syncObservationSnapshotForDelivery(mergeTarget, true);
+        return;
+      }
+
+      ensureHistoryDeliveryId(delivery);
+      latestDelivery = delivery;
+      currentDelivery = delivery;
+      renderPrimary(delivery);
+      addHistory(delivery);
+      pulseHighlight();
+      setCompact(false);
+      scheduleAutoCollapse();
+      void syncObservationSnapshotForDelivery(delivery, true);
+    }
+
+    function setConnectionState(online) {
+      connectionChip.classList.toggle('online', online);
+      connectionChip.classList.toggle('offline', !online);
+      connectionText.textContent = online ? t('online', 'Online') : t('offline', 'Offline');
+      if (!latestDelivery) {
+        headerSubtitle.textContent = online
+          ? t('overlayConnected', 'Overlay websocket connected')
+          : t('overlayReconnecting', 'Reconnecting to overlay websocket');
+      }
+    }
+
+    function connect() {
+      window.clearTimeout(reconnectTimer);
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socketUrl = `${protocol}//${window.location.host}/ws/overlay`;
+      socket = new WebSocket(socketUrl);
+
+      socket.addEventListener('open', () => {
+        setConnectionState(true);
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = window.setInterval(() => {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send('ping');
+          }
+        }, 12000);
+      });
+
+      socket.addEventListener('message', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.action === 'task_delivery') {
+            handleDelivery(data);
+          } else if (data.action === 'observation_focus') {
+            handleObservationFocus(data);
+          } else if (data.action === 'observation_update') {
+            handleObservationUpdate(data);
+          } else if (data.action === 'clear') {
+            historyItems.length = 0;
+            latestDelivery = null;
+            currentDelivery = null;
+            clearLinkedObservationTarget();
+            resetObservationSnapshot(true);
+            desktopActionLoading = '';
+            desktopActionLoadingDeliveryId = '';
+            desktopRecipeLoading = '';
+            desktopRecipeLoadingDeliveryId = '';
+            renderHistory();
+            updateDesktopActionBar(null);
+            renderObservationSnapshot(null);
+            setCompact(true);
+          }
+        } catch (error) {
+          console.error('Dynamic island message parse failed:', error);
+        }
+      });
+
+      socket.addEventListener('close', () => {
+        setConnectionState(false);
+        window.clearInterval(heartbeatTimer);
+        reconnectTimer = window.setTimeout(connect, 1600);
+      });
+
+      socket.addEventListener('error', () => {
+        setConnectionState(false);
+      });
+    }
+
+    header.addEventListener('click', () => {
+      forceExpanded = !forceExpanded;
+      setCompact(!forceExpanded);
+      queueSurfaceStateSync({
+        interactive: forceExpanded || !shell.classList.contains('compact'),
+        immediate: true,
+      });
+      if (!forceExpanded) {
+        scheduleAutoCollapse();
+      } else {
+        window.clearTimeout(autoCollapseTimer);
+      }
+    });
+
+    if (closeIslandButton) {
+      closeIslandButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        requestCloseDynamicIsland();
+      });
+    }
+
+    shell.addEventListener('mouseenter', () => {
+      queueSurfaceStateSync({ interactive: true, immediate: true });
+    });
+
+    shell.addEventListener('mouseleave', () => {
+      queueSurfaceStateSync();
+    });
+
+    islandBody.addEventListener('wheel', () => {
+      if (!shell.classList.contains('compact')) {
+        queueSurfaceStateSync({ interactive: true, immediate: true });
+      }
+    }, { passive: true });
+
+    islandBody.addEventListener('pointerdown', () => {
+      if (!shell.classList.contains('compact')) {
+        queueSurfaceStateSync({ interactive: true, immediate: true });
+      }
+    });
+
+    islandBody.addEventListener('scroll', () => {
+      if (!shell.classList.contains('compact')) {
+        queueSurfaceStateSync({ interactive: true, immediate: true });
+      }
+    }, { passive: true });
+
+    window.addEventListener('resize', () => {
+      queueSurfaceStateSync({ immediate: true });
+    });
+
+    window.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+      event.preventDefault();
+      if (forceExpanded || !shell.classList.contains('compact')) {
+        collapseDynamicIslandSurface();
+        return;
+      }
+      requestCloseDynamicIsland();
+    });
+
+    Object.entries(desktopActionButtons).forEach(([actionName, button]) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        runDesktopActionFromIsland(actionName);
+      });
+    });
+
+    desktopLayoutPresetGrid.addEventListener('click', (event) => {
+      const presetButton = event.target.closest('[data-dynamic-layout-action]');
+      if (!presetButton) {
+        return;
+      }
+      event.stopPropagation();
+      void runDesktopActionFromIsland(presetButton.dataset.dynamicLayoutAction || '');
+    });
+
+    desktopMissionRecipeGrid.addEventListener('click', (event) => {
+      const recipeButton = event.target.closest('[data-dynamic-desktop-recipe]');
+      if (!recipeButton) {
+        return;
+      }
+      event.stopPropagation();
+      void runDesktopRecipeFromIsland(recipeButton.dataset.dynamicDesktopRecipe || '');
+    });
+
+    history.addEventListener('click', (event) => {
+      const historyActionButton = event.target.closest('[data-history-desktop-action]');
+      if (historyActionButton) {
+        event.stopPropagation();
+        void runDesktopActionFromHistory(
+          historyActionButton.dataset.historyDeliveryId || '',
+          historyActionButton.dataset.historyDesktopAction || ''
+        );
+        return;
+      }
+
+      const historyItem = event.target.closest('[data-history-select]');
+      if (!historyItem) {
+        return;
+      }
+      event.stopPropagation();
+      activateDelivery(historyItem.dataset.historyDeliveryId || '');
+    });
+
+    history.addEventListener('change', (event) => {
+      const layoutSelect = event.target.closest('[data-history-layout-select]');
+      if (!layoutSelect) {
+        return;
+      }
+
+      const actionName = String(layoutSelect.value || '').trim();
+      if (!actionName) {
+        return;
+      }
+
+      event.stopPropagation();
+      layoutSelect.value = '';
+      void runDesktopActionFromHistory(
+        layoutSelect.dataset.historyDeliveryId || '',
+        actionName
+      );
+    });
+
+    observationOpenHomeFlow.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const request = queueHomeCurrentFlowLaunch(getObservationConsoleTarget());
+      if (!request) {
+        return;
+      }
+      const acknowledged = await broadcastHomeCurrentFlowLaunch(request);
+      if (window.electronAPI && typeof window.electronAPI.windowAction === 'function') {
+        try {
+          await window.electronAPI.windowAction('show');
+          return;
+        } catch (error) {
+          console.error('Open home current flow failed from dynamic island:', error);
+        }
+      }
+      if (!acknowledged) {
+        window.open('/', '_blank', 'noopener');
+      }
+    });
+
+    observationOpenTaskDetail.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const request = queueTaskDetailLaunch(getObservationConsoleTarget());
+      if (!request) {
+        return;
+      }
+      const acknowledged = await broadcastTaskDetailLaunch(request);
+      if (window.electronAPI && typeof window.electronAPI.windowAction === 'function') {
+        try {
+          await window.electronAPI.windowAction('show');
+          return;
+        } catch (error) {
+          console.error('Open task detail failed from dynamic island:', error);
+        }
+      }
+      if (!acknowledged) {
+        window.open('/', '_blank', 'noopener');
+      }
+    });
+
+    observationOpenRecall.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const request = queueRecallCenterLaunch(getObservationConsoleTarget());
+      if (!request) {
+        return;
+      }
+      const acknowledged = await broadcastRecallCenterLaunch(request);
+      if (window.electronAPI && typeof window.electronAPI.windowAction === 'function') {
+        try {
+          await window.electronAPI.windowAction('show');
+          return;
+        } catch (error) {
+          console.error('Open recall center failed from dynamic island:', error);
+        }
+      }
+      if (!acknowledged) {
+        window.open('/', '_blank', 'noopener');
+      }
+    });
+
+    observationRefresh.addEventListener('click', (event) => {
+      event.stopPropagation();
+      void syncObservationSnapshotForDelivery(getObservationConsoleTarget(), true);
+    });
+
+    window.addEventListener('beforeunload', () => {
+      window.clearInterval(heartbeatTimer);
+      window.clearTimeout(reconnectTimer);
+      window.clearTimeout(autoCollapseTimer);
+      window.clearTimeout(surfaceSyncTimer);
+      window.clearTimeout(surfaceSettleTimer);
+      if (roleCardStateStorageListener) {
+        window.removeEventListener('storage', roleCardStateStorageListener);
+        roleCardStateStorageListener = null;
+      }
+      if (roleCardStateChannel) {
+        roleCardStateChannel.close();
+        roleCardStateChannel = null;
+      }
+      if (surfaceResizeObserver) {
+        surfaceResizeObserver.disconnect();
+        surfaceResizeObserver = null;
+      }
+      if (socket) {
+        socket.close();
+      }
+    });
+
+    async function bootstrapDynamicIsland() {
+      applyPlatformAppearanceFallback();
+      subscribeApplicationRecallObservationFocus();
+      ensureRoleCardStateSync();
+      await hydrateRuntimeLanguage();
+      ensureSurfaceResizeObserver();
+      renderHistory();
+      updateDesktopActionBar(null);
+      renderObservationSnapshot(getObservationConsoleTarget());
+      renderPrimary(getObservationConsoleTarget());
+      queueSurfaceStateSync({ interactive: false, immediate: true });
+      connect();
+    }
+
+    bootstrapDynamicIsland().catch((error) => {
+      console.error('Dynamic island bootstrap failed:', error);
+      renderHistory();
+      updateDesktopActionBar(null);
+      renderObservationSnapshot(getObservationConsoleTarget());
+      queueSurfaceStateSync({ interactive: false, immediate: true });
+      connect();
+    });
+  </script>
+</body>
+</html>

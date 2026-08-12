@@ -1,0 +1,11 @@
+OpenXnet
+OpenXnet GOAI Competition Suite goai-v1.1.0
+
+Copyright (C) 2025 heshengtao <hst97@qq.com>
+Competition integration and subsequent modifications Copyright (C) 2026 SynapXnet Team
+
+Repository license: AGPL-3.0-only. See LICENSE for the complete terms.
+
+This repository includes third-party software. Its dependency inventory is recorded in sbom.cdx.json; each dependency remains subject to its own license.
+
+OpenXnet, XnetAIOps, XnetDataOps and XnetMLOps are products of the SynapXnet team. Their separation into repositories is an engineering boundary, not a separation of product ownership.

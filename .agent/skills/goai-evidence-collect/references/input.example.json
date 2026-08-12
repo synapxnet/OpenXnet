@@ -1,0 +1,27 @@
+{
+  "schema": "goai.skill.evidence-collect.input.v1.1",
+  "incidentId": "inc_goai_demo",
+  "traceId": "trace_goai_demo",
+  "availableTools": [
+    "aiops.alert.get",
+    "aiops.service.health",
+    "aiops.k8s.workload.get",
+    "dataops.quality.report.get",
+    "dataops.schema.snapshot.get",
+    "dataops.lineage.get",
+    "dataops.workflow.instance.get",
+    "mlops.deployment.get",
+    "mlops.inference.probe"
+  ],
+  "requiredPlatforms": ["aiops", "dataops", "mlops"],
+  "approvalRequiredTools": [
+    "aiops.inference.capacity.apply",
+    "aiops.inference.runtime.tune",
+    "dataops.feature.backfill.start",
+    "mlops.training.search.start",
+    "mlops.deployment.canary.apply",
+    "mlops.deployment.promote",
+    "mlops.model.iteration.start",
+    "mlops.deployment.rollback"
+  ]
+}

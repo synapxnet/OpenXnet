@@ -1,0 +1,374 @@
+-- OpenXnet Neuro-Symbolic OS Standard Library
+-- Standard I/O: logging, printing, file operations, formatting
+
+module StdIO {|
+
+  requires :: [:syscall, :memory]
+  version :: "0.1.0"
+
+  -- Log levels
+  enum LogLevel {|
+    :Trace
+    :Debug
+    :Info
+    :Warn
+    :Error
+    :Fatal
+  |}
+
+  -- Output targets
+  enum OutputTarget {|
+    :Console     -- primary display
+    :LogFile     -- persistent log storage
+    :Channel     -- IPC channel
+    :Null        -- discard
+  |}
+
+  -- File open modes
+  enum FileMode {|
+    :Read
+    :Write
+    :Append
+    :ReadWrite
+    :Truncate
+  |}
+
+  -- File descriptor
+  struct FileHandle {|
+    id :: UInt32
+    path :: String
+    mode :: FileMode
+    position :: UInt64
+    size :: UInt64
+    is_open :: Bool
+    encoding :: String
+    buffered :: Bool
+    buffer :: List[UInt8]
+    buffer_size :: UInt32
+  |}
+
+  -- Log entry
+  struct LogEntry {|
+    level :: LogLevel
+    timestamp :: Timestamp
+    source :: String
+    message :: String
+    pid :: UInt32
+    fields :: Map[String, Any]
+  |}
+
+  -- Configuration
+  config IOConfig {|
+    default_log_level :: :Info
+    log_target :: :Console
+    max_log_size :: 10485760        -- 10MB
+    buffer_size :: 4096
+    max_open_files :: 256
+    default_encoding :: "utf-8"
+    timestamp_format :: "ISO8601"
+    color_output :: true
+    structured_logging :: true
+  |}
+
+  -- State
+  state current_log_level :: LogLevel = IOConfig.default_log_level
+  state open_files :: Map[UInt32, FileHandle] = Map.empty()
+  state next_handle_id :: UInt32 = 3  -- 0=stdin, 1=stdout, 2=stderr
+  state log_buffer :: Queue[LogEntry] = Queue.empty()
+  state output_listeners :: List[ChannelId] = []
+
+  -- Standard file descriptors
+  const STDIN :: UInt32 = 0
+  const STDOUT :: UInt32 = 1
+  const STDERR :: UInt32 = 2
+
+  -- Log a message at a specific level
+  service log(level :: LogLevel, source :: String, message :: String,
+              fields :: Map[String, Any]) -> Void {|
+    -- Skip if below current log level
+    if log_level_rank(level) < log_level_rank(current_log_level) {|
+      return
+    |}
+
+    let entry = LogEntry {|
+      level :: level
+      timestamp :: now()
+      source :: source
+      message :: message
+      pid :: get_current_pid()
+      fields :: fields
+    |}
+
+    -- Format the log entry
+    let formatted = if IOConfig.structured_logging
+                    then format_structured(entry)
+                    else format_plain(entry)
+
+    -- Output to target
+    match IOConfig.log_target {|
+      :Console -> invoke write_stdout(formatted)
+      :LogFile -> invoke append_log_file(formatted)
+      :Channel -> invoke broadcast_log(entry)
+      :Null -> ()
+    |}
+
+    -- Buffer for subscribers
+    log_buffer = Queue.enqueue(log_buffer, entry)
+    if Queue.size(log_buffer) > 1000 {|
+      log_buffer = Queue.drop(log_buffer, 500)
+    |}
+
+    -- Fatal logs trigger system alert
+    if level == :Fatal {|
+      signal :SIGABRT to get_current_pid() with {| message :: message |}
+    |}
+  |}
+
+  -- Convenience logging functions
+  service trace(source :: String, msg :: String) -> Void {|
+    invoke log(:Trace, source, msg, Map.empty())
+  |}
+
+  service debug(source :: String, msg :: String) -> Void {|
+    invoke log(:Debug, source, msg, Map.empty())
+  |}
+
+  service info(source :: String, msg :: String) -> Void {|
+    invoke log(:Info, source, msg, Map.empty())
+  |}
+
+  service warn(source :: String, msg :: String) -> Void {|
+    invoke log(:Warn, source, msg, Map.empty())
+  |}
+
+  service error(source :: String, msg :: String) -> Void {|
+    invoke log(:Error, source, msg, Map.empty())
+  |}
+
+  service fatal(source :: String, msg :: String) -> Void {|
+    invoke log(:Fatal, source, msg, Map.empty())
+  |}
+
+  -- Print to stdout (no level, no formatting overhead)
+  service print(message :: String) -> Void {|
+    invoke write_stdout(message ++ "\n")
+  |}
+
+  -- Print without newline
+  service print_raw(message :: String) -> Void {|
+    invoke write_stdout(message)
+  |}
+
+  -- Print to stderr
+  service eprint(message :: String) -> Void {|
+    invoke write_stderr(message ++ "\n")
+  |}
+
+  -- String formatting with interpolation
+  service format(template :: String, args :: Map[String, Any]) -> String {|
+    let result = template
+    for key, value in args {|
+      let placeholder = "{" ++ key ++ "}"
+      let formatted_value = to_string(value)
+      result = String.replace(result, placeholder, formatted_value)
+    |}
+    return result
+  |}
+
+  -- Format with positional args
+  service format_args(template :: String, args :: List[Any]) -> String {|
+    let result = template
+    let idx = 0
+    for arg in args {|
+      let placeholder = "{" ++ to_string(idx) ++ "}"
+      result = String.replace(result, placeholder, to_string(arg))
+      idx = idx + 1
+    |}
+    return result
+  |}
+
+  -- Read a file entirely
+  service read_file(path :: String) -> Result[String, Error] {|
+    let handle = invoke open_file(path, :Read)
+    match handle {|
+      Ok(fh) -> {|
+        let content = invoke read_all(fh.id)
+        invoke close_file(fh.id)
+        return content
+      |}
+      Err(e) -> return Err(e)
+    |}
+  |}
+
+  -- Write content to a file (creates or overwrites)
+  service write_file(path :: String, content :: String) -> Result[Void, Error] {|
+    let handle = invoke open_file(path, :Write)
+    match handle {|
+      Ok(fh) -> {|
+        let result = invoke write_all(fh.id, content)
+        invoke close_file(fh.id)
+        return result
+      |}
+      Err(e) -> return Err(e)
+    |}
+  |}
+
+  -- Append content to a file
+  service append_file(path :: String, content :: String) -> Result[Void, Error] {|
+    let handle = invoke open_file(path, :Append)
+    match handle {|
+      Ok(fh) -> {|
+        let result = invoke write_all(fh.id, content)
+        invoke close_file(fh.id)
+        return result
+      |}
+      Err(e) -> return Err(e)
+    |}
+  |}
+
+  -- Open a file
+  service open_file(path :: String, mode :: FileMode) -> Result[FileHandle, Error] {|
+    if Map.size(open_files) >= IOConfig.max_open_files {|
+      return Err(:TooManyOpenFiles)
+    |}
+
+    -- Check capabilities
+    let needed_cap = match mode {|
+      :Read -> :file_read
+      :Write -> :file_write
+      :Append -> :file_write
+      :ReadWrite -> :file_write
+      :Truncate -> :file_write
+    |}
+
+    let has_cap = invoke Policy.check_capability(get_current_pid(), needed_cap)
+    if not has_cap {|
+      return Err(:PermissionDenied)
+    |}
+
+    let id = next_handle_id
+    next_handle_id = next_handle_id + 1
+
+    let fh = FileHandle {|
+      id :: id
+      path :: path
+      mode :: mode
+      position :: 0
+      size :: invoke get_file_size(path)
+      is_open :: true
+      encoding :: IOConfig.default_encoding
+      buffered :: true
+      buffer :: []
+      buffer_size :: IOConfig.buffer_size
+    |}
+
+    open_files = Map.insert(open_files, id, fh)
+    return Ok(fh)
+  |}
+
+  -- Close a file
+  service close_file(handle_id :: UInt32) -> Result[Void, Error] {|
+    match Map.get(open_files, handle_id) {|
+      Some(fh) -> {|
+        -- Flush buffer if buffered write
+        if fh.buffered and not List.is_empty(fh.buffer) {|
+          invoke flush_buffer(handle_id)
+        |}
+        open_files = Map.remove(open_files, handle_id)
+        return Ok(())
+      |}
+      None -> return Err(:InvalidHandle)
+    |}
+  |}
+
+  -- Read all content from an open file
+  service read_all(handle_id :: UInt32) -> Result[String, Error] {|
+    match Map.get(open_files, handle_id) {|
+      Some(fh) where fh.mode == :Read or fh.mode == :ReadWrite -> {|
+        let content = invoke sys_read_file(fh.path, fh.encoding)
+        return content
+      |}
+      Some(_) -> return Err(:WrongMode)
+      None -> return Err(:InvalidHandle)
+    |}
+  |}
+
+  -- Write all content to an open file
+  service write_all(handle_id :: UInt32, content :: String) -> Result[Void, Error] {|
+    match Map.get(open_files, handle_id) {|
+      Some(fh) where fh.mode != :Read -> {|
+        if fh.buffered {|
+          let new_buffer = List.concat(fh.buffer, String.to_bytes(content))
+          if List.length(new_buffer) >= fh.buffer_size {|
+            invoke flush_buffer(handle_id)
+            invoke sys_write_file(fh.path, content, fh.mode, fh.encoding)
+          |} else {|
+            let updated = fh with {| buffer :: new_buffer |}
+            open_files = Map.insert(open_files, handle_id, updated)
+          |}
+        |} else {|
+          invoke sys_write_file(fh.path, content, fh.mode, fh.encoding)
+        |}
+        return Ok(())
+      |}
+      Some(_) -> return Err(:WrongMode)
+      None -> return Err(:InvalidHandle)
+    |}
+  |}
+
+  -- Format a structured log entry
+  service format_structured(entry :: LogEntry) -> String {|
+    let level_str = match entry.level {|
+      :Trace -> "TRC"
+      :Debug -> "DBG"
+      :Info  -> "INF"
+      :Warn  -> "WRN"
+      :Error -> "ERR"
+      :Fatal -> "FTL"
+    |}
+
+    let base = format("[{ts}] {level} [{src}] (pid:{pid}) {msg}", {|
+      "ts" -> format_timestamp(entry.timestamp),
+      "level" -> level_str,
+      "src" -> entry.source,
+      "pid" -> to_string(entry.pid),
+      "msg" -> entry.message
+    |})
+
+    -- Append fields if present
+    if not Map.is_empty(entry.fields) {|
+      let field_strs = []
+      for key, val in entry.fields {|
+        field_strs = List.append(field_strs, key ++ "=" ++ to_string(val))
+      |}
+      return base ++ " | " ++ String.join(field_strs, " ")
+    |}
+
+    return base
+  |}
+
+  -- Format a plain log entry
+  service format_plain(entry :: LogEntry) -> String {|
+    return format_timestamp(entry.timestamp) ++ " " ++
+           to_string(entry.level) ++ " " ++ entry.message
+  |}
+
+  -- Get numeric rank for log level comparison
+  service log_level_rank(level :: LogLevel) -> UInt8 {|
+    match level {|
+      :Trace -> 0
+      :Debug -> 1
+      :Info  -> 2
+      :Warn  -> 3
+      :Error -> 4
+      :Fatal -> 5
+    |}
+  |}
+
+  -- Set the current log level filter
+  service set_log_level(level :: LogLevel) -> Void {|
+    current_log_level = level
+    invoke info("io", format("log level set to {level}", {| "level" -> to_string(level) |}))
+  |}
+
+|}
