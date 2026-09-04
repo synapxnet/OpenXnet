@@ -17,9 +17,14 @@ const PREPARE_REQUEST_SCHEMA = "openxnet.agentteams.prepare.v1" as const;
 const PREPARE_RESULT_SCHEMA = "openxnet.agentteams.prepare-result.v1" as const;
 const TASK_REQUEST_SCHEMA = "openxnet.agentteams.task.v1" as const;
 const TASK_RESULT_SCHEMA = "openxnet.agentteams.task-result.v1" as const;
+const DEFAULT_AGENTTEAMS_REQUEST_TIMEOUT_MS = 330_000;
 const RESOURCE_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const MATRIX_USER_ID_PATTERN = /^@[^:\s]{1,255}:[^\s]{1,255}$/u;
+const MATRIX_ROOM_ID_PATTERN = /^![^:\s]{1,255}:[^\s]{1,255}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+const TRANSPORT_EVENT_KINDS = Object.freeze([
+  "ROUTE_REQUEST", "ROUTE_RESPONSE", "TASK_REQUEST", "TASK_RESPONSE", "CORRECTION_REQUEST",
+] as const);
 const EVIDENCE_SIGNAL_FIELDS = Object.freeze([
   "status", "passed", "valid", "healthy", "ready", "recovered",
   "businessKpiRecovered", "queueAwareAutoscaling", "errorRate", "p95Ms", "p99Ms",
@@ -27,7 +32,8 @@ const EVIDENCE_SIGNAL_FIELDS = Object.freeze([
   "readyReplicas", "desiredReplicas", "informationCoefficient",
   "informationCoefficientThreshold", "sharpeImprovement", "maximumDrawdownIncrease",
   "trainingCompleted", "evaluationPassed", "modelRegistered", "canaryPassed",
-  "rollbackReady", "inputContractStatus",
+  "rollbackReady", "inputContractStatus", "algorithmId", "productVersion", "candidateCount",
+  "contractStatus", "modelDigestSha256",
 ] as const);
 
 /** 投影 AgentTeams 可见的验证信号；输入完整证据，仅返回固定白名单中的标量字段。 */
@@ -130,12 +136,27 @@ export interface CompetitionAgentTeamsAgentResult {
   readonly outputDigest: string;
 }
 
+/** 独立 Adapter 返回的脱敏 Matrix 原始事件包络。 */
+export interface CompetitionAgentTeamsTransportEvent {
+  readonly kind: (typeof TRANSPORT_EVENT_KINDS)[number];
+  readonly direction: "OUTBOUND" | "INBOUND";
+  readonly roomId: string;
+  readonly eventId: string;
+  readonly sender: string;
+  readonly recipient: string;
+  readonly originServerTs: number | null;
+  readonly observedAt: string;
+  readonly redactedBody: string;
+  readonly bodyDigest: string;
+}
+
 /** AgentTeams 阶段任务的完整回执。 */
 export interface CompetitionAgentTeamsTaskResult {
   readonly taskId: string;
   readonly stage: CompetitionAgentTeamsTaskStage;
   readonly route: CompetitionAgentTeamsRouteResult | null;
   readonly result: CompetitionAgentTeamsAgentResult;
+  readonly transportEvents: readonly CompetitionAgentTeamsTransportEvent[];
   readonly completedAt: string;
 }
 
@@ -157,6 +178,7 @@ export interface HttpCompetitionAgentTeamsAdapterOptions {
   readonly resolveDelegationToken: (context: CompetitionAgentTeamsDelegationContext) => Promise<string>;
   readonly fetchResource?: typeof fetch;
   readonly timeoutMs?: number;
+  readonly prepareRetryDelayMs?: number;
   readonly maxResponseBytes?: number;
   readonly taskTimeoutMs?: number;
 }
@@ -165,15 +187,17 @@ export interface HttpCompetitionAgentTeamsAdapterOptions {
 export class HttpCompetitionAgentTeamsAdapter {
   private readonly fetchResource: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly prepareRetryDelayMs: number;
   private readonly maxResponseBytes: number;
   private readonly taskTimeoutMs: number;
 
   /** 创建隔离 Adapter；输入端点、委托解析和网络依赖，不提前访问服务。 */
   public constructor(private readonly options: HttpCompetitionAgentTeamsAdapterOptions) {
     this.fetchResource = options.fetchResource ?? fetch;
-    this.timeoutMs = options.timeoutMs ?? 125_000;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_AGENTTEAMS_REQUEST_TIMEOUT_MS;
+    this.prepareRetryDelayMs = options.prepareRetryDelayMs ?? 2_000;
     this.maxResponseBytes = options.maxResponseBytes ?? 256 * 1024;
-    this.taskTimeoutMs = options.taskTimeoutMs ?? 330_000;
+    this.taskTimeoutMs = options.taskTimeoutMs ?? DEFAULT_AGENTTEAMS_REQUEST_TIMEOUT_MS;
   }
 
   /** 准备一个模板团队；输入 Incident、Trace 和已解析模板，返回 READY 或抛出脱敏异常。 */
@@ -208,28 +232,37 @@ export class HttpCompetitionAgentTeamsAdapter {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await this.fetchResource(new URL("api/v1/teams/prepare", endpoint), {
-        method: "POST",
-        redirect: "manual",
-        signal: controller.signal,
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json; charset=utf-8",
-          "Idempotency-Key": requestId,
-          "X-OpenXnet-Workspace-Id": incident.workspaceId,
-          "X-OpenXnet-Incident-Id": incident.incidentId,
-          "X-OpenXnet-Trace-Id": traceId,
-        },
-        body: JSON.stringify(body),
-      });
-      if (!response.ok || (response.status >= 300 && response.status < 400)) {
-        throw new Error(`AgentTeams isolated service rejected the request with HTTP ${response.status}.`);
+      while (true) {
+        const response = await this.fetchResource(new URL("api/v1/teams/prepare", endpoint), {
+          method: "POST",
+          redirect: "manual",
+          signal: controller.signal,
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json; charset=utf-8",
+            "Idempotency-Key": requestId,
+            "X-OpenXnet-Workspace-Id": incident.workspaceId,
+            "X-OpenXnet-Incident-Id": incident.incidentId,
+            "X-OpenXnet-Trace-Id": traceId,
+          },
+          body: JSON.stringify(body),
+        });
+        const bytes = Buffer.from(await response.arrayBuffer());
+        if (bytes.length > this.maxResponseBytes) throw new Error("AgentTeams isolated response is too large.");
+        if (!response.ok || (response.status >= 300 && response.status < 400)) {
+          const retryable = response.status === 503
+            && parseAgentTeamsPublicErrorCode(bytes) === "AGENTTEAMS_TEAM_NOT_READY"
+            && !controller.signal.aborted;
+          if (!retryable) {
+            throw new Error(`AgentTeams isolated service rejected the request with HTTP ${response.status}.`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, this.prepareRetryDelayMs));
+          continue;
+        }
+        const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
+        return this.parseResponse(value, context);
       }
-      const bytes = Buffer.from(await response.arrayBuffer());
-      if (bytes.length > this.maxResponseBytes) throw new Error("AgentTeams isolated response is too large.");
-      const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
-      return this.parseResponse(value, context);
     } finally {
       clearTimeout(timeout);
     }
@@ -383,6 +416,9 @@ export class HttpCompetitionAgentTeamsAdapter {
     const response = value;
     const result = isRecord(response.result) ? response.result : null;
     const route = response.route === null ? null : isRecord(response.route) ? response.route : undefined;
+    const transportEvents = Array.isArray(response.transportEvents)
+      ? response.transportEvents.map((item) => this.parseTransportEvent(item))
+      : null;
     const expectedRole = input.stage === "INVESTIGATION_PLAN"
       ? "worker"
       : input.stage === "INVESTIGATION_CONCLUSION" ? "leader" : "verifier";
@@ -432,6 +468,7 @@ export class HttpCompetitionAgentTeamsAdapter {
       || typeof result.outputDigest !== "string"
       || !SHA256_PATTERN.test(result.outputDigest)
       || route === undefined
+      || transportEvents === null
     ) {
       throw new Error("AgentTeams task response scope is invalid.");
     }
@@ -451,6 +488,16 @@ export class HttpCompetitionAgentTeamsAdapter {
       || (input.stage !== "INVESTIGATION_PLAN" && evidenceIds.length === 0)
       || ((expectedRole === "worker" || expectedRole === "verifier") && route === null)
       || (expectedRole === "leader" && route !== null)
+      || !transportEvents.some((event) => event.kind === "TASK_REQUEST" && event.direction === "OUTBOUND")
+      || !transportEvents.some((event) => (
+        event.kind === "TASK_RESPONSE"
+        && event.direction === "INBOUND"
+        && event.eventId === result.eventId
+        && event.sender === result.transportSender
+      ))
+      || (expectedRole !== "leader" && !transportEvents.some((event) => event.kind === "ROUTE_REQUEST"))
+      || (expectedRole !== "leader" && !transportEvents.some((event) => event.kind === "ROUTE_RESPONSE"))
+      || (expectedRole === "leader" && transportEvents.some((event) => event.kind.startsWith("ROUTE_")))
     ) {
       throw new Error("AgentTeams task result exceeded its authorized context.");
     }
@@ -474,7 +521,49 @@ export class HttpCompetitionAgentTeamsAdapter {
         skillVersion: input.skill.version,
         outputDigest: result.outputDigest,
       },
+      transportEvents,
       completedAt: response.completedAt,
+    };
+  }
+
+  /** 解析单个 Matrix 事件；输入未知事件，返回有界脱敏包络，字段或摘要不合法时拒绝。 */
+  private parseTransportEvent(value: unknown): CompetitionAgentTeamsTransportEvent {
+    if (!isRecord(value)) throw new Error("AgentTeams transport event is invalid.");
+    if (
+      !TRANSPORT_EVENT_KINDS.some((kind) => kind === value.kind)
+      || (value.direction !== "OUTBOUND" && value.direction !== "INBOUND")
+      || typeof value.roomId !== "string"
+      || !MATRIX_ROOM_ID_PATTERN.test(value.roomId)
+      || typeof value.eventId !== "string"
+      || value.eventId.length < 1
+      || value.eventId.length > 512
+      || typeof value.sender !== "string"
+      || !MATRIX_USER_ID_PATTERN.test(value.sender)
+      || typeof value.recipient !== "string"
+      || !MATRIX_USER_ID_PATTERN.test(value.recipient)
+      || (value.originServerTs !== null && (!Number.isSafeInteger(value.originServerTs) || Number(value.originServerTs) < 1))
+      || typeof value.observedAt !== "string"
+      || value.observedAt.length < 1
+      || value.observedAt.length > 128
+      || typeof value.redactedBody !== "string"
+      || value.redactedBody.length < 1
+      || value.redactedBody.length > 64 * 1024
+      || typeof value.bodyDigest !== "string"
+      || !SHA256_PATTERN.test(value.bodyDigest)
+    ) {
+      throw new Error("AgentTeams transport event is invalid.");
+    }
+    return {
+      kind: value.kind as CompetitionAgentTeamsTransportEvent["kind"],
+      direction: value.direction,
+      roomId: value.roomId,
+      eventId: value.eventId,
+      sender: value.sender,
+      recipient: value.recipient,
+      originServerTs: value.originServerTs as number | null,
+      observedAt: value.observedAt,
+      redactedBody: value.redactedBody,
+      bodyDigest: value.bodyDigest,
     };
   }
 
@@ -553,4 +642,15 @@ export class HttpCompetitionAgentTeamsAdapter {
 /** 判断未知值是否为普通对象；输入未知 JSON，返回类型守卫。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 读取隔离服务公开错误码；输入有界响应字节，返回可用于重试判定的错误码。 */
+function parseAgentTeamsPublicErrorCode(bytes: Buffer): string | null {
+  try {
+    const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
+    if (!isRecord(value) || !isRecord(value.error) || typeof value.error.code !== "string") return null;
+    return value.error.code;
+  } catch {
+    return null;
+  }
 }

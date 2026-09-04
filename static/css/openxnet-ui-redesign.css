@@ -13171,7 +13171,7 @@ body.openxnet-ui-redesign-body .enterprise-sandbox-shell,
   flex-direction: column;
   width: 100%;
   height: 100%;
-  min-height: 620px;
+  min-height: 0;
   background: var(--sandbox-bg);
   color: var(--sandbox-text);
 }
@@ -13305,6 +13305,12 @@ body.openxnet-ui-redesign-body .enterprise-sandbox-workbench,
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-shell,
+.openxnet-redesign-app .enterprise-sandbox-shell {
+  container-name: enterprise-sandbox-shell;
+  container-type: inline-size;
 }
 
 body.openxnet-ui-redesign-body .enterprise-sandbox-workbench.is-chat-mode,
@@ -16195,6 +16201,690 @@ body.openxnet-ui-redesign-body .enterprise-sandbox-panel--chat,
   background: rgba(12, 20, 30, 0.98);
 }
 
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-tabs,
+.openxnet-redesign-app .enterprise-sandbox-work-tabs {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-height: 42px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-tab,
+.openxnet-redesign-app .enterprise-sandbox-work-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-tab::after,
+.openxnet-redesign-app .enterprise-sandbox-work-tab::after {
+  position: absolute;
+  right: 20%;
+  bottom: 0;
+  left: 20%;
+  height: 2px;
+  background: transparent;
+  content: "";
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-tab:hover,
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-tab.is-active,
+.openxnet-redesign-app .enterprise-sandbox-work-tab:hover,
+.openxnet-redesign-app .enterprise-sandbox-work-tab.is-active {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-tab.is-active::after,
+.openxnet-redesign-app .enterprise-sandbox-work-tab.is-active::after {
+  background: #4ecdc4;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-picker,
+.openxnet-redesign-app .enterprise-sandbox-incident-picker {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-picker__label,
+.openxnet-redesign-app .enterprise-sandbox-incident-picker__label {
+  display: flex;
+  flex: 0 0 92px;
+  flex-direction: column;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-picker__label span,
+.openxnet-redesign-app .enterprise-sandbox-incident-picker__label span {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 9px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-picker__label strong,
+.openxnet-redesign-app .enterprise-sandbox-incident-picker__label strong {
+  margin-top: 2px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-select,
+.openxnet-redesign-app .enterprise-sandbox-incident-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-select .el-input__inner,
+body.openxnet-ui-redesign-body .enterprise-sandbox-chat-scenario-select .el-input__inner,
+.openxnet-redesign-app .enterprise-sandbox-incident-select .el-input__inner,
+.openxnet-redesign-app .enterprise-sandbox-chat-scenario-select .el-input__inner {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-view,
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-view,
+.openxnet-redesign-app .enterprise-sandbox-work-view,
+.openxnet-redesign-app .enterprise-sandbox-audit-view {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-empty,
+.openxnet-redesign-app .enterprise-sandbox-work-empty {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 32px;
+  color: rgba(255, 255, 255, 0.34);
+  text-align: center;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-empty i,
+.openxnet-redesign-app .enterprise-sandbox-work-empty i {
+  margin-bottom: 10px;
+  font-size: 24px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-empty strong,
+.openxnet-redesign-app .enterprise-sandbox-work-empty strong {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-empty span,
+.openxnet-redesign-app .enterprise-sandbox-work-empty span {
+  max-width: 290px;
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-summary,
+.openxnet-redesign-app .enterprise-sandbox-incident-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(78, 205, 196, 0.035);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-summary > div:first-child,
+.openxnet-redesign-app .enterprise-sandbox-incident-summary > div:first-child {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-summary > div:first-child > span,
+.openxnet-redesign-app .enterprise-sandbox-incident-summary > div:first-child > span {
+  align-self: flex-start;
+  margin-bottom: 5px;
+  color: #76c9c0;
+  font-family: var(--ox-font-mono);
+  font-size: 9px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-summary strong,
+.openxnet-redesign-app .enterprise-sandbox-incident-summary strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-summary small,
+.openxnet-redesign-app .enterprise-sandbox-incident-summary small {
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-summary__refs,
+.openxnet-redesign-app .enterprise-sandbox-incident-summary__refs {
+  display: flex;
+  flex: 0 1 42%;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.3);
+  font-family: var(--ox-font-mono);
+  font-size: 8px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-incident-summary__refs span,
+.openxnet-redesign-app .enterprise-sandbox-incident-summary__refs span {
+  display: flex;
+  gap: 5px;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-section,
+.openxnet-redesign-app .enterprise-sandbox-work-section {
+  padding: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-section__heading,
+.openxnet-redesign-app .enterprise-sandbox-work-section__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 24px;
+  margin-bottom: 10px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-section__heading > div,
+.openxnet-redesign-app .enterprise-sandbox-work-section__heading > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-section__heading i,
+.openxnet-redesign-app .enterprise-sandbox-work-section__heading i {
+  color: #76c9c0;
+  font-size: 11px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-section__heading strong,
+.openxnet-redesign-app .enterprise-sandbox-work-section__heading strong {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-work-section__heading > span,
+.openxnet-redesign-app .enterprise-sandbox-work-section__heading > span {
+  color: rgba(255, 255, 255, 0.36);
+  font-family: var(--ox-font-mono);
+  font-size: 9px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-inline-empty,
+.openxnet-redesign-app .enterprise-sandbox-inline-empty {
+  padding: 16px 0;
+  color: rgba(255, 255, 255, 0.32);
+  font-size: 10px;
+  text-align: center;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-lanes,
+.openxnet-redesign-app .enterprise-sandbox-task-lanes {
+  display: grid;
+  gap: 13px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-lane__heading,
+.openxnet-redesign-app .enterprise-sandbox-task-lane__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 20px;
+  padding: 0 2px 5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-lane__heading small,
+.openxnet-redesign-app .enterprise-sandbox-task-lane__heading small {
+  font-family: var(--ox-font-mono);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node,
+.openxnet-redesign-app .enterprise-sandbox-task-node {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: flex-start;
+  padding: 8px 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node__status,
+.openxnet-redesign-app .enterprise-sandbox-task-node__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 10px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node.is-succeeded .enterprise-sandbox-task-node__status,
+.openxnet-redesign-app .enterprise-sandbox-task-node.is-succeeded .enterprise-sandbox-task-node__status {
+  color: #63c7a1;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node.is-awaiting_approval .enterprise-sandbox-task-node__status,
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node.is-running .enterprise-sandbox-task-node__status,
+.openxnet-redesign-app .enterprise-sandbox-task-node.is-awaiting_approval .enterprise-sandbox-task-node__status,
+.openxnet-redesign-app .enterprise-sandbox-task-node.is-running .enterprise-sandbox-task-node__status {
+  color: #f5b74c;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node.is-failed .enterprise-sandbox-task-node__status,
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node.is-blocked .enterprise-sandbox-task-node__status,
+.openxnet-redesign-app .enterprise-sandbox-task-node.is-failed .enterprise-sandbox-task-node__status,
+.openxnet-redesign-app .enterprise-sandbox-task-node.is-blocked .enterprise-sandbox-task-node__status {
+  color: #ef6a6a;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node__body,
+.openxnet-redesign-app .enterprise-sandbox-task-node__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node__body strong,
+.openxnet-redesign-app .enterprise-sandbox-task-node__body strong {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node__body span,
+.openxnet-redesign-app .enterprise-sandbox-task-node__body span {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 9px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node__body small,
+.openxnet-redesign-app .enterprise-sandbox-task-node__body small {
+  display: flex;
+  gap: 5px;
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.28);
+  font-family: var(--ox-font-mono);
+  font-size: 8px;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-task-node__evidence,
+.openxnet-redesign-app .enterprise-sandbox-task-node__evidence {
+  color: #b597db;
+  font-family: var(--ox-font-mono);
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-evidence-list,
+.openxnet-redesign-app .enterprise-sandbox-evidence-list {
+  display: grid;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-evidence-row,
+.openxnet-redesign-app .enterprise-sandbox-evidence-row {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 9px;
+  align-items: flex-start;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-platform,
+.openxnet-redesign-app .enterprise-sandbox-platform {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  padding: 2px 5px;
+  border: 1px solid rgba(91, 163, 197, 0.22);
+  border-radius: 4px;
+  color: #7bb7d2;
+  font-family: var(--ox-font-mono);
+  font-size: 8px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-platform.is-dataops,
+.openxnet-redesign-app .enterprise-sandbox-platform.is-dataops {
+  border-color: rgba(99, 199, 161, 0.24);
+  color: #63c7a1;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-platform.is-mlops,
+.openxnet-redesign-app .enterprise-sandbox-platform.is-mlops {
+  border-color: rgba(181, 151, 219, 0.24);
+  color: #b597db;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-evidence-row > div,
+.openxnet-redesign-app .enterprise-sandbox-evidence-row > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-evidence-row strong,
+.openxnet-redesign-app .enterprise-sandbox-evidence-row strong {
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 10px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-evidence-row span:not(.enterprise-sandbox-platform),
+.openxnet-redesign-app .enterprise-sandbox-evidence-row span:not(.enterprise-sandbox-platform) {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 9px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-evidence-row small,
+.openxnet-redesign-app .enterprise-sandbox-evidence-row small {
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.25);
+  font-family: var(--ox-font-mono);
+  font-size: 8px;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-summary,
+.openxnet-redesign-app .enterprise-sandbox-audit-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-summary > div,
+.openxnet-redesign-app .enterprise-sandbox-audit-summary > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 4px;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-summary span,
+.openxnet-redesign-app .enterprise-sandbox-audit-summary span {
+  max-width: 100%;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-summary strong,
+.openxnet-redesign-app .enterprise-sandbox-audit-summary strong {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.8);
+  font-family: var(--ox-font-mono);
+  font-size: 14px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation,
+.openxnet-redesign-app .enterprise-sandbox-invocation {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 7px;
+  padding: 9px 0;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation--compact,
+.openxnet-redesign-app .enterprise-sandbox-invocation--compact {
+  display: block;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--ox-border);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__rail,
+.openxnet-redesign-app .enterprise-sandbox-invocation__rail {
+  position: relative;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__rail::after,
+.openxnet-redesign-app .enterprise-sandbox-invocation__rail::after {
+  position: absolute;
+  top: 12px;
+  bottom: -12px;
+  left: 6px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  content: "";
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__rail span,
+.openxnet-redesign-app .enterprise-sandbox-invocation__rail span {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  border: 2px solid #4ecdc4;
+  border-radius: 50%;
+  background: #0c141e;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__body,
+.openxnet-redesign-app .enterprise-sandbox-invocation__body {
+  min-width: 0;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__heading,
+.openxnet-redesign-app .enterprise-sandbox-invocation__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__heading strong,
+.openxnet-redesign-app .enterprise-sandbox-invocation__heading strong {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.8);
+  font-family: var(--ox-font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__heading > span,
+.openxnet-redesign-app .enterprise-sandbox-invocation__heading > span {
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: var(--ox-font-mono);
+  font-size: 8px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__heading > span.is-succeeded,
+.openxnet-redesign-app .enterprise-sandbox-invocation__heading > span.is-succeeded {
+  color: #63c7a1;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__heading > span.is-failed,
+.openxnet-redesign-app .enterprise-sandbox-invocation__heading > span.is-failed {
+  color: #ef6a6a;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__meta,
+.openxnet-redesign-app .enterprise-sandbox-invocation__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 8px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__meta span,
+.openxnet-redesign-app .enterprise-sandbox-invocation__meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__details,
+.openxnet-redesign-app .enterprise-sandbox-invocation__details {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 0;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__details > div,
+.openxnet-redesign-app .enterprise-sandbox-invocation__details > div {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 7px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__details dt,
+.openxnet-redesign-app .enterprise-sandbox-invocation__details dt {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 8px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-invocation__details dd,
+.openxnet-redesign-app .enterprise-sandbox-invocation__details dd {
+  min-width: 0;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.52);
+  font-family: var(--ox-font-mono);
+  font-size: 8px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-operation__invocations,
+.openxnet-redesign-app .enterprise-sandbox-operation__invocations {
+  display: grid;
+  gap: 3px;
+  margin-top: 9px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-row,
+body.openxnet-ui-redesign-body .enterprise-sandbox-ledger-row,
+.openxnet-redesign-app .enterprise-sandbox-audit-row,
+.openxnet-redesign-app .enterprise-sandbox-ledger-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-row > i,
+.openxnet-redesign-app .enterprise-sandbox-audit-row > i {
+  padding-top: 2px;
+  color: #f5b74c;
+  font-size: 11px;
+  text-align: center;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-ledger-row > span,
+.openxnet-redesign-app .enterprise-sandbox-ledger-row > span {
+  color: #b597db;
+  font-family: var(--ox-font-mono);
+  font-size: 9px;
+  text-align: center;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-row > div,
+body.openxnet-ui-redesign-body .enterprise-sandbox-ledger-row > div,
+.openxnet-redesign-app .enterprise-sandbox-audit-row > div,
+.openxnet-redesign-app .enterprise-sandbox-ledger-row > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-row strong,
+body.openxnet-ui-redesign-body .enterprise-sandbox-ledger-row strong,
+.openxnet-redesign-app .enterprise-sandbox-audit-row strong,
+.openxnet-redesign-app .enterprise-sandbox-ledger-row strong {
+  color: rgba(255, 255, 255, 0.76);
+  font-family: var(--ox-font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-row span,
+body.openxnet-ui-redesign-body .enterprise-sandbox-ledger-row span,
+.openxnet-redesign-app .enterprise-sandbox-audit-row span,
+.openxnet-redesign-app .enterprise-sandbox-ledger-row span {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-audit-row small,
+body.openxnet-ui-redesign-body .enterprise-sandbox-ledger-row small,
+.openxnet-redesign-app .enterprise-sandbox-audit-row small,
+.openxnet-redesign-app .enterprise-sandbox-ledger-row small {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.25);
+  font-family: var(--ox-font-mono);
+  font-size: 8px;
+  overflow-wrap: anywhere;
+}
+
 body.openxnet-ui-redesign-body .enterprise-sandbox-workbench.is-chat-mode .enterprise-sandbox-stage > canvas,
 .openxnet-redesign-app .enterprise-sandbox-workbench.is-chat-mode .enterprise-sandbox-stage > canvas,
 body.openxnet-ui-redesign-body .enterprise-sandbox-workbench.is-chat-mode .enterprise-3d-label-overlay,
@@ -16330,6 +17020,7 @@ body.openxnet-ui-redesign-body .enterprise-sandbox-chat-members__empty,
 
 body.openxnet-ui-redesign-body .enterprise-sandbox-chat-messages,
 .openxnet-redesign-app .enterprise-sandbox-chat-messages {
+  flex: 1 1 0;
   min-height: 0;
   padding: 16px 14px 20px;
   overflow-x: hidden;
@@ -16672,9 +17363,31 @@ body.openxnet-ui-redesign-body .enterprise-sandbox-chat-input,
 .openxnet-redesign-app .enterprise-sandbox-chat-input {
   position: relative;
   flex: 0 0 auto;
-  padding: 10px 54px 10px 12px;
+  padding: 10px 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.075);
   background: rgba(8, 15, 23, 0.96);
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-chat-taskbar,
+.openxnet-redesign-app .enterprise-sandbox-chat-taskbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 8px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-chat-scenario-select,
+.openxnet-redesign-app .enterprise-sandbox-chat-scenario-select {
+  flex: 1 1 150px;
+  min-width: 120px;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-chat-team-select,
+.openxnet-redesign-app .enterprise-sandbox-chat-team-select {
+  min-width: 0;
+  flex: 1 1 180px;
 }
 
 body.openxnet-ui-redesign-body .enterprise-sandbox-chat-input__recipients,
@@ -16689,13 +17402,34 @@ body.openxnet-ui-redesign-body .enterprise-sandbox-chat-input__recipients,
 body.openxnet-ui-redesign-body .enterprise-sandbox-chat-textarea .el-textarea__inner,
 .openxnet-redesign-app .enterprise-sandbox-chat-textarea .el-textarea__inner {
   min-height: 54px !important;
-  padding: 9px 10px;
+  padding: 9px 150px 9px 10px;
   border-color: rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
   box-shadow: none;
   color: rgba(255, 255, 255, 0.88);
   resize: none;
+}
+
+body.openxnet-ui-redesign-body .enterprise-sandbox-chat-task,
+.openxnet-redesign-app .enterprise-sandbox-chat-task {
+  position: absolute;
+  right: 55px;
+  bottom: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 96px;
+  height: 34px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid rgba(105, 176, 255, 0.38);
+  border-radius: 6px;
+  background: #315f8f;
+  color: #ffffff;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 body.openxnet-ui-redesign-body .enterprise-sandbox-chat-send,
@@ -16718,7 +17452,9 @@ body.openxnet-ui-redesign-body .enterprise-sandbox-chat-send,
 }
 
 body.openxnet-ui-redesign-body .enterprise-sandbox-chat-send:disabled,
-.openxnet-redesign-app .enterprise-sandbox-chat-send:disabled {
+.openxnet-redesign-app .enterprise-sandbox-chat-send:disabled,
+body.openxnet-ui-redesign-body .enterprise-sandbox-chat-task:disabled,
+.openxnet-redesign-app .enterprise-sandbox-chat-task:disabled {
   border-color: rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.25);
@@ -16750,5 +17486,26 @@ body.openxnet-ui-redesign-body .enterprise-sandbox-chat-send:disabled,
   body.openxnet-ui-redesign-body .enterprise-sandbox-workbench.is-chat-mode .enterprise-3d-label-overlay,
   .openxnet-redesign-app .enterprise-sandbox-workbench.is-chat-mode .enterprise-3d-label-overlay {
     display: none !important;
+  }
+}
+
+@container enterprise-sandbox-shell (max-width: 760px) {
+  body.openxnet-ui-redesign-body .enterprise-sandbox-workbench.is-chat-mode,
+  .openxnet-redesign-app .enterprise-sandbox-workbench.is-chat-mode {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.openxnet-ui-redesign-body .enterprise-sandbox-workbench.is-chat-mode .enterprise-sandbox-navigator,
+  .openxnet-redesign-app .enterprise-sandbox-workbench.is-chat-mode .enterprise-sandbox-navigator,
+  body.openxnet-ui-redesign-body .enterprise-sandbox-workbench.is-chat-mode .enterprise-sandbox-stage > canvas,
+  .openxnet-redesign-app .enterprise-sandbox-workbench.is-chat-mode .enterprise-sandbox-stage > canvas,
+  body.openxnet-ui-redesign-body .enterprise-sandbox-workbench.is-chat-mode .enterprise-3d-label-overlay,
+  .openxnet-redesign-app .enterprise-sandbox-workbench.is-chat-mode .enterprise-3d-label-overlay {
+    display: none !important;
+  }
+
+  body.openxnet-ui-redesign-body .enterprise-sandbox-panel--chat,
+  .openxnet-redesign-app .enterprise-sandbox-panel--chat {
+    width: 100%;
   }
 }

@@ -219,7 +219,7 @@
   <link rel="stylesheet" href="toolkit-vite/openxnet-toolkit.css?v=20260513-toolkit-overview-scrollhide">
   <link rel="stylesheet" href="skills-vite/openxnet-skills.css?v=20260510-avatar-ring-thick">
   <link rel="stylesheet" href="browser-vite/openxnet-browser.css?v=20260510-avatar-ring-thick">
-  <link rel="stylesheet" href="ops-vite/openxnet-ops.css?v=20260515-theme-runtime3">
+  <link rel="stylesheet" href="ops-vite/openxnet-ops.css?v=20260901-memory-v3">
   <link rel="stylesheet" href="css/vite-ui.css?v=20260513-role-name-center">
   <link rel="stylesheet" href="css/dialog-rebuild.css?v=20260511-tour-readonly">
   <link rel="stylesheet" href="css/deploy-rebuild.css?v=20260511-deploy-no-double-scroll">
@@ -2189,12 +2189,16 @@ function updateElement(el, rawMarkdown, formatFn) {
             <h3>{{
               authViewMode === 'register'
                 ? (isCurrentLanguageZh() ? '创建账号后立即解锁完整能力矩阵' : 'Create your account and unlock the full OpenXnet capability stack')
-                : (isCurrentLanguageZh() ? '登录后立刻解锁完整能力矩阵' : 'Unlock the full OpenXnet capability stack')
+                : (authViewMode === 'reset'
+                    ? (isCurrentLanguageZh() ? '安全验证后重设登录密码' : 'Reset your password after secure verification')
+                    : (isCurrentLanguageZh() ? '登录后立刻解锁完整能力矩阵' : 'Unlock the full OpenXnet capability stack'))
             }}</h3>
             <p>{{
               authViewMode === 'register'
                 ? (isCurrentLanguageZh() ? '两步完成账号创建与手机号验证，注册完成后会自动登录并同步个人中心、订阅与企业空间权限。' : 'Create your account in two steps, verify your phone, and OpenXnet will sign you in automatically with synced access, subscriptions, and enterprise permissions.')
-                : (loginPromptReason || (isCurrentLanguageZh() ? '登录后即可启用企业空间、解锁自定义 OpenAI、管理订阅，并在个人中心维护你的账户资料。' : 'Sign in to enable enterprise workspace, unlock Custom OpenAI, manage subscriptions, and maintain your account profile.'))
+                : (authViewMode === 'reset'
+                    ? (isCurrentLanguageZh() ? '验证码仅发送到账号绑定手机号，重设成功后旧登录会话将自动失效。' : 'The code is sent only to the account phone. Existing sessions are revoked after reset.')
+                    : (loginPromptReason || (isCurrentLanguageZh() ? '登录后即可启用企业空间、解锁自定义 OpenAI、管理订阅，并在个人中心维护你的账户资料。' : 'Sign in to enable enterprise workspace, unlock Custom OpenAI, manage subscriptions, and maintain your account profile.')))
             }}</p>
           </div>
           <div class="login-entry-metric-row">
@@ -2260,7 +2264,9 @@ function updateElement(el, rawMarkdown, formatFn) {
                       : (isCurrentLanguageZh() ? '完成手机号验证' : 'Complete phone verification'))
                   : (authViewMode === 'sms'
                       ? (isCurrentLanguageZh() ? '手机号登录 OpenXnet' : 'Sign in with phone')
-                      : (isCurrentLanguageZh() ? '登录 OpenXnet' : 'Sign in to OpenXnet'))
+                      : (authViewMode === 'reset'
+                          ? (isCurrentLanguageZh() ? '重设登录密码' : 'Reset your password')
+                          : (isCurrentLanguageZh() ? '登录 OpenXnet' : 'Sign in to OpenXnet')))
               }}
             </div>
             <div class="login-entry-form-subtitle">
@@ -2271,7 +2277,9 @@ function updateElement(el, rawMarkdown, formatFn) {
                       : (isCurrentLanguageZh() ? '短信服务会发送验证码到你的手机号，验证通过后立即注册成功。' : 'We will text a verification code to your phone. Registration finishes immediately after verification.'))
                   : (authViewMode === 'sms'
                       ? (isCurrentLanguageZh() ? '输入已注册手机号与验证码，完成短信登录。' : 'Enter the registered phone number and verification code to continue.')
-                      : (isCurrentLanguageZh() ? '使用账号、邮箱或手机号与密码登录。' : 'Use your account, email, or phone number with a password to sign in.'))
+                      : (authViewMode === 'reset'
+                          ? (isCurrentLanguageZh() ? '验证账号绑定手机号后设置新密码。' : 'Verify the account phone number, then set a new password.')
+                          : (isCurrentLanguageZh() ? '使用账号、邮箱或手机号与密码登录。' : 'Use your account, email, or phone number with a password to sign in.')))
               }}
             </div>
           </div>
@@ -2292,6 +2300,11 @@ function updateElement(el, rawMarkdown, formatFn) {
                   @keyup.enter="submitAccountAuth"
                 ></el-input>
               </el-form-item>
+              <div class="login-entry-password-tools">
+                <button type="button" class="login-entry-text-link" @click="openPasswordReset">
+                  {{ isCurrentLanguageZh() ? '忘记密码？' : 'Forgot password?' }}
+                </button>
+              </div>
             </template>
             <template v-else-if="authViewMode === 'sms'">
               <el-form-item :label="isCurrentLanguageZh() ? '手机号' : 'Phone Number'">
@@ -2318,6 +2331,51 @@ function updateElement(el, rawMarkdown, formatFn) {
                     @click="sendAccessSmsCode('login')"
                   ></button>
                 </div>
+              </el-form-item>
+            </template>
+            <template v-else-if="authViewMode === 'reset'">
+              <el-form-item :label="isCurrentLanguageZh() ? '绑定手机号' : 'Account Phone Number'">
+                <el-input
+                  v-model="loginForm.phone"
+                  :placeholder="isCurrentLanguageZh() ? '输入账号绑定的手机号' : 'Enter the phone number linked to your account'"
+                  @keyup.enter="submitAccountAuth"
+                ></el-input>
+              </el-form-item>
+              <el-form-item :label="isCurrentLanguageZh() ? '短信验证码' : 'SMS Code'">
+                <div class="login-entry-code-row">
+                  <el-input
+                    class="login-entry-code-input"
+                    v-model="loginForm.code"
+                    :placeholder="isCurrentLanguageZh() ? '输入短信验证码' : 'Enter the SMS code'"
+                    @keyup.enter="submitAccountAuth"
+                  ></el-input>
+                  <button
+                    type="button"
+                    class="login-entry-code-button"
+                    :data-label="getSmsButtonLabel('reset_password')"
+                    :aria-label="getSmsButtonLabel('reset_password')"
+                    :disabled="smsState.cooldownRemaining > 0 || (smsState.sending && smsState.purpose === 'reset_password')"
+                    @click="sendAccessSmsCode('reset_password')"
+                  ></button>
+                </div>
+              </el-form-item>
+              <el-form-item :label="isCurrentLanguageZh() ? '新密码' : 'New Password'">
+                <el-input
+                  v-model="loginForm.password"
+                  type="password"
+                  show-password
+                  :placeholder="isCurrentLanguageZh() ? '设置至少 8 位新密码' : 'Set a new password with at least 8 characters'"
+                  @keyup.enter="submitAccountAuth"
+                ></el-input>
+              </el-form-item>
+              <el-form-item :label="isCurrentLanguageZh() ? '确认新密码' : 'Confirm New Password'">
+                <el-input
+                  v-model="loginForm.confirmPassword"
+                  type="password"
+                  show-password
+                  :placeholder="isCurrentLanguageZh() ? '再次输入新密码' : 'Enter the new password again'"
+                  @keyup.enter="submitAccountAuth"
+                ></el-input>
               </el-form-item>
             </template>
             <template v-else>
@@ -2430,7 +2488,9 @@ function updateElement(el, rawMarkdown, formatFn) {
               {{
                 authViewMode === 'register' && registerStep === 1
                   ? (isCurrentLanguageZh() ? '继续下一步后将进入手机号验证，完成验证后立即自动登录。' : 'Continue to phone verification, then you will be signed in automatically after verification.')
-                  : (isCurrentLanguageZh() ? '继续操作后将保持当前页面上下文，并在登录后自动回到目标功能。' : 'Your current context will be preserved and the intended destination will reopen after sign-in.')
+                  : (authViewMode === 'reset'
+                      ? (isCurrentLanguageZh() ? '重设成功后将自动登录，其他设备上的旧会话会失效。' : 'After reset, you will be signed in and existing sessions on other devices will be revoked.')
+                      : (isCurrentLanguageZh() ? '继续操作后将保持当前页面上下文，并在登录后自动回到目标功能。' : 'Your current context will be preserved and the intended destination will reopen after sign-in.'))
               }}
             </div>
             <div class="login-entry-action-row">
@@ -2700,9 +2760,31 @@ function updateElement(el, rawMarkdown, formatFn) {
           </div>
         </div>
         <div class="personal-center-form-card">
-          <div class="login-entry-form-head">
-            <div class="login-entry-form-title">{{ t('profileDetails') }}</div>
-            <div class="login-entry-form-subtitle">{{ isCurrentLanguageZh() ? '修改昵称后会同步更新到 OpenXnet 登录服务。' : 'Nickname updates are synchronized to the OpenXnet account service.' }}</div>
+          <div class="personal-center-form-head-row">
+            <div class="login-entry-form-head">
+              <div class="login-entry-form-title">{{ t('profileDetails') }}</div>
+              <div class="login-entry-form-subtitle">{{ isCurrentLanguageZh() ? '修改昵称后会同步更新到 OpenXnet 登录服务。' : 'Nickname updates are synchronized to the OpenXnet account service.' }}</div>
+            </div>
+            <div class="personal-center-form-head-actions">
+              <button
+                type="button"
+                class="personal-center-signout-button"
+                :disabled="authUi.loggingOut || authUi.submitting || personalCenterUi.submitting"
+                @click="logoutMockUser"
+              >
+                <i class="fa-solid" :class="authUi.loggingOut ? 'fa-spinner fa-spin' : 'fa-right-from-bracket'"></i>
+                <span>{{ isCurrentLanguageZh() ? '退出登录' : 'Sign Out' }}</span>
+              </button>
+              <button
+                type="button"
+                class="personal-center-save-button"
+                :disabled="personalCenterUi.submitting || authUi.loggingOut"
+                @click="submitPersonalCenterProfile"
+              >
+                <i class="fa-solid" :class="personalCenterUi.submitting ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+                <span>{{ t('saveProfile') }}</span>
+              </button>
+            </div>
           </div>
           <el-form label-position="top" class="login-entry-form">
             <el-form-item :label="isCurrentLanguageZh() ? '昵称' : 'Nickname'">
@@ -2736,15 +2818,6 @@ function updateElement(el, rawMarkdown, formatFn) {
               <strong>{{ isCurrentLanguageZh() ? '进入企业空间' : 'Enterprise Workspace' }}</strong>
               <span>{{ isCurrentLanguageZh() ? '查看企业空间、企业知识库和职工角色卡。' : 'Open enterprise workspace, knowledge bases, and staff role cards.' }}</span>
             </button>
-          </div>
-          <div class="login-entry-action-row personal-center-action-row">
-            <el-button @click="showPersonalCenterDialog = false">{{ isCurrentLanguageZh() ? '关闭' : 'Close' }}</el-button>
-            <el-button :loading="authUi.loggingOut" :disabled="authUi.loggingOut || authUi.submitting" @click="logoutMockUser">
-              {{ isCurrentLanguageZh() ? '退出登录' : 'Sign Out' }}
-            </el-button>
-            <el-button type="primary" :loading="personalCenterUi.submitting" @click="submitPersonalCenterProfile">
-              {{ t('saveProfile') }}
-            </el-button>
           </div>
         </div>
       </div>
@@ -18825,7 +18898,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                 </button>
                 <button type="button" class="oxe-nav-item oxe-nav-item--competition" :class="{ 'is-active': enterpriseTab === 'competition' }" @click="openEnterpriseTab('competition')">
                   <span class="oxe-nav-item__icon"><i class="fa-solid fa-tower-broadcast"></i></span>
-                  <span class="oxe-nav-item__label">{{ isCurrentLanguageZh() ? '事件指挥' : 'Incident Command' }}</span>
+                  <span class="oxe-nav-item__label">{{ isCurrentLanguageZh() ? '事件中心' : 'Incident Center' }}</span>
                   <span class="oxe-nav-item__chevron"><i class="fa-solid fa-angle-right"></i></span>
                 </button>
                 <button type="button" class="oxe-nav-item oxe-nav-item--aiops" :class="{ 'is-active': enterpriseTab === 'aiops' }" @click="openEnterpriseTab('aiops')">
@@ -18991,8 +19064,19 @@ function updateElement(el, rawMarkdown, formatFn) {
                         <input v-model.trim="newEnterpriseTeamTemplate.name" type="text" maxlength="160">
                       </label>
                       <label>
-                        <span>Workspace ID</span>
-                        <input v-model.trim="newEnterpriseTeamTemplate.workspaceId" type="text" maxlength="128">
+                        <span>{{ isCurrentLanguageZh() ? '工作空间' : 'Workspace' }}</span>
+                        <select v-model="newEnterpriseTeamTemplate.workspaceId">
+                          <option disabled value="">{{ isCurrentLanguageZh() ? '请选择工作空间' : 'Select a workspace' }}</option>
+                          <option v-for="workspace in enterpriseWorkspaces" :key="`team-workspace-${workspace.id}`" :value="workspace.id">
+                            {{ workspace.name }}
+                          </option>
+                          <option
+                            v-if="newEnterpriseTeamTemplate.workspaceId && !enterpriseWorkspaces.some(workspace => workspace.id === newEnterpriseTeamTemplate.workspaceId)"
+                            :value="newEnterpriseTeamTemplate.workspaceId"
+                          >
+                            {{ newEnterpriseTeamTemplate.workspaceId }}
+                          </option>
+                        </select>
                       </label>
                       <label class="is-wide">
                         <span>{{ isCurrentLanguageZh() ? '说明' : 'Description' }}</span>
@@ -19034,35 +19118,62 @@ function updateElement(el, rawMarkdown, formatFn) {
                 </div>
               </section>
 
-              <!-- GOAI 竞赛事件控制台 -->
+              <!-- 生产事件治理中心与比赛 staging 演练入口 -->
               <section v-if="enterpriseTab === 'competition'" class="competition-workbench" v-loading="competitionLoading">
                 <header class="competition-commandbar">
                   <div class="competition-commandbar__identity">
                     <span class="competition-commandbar__icon"><i class="fa-solid fa-tower-broadcast"></i></span>
                     <div>
-                      <h2>{{ isCurrentLanguageZh() ? 'GOAI 事件控制台' : 'GOAI Incident Console' }}</h2>
+                      <h2>{{ isCurrentLanguageZh() ? '事件治理中心' : 'Incident Governance Center' }}</h2>
                       <div class="competition-commandbar__meta">
-                        <span>OpenXnet Control Plane</span>
+                        <span>OpenXnet Governance Control Plane</span>
                         <span class="competition-schema-tag">MCP 2026-07-28</span>
                       </div>
                     </div>
                   </div>
                   <div class="competition-commandbar__actions">
-                    <div class="competition-segmented" role="group" :aria-label="isCurrentLanguageZh() ? 'Adapter 模式' : 'Adapter mode'">
-                      <button type="button" :class="{ 'is-active': competitionAdapterMode === 'fixture' }" :disabled="Boolean(competitionBusyAction)" @click="setCompetitionAdapterMode('fixture')">Fixture</button>
-                      <button type="button" :class="{ 'is-active': competitionAdapterMode === 'live' }" :disabled="Boolean(competitionBusyAction)" @click="setCompetitionAdapterMode('live')">Live</button>
-                    </div>
+                    <button v-if="competitionRehearsalAvailable" type="button" class="ox-btn ox-btn--secondary ox-btn--sm competition-rehearsal-toggle" :class="{ 'is-active': competitionRehearsalVisible }" :aria-pressed="competitionRehearsalVisible" @click="competitionRehearsalVisible ? closeCompetitionRehearsal() : openCompetitionRehearsal()">
+                      <i class="fa-solid fa-flask-vial"></i><span>{{ isCurrentLanguageZh() ? 'Staging 演练' : 'Staging Rehearsal' }}</span>
+                    </button>
                     <button type="button" class="competition-icon-button" :disabled="competitionLoading" @click="loadCompetitionSnapshot" :title="isCurrentLanguageZh() ? '刷新' : 'Refresh'" :aria-label="isCurrentLanguageZh() ? '刷新' : 'Refresh'">
                       <i class="fa-solid fa-rotate-right"></i>
                     </button>
-                    <button type="button" class="competition-icon-button competition-icon-button--danger" :disabled="competitionLoading || Boolean(competitionBusyAction) || !getCompetitionActiveIncident()" @click="resetCompetitionDemoData" :title="isCurrentLanguageZh() ? '重置演示数据' : 'Reset demo data'" :aria-label="isCurrentLanguageZh() ? '重置演示数据' : 'Reset demo data'">
-                      <i class="fa-solid fa-eraser"></i>
-                    </button>
+                  </div>
+                  <div v-if="competitionRehearsalVisible" class="competition-rehearsal-panel">
+                    <div class="competition-rehearsal-panel__identity">
+                      <span><i class="fa-solid fa-flask-vial"></i></span>
+                      <div><strong>{{ isCurrentLanguageZh() ? '比赛 Staging 演练' : 'Competition Staging Rehearsal' }}</strong><small>{{ isCurrentLanguageZh() ? '固定场景注入与失败路径，不属于生产业务入口' : 'Scenario injection and failure paths, outside the production task entry' }}</small></div>
+                    </div>
+                    <div class="competition-rehearsal-panel__controls">
+                      <div class="competition-segmented" role="group" :aria-label="isCurrentLanguageZh() ? '演练 Adapter 模式' : 'Rehearsal adapter mode'">
+                        <button type="button" :class="{ 'is-active': competitionAdapterMode === 'fixture' }" :disabled="Boolean(competitionBusyAction)" @click="setCompetitionAdapterMode('fixture')">Fixture</button>
+                        <button type="button" :class="{ 'is-active': competitionAdapterMode === 'live' }" :disabled="Boolean(competitionBusyAction)" @click="setCompetitionAdapterMode('live')">Live</button>
+                      </div>
+                      <button type="button" class="competition-icon-button competition-icon-button--danger" :disabled="competitionLoading || Boolean(competitionBusyAction) || !getCompetitionActiveIncident()" @click="resetCompetitionDemoData" :title="isCurrentLanguageZh() ? '重置演练数据' : 'Reset rehearsal data'" :aria-label="isCurrentLanguageZh() ? '重置演练数据' : 'Reset rehearsal data'">
+                        <i class="fa-solid fa-eraser"></i>
+                      </button>
+                      <button type="button" class="competition-icon-button" @click="closeCompetitionRehearsal" :title="isCurrentLanguageZh() ? '收起演练工具' : 'Close rehearsal tools'" :aria-label="isCurrentLanguageZh() ? '收起演练工具' : 'Close rehearsal tools'">
+                        <i class="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
                   </div>
                 </header>
 
-                <div v-if="!getCompetitionActiveIncident()" class="competition-empty-state">
-                  <i class="fa-solid fa-triangle-exclamation"></i>
+                <div v-if="!getCompetitionActiveIncident() && !competitionRehearsalVisible" class="competition-empty-state competition-production-empty">
+                  <i class="fa-solid fa-inbox"></i>
+                  <strong>{{ isCurrentLanguageZh() ? '等待企业事件' : 'Waiting for enterprise events' }}</strong>
+                  <p>{{ isCurrentLanguageZh() ? '真实告警、工单、数据事件、API 或项目群任务进入后，将在这里完成审批、验证、回滚与审计。' : 'Alerts, tickets, data events, APIs, or project-group tasks appear here for approval, verification, rollback, and audit.' }}</p>
+                  <div class="competition-production-empty__sources" aria-label="Enterprise event sources">
+                    <span><i class="fa-solid fa-bell"></i>{{ isCurrentLanguageZh() ? '告警' : 'Alerts' }}</span>
+                    <span><i class="fa-solid fa-ticket"></i>{{ isCurrentLanguageZh() ? '工单' : 'Tickets' }}</span>
+                    <span><i class="fa-solid fa-database"></i>{{ isCurrentLanguageZh() ? '数据事件' : 'Data Events' }}</span>
+                    <span><i class="fa-solid fa-comments"></i>{{ isCurrentLanguageZh() ? '项目群任务' : 'Group Tasks' }}</span>
+                  </div>
+                  <button v-if="competitionRehearsalAvailable" type="button" class="ox-btn ox-btn--secondary" @click="openCompetitionRehearsal"><i class="fa-solid fa-flask-vial"></i><span>{{ isCurrentLanguageZh() ? '打开比赛 Staging 演练' : 'Open Competition Staging Rehearsal' }}</span></button>
+                </div>
+
+                <div v-else-if="!getCompetitionActiveIncident()" class="competition-empty-state competition-rehearsal-empty">
+                  <i class="fa-solid fa-flask-vial"></i>
                   <strong>{{ isCurrentLanguageZh() ? '暂无事件' : 'No incidents' }}</strong>
                   <div class="competition-scenario-control">
                     <span>{{ isCurrentLanguageZh() ? '业务场景' : 'Business Scenario' }}</span>
@@ -19080,7 +19191,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                     <span>{{ isCurrentLanguageZh() ? '演示路径' : 'Demo Path' }}</span>
                     <div class="competition-segmented competition-segmented--wide">
                       <button type="button" :class="{ 'is-active': competitionDemoScenarioMode === 'recovery' }" @click="competitionDemoScenarioMode = 'recovery'">{{ isCurrentLanguageZh() ? '正常闭环' : 'Recovery' }}</button>
-                      <button type="button" :class="{ 'is-active': competitionDemoScenarioMode === 'verification-failure' }" :disabled="competitionAdapterMode !== 'fixture' || competitionDemoScenarioType === 'recommendation-capacity'" @click="competitionDemoScenarioMode = 'verification-failure'">{{ isCurrentLanguageZh() ? '验证失败' : 'Verification Failure' }}</button>
+                      <button type="button" :class="{ 'is-active': competitionDemoScenarioMode === 'verification-failure' }" :disabled="competitionAdapterMode !== 'fixture'" @click="competitionDemoScenarioMode = 'verification-failure'">{{ isCurrentLanguageZh() ? '验证失败' : 'Verification Failure' }}</button>
                     </div>
                   </div>
                   <button type="button" class="ox-btn ox-btn--primary" :disabled="Boolean(competitionBusyAction)" @click="createCompetitionDemoIncident">
@@ -19160,6 +19271,10 @@ function updateElement(el, rawMarkdown, formatFn) {
                         <div><span>{{ isCurrentLanguageZh() ? '结构化证据' : 'Evidence' }}</span><strong>{{ getCompetitionActiveEvidence().length }}</strong></div>
                         <div><span>{{ isCurrentLanguageZh() ? '工具调用' : 'Tool Calls' }}</span><strong>{{ getCompetitionActiveInvocations().length }}</strong></div>
                         <div><span>{{ isCurrentLanguageZh() ? '审计回执' : 'Receipts' }}</span><strong>{{ competitionSnapshot.auditReceipts.filter(item => item.incidentId === getCompetitionActiveIncident().incidentId).length }}</strong></div>
+                        <div>
+                          <span>Skill</span>
+                          <strong>{{ getCompetitionActiveSkillUsage()?.status === 'REUSED' ? (isCurrentLanguageZh() ? '已启用复用' : 'Reused') : (getCompetitionActiveSkillUsage()?.status === 'LOOKUP_FAILED' ? (isCurrentLanguageZh() ? '查询失败' : 'Lookup failed') : (isCurrentLanguageZh() ? '基线执行' : 'Baseline')) }}</strong>
+                        </div>
                       </div>
                       <dl class="competition-definition-grid">
                         <div><dt>Incident</dt><dd>{{ getCompetitionActiveIncident().incidentId }}</dd></div>
@@ -19194,6 +19309,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                         <button type="button" class="ox-btn ox-btn--primary" :disabled="Boolean(competitionBusyAction) || (competitionTeamRuntime === 'agentteams' && !competitionTeamTemplateId)" @click="runCompetitionInvestigation">
                           <i class="fa-solid fa-play"></i><span>{{ competitionBusyAction === 'investigate' ? (isCurrentLanguageZh() ? '取证中' : 'Investigating') : (isCurrentLanguageZh() ? '开始跨域取证' : 'Start Investigation') }}</span>
                         </button>
+                        <button v-if="getCompetitionActiveIncident().status === 'FAILED'" type="button" class="ox-btn ox-btn--secondary" :disabled="Boolean(competitionBusyAction)" @click="exportCompetitionEvaluation"><i class="fa-solid fa-file-export"></i><span>{{ isCurrentLanguageZh() ? '导出失败证据' : 'Export Failure Evidence' }}</span></button>
                       </div>
 
                       <div v-else-if="getCompetitionActiveApproval()?.status === 'PENDING'" class="competition-action-stack">
@@ -19203,6 +19319,15 @@ function updateElement(el, rawMarkdown, formatFn) {
                         </dl>
                         <label for="competition-approval-reason">{{ isCurrentLanguageZh() ? '审批意见' : 'Decision Reason' }}</label>
                         <textarea id="competition-approval-reason" v-model="competitionApprovalReason" maxlength="2048" rows="3"></textarea>
+                        <label>{{ isCurrentLanguageZh() ? '批准后的运行方式' : 'Run after approval' }}</label>
+                        <div class="competition-segmented competition-segmented--wide">
+                          <button type="button" :class="{ 'is-active': competitionExecutionMode === 'automatic' }" :disabled="Boolean(competitionBusyAction)" @click="competitionExecutionMode = 'automatic'">
+                            {{ isCurrentLanguageZh() ? '自动闭环' : 'Automatic' }}
+                          </button>
+                          <button type="button" :class="{ 'is-active': competitionExecutionMode === 'step' }" :disabled="Boolean(competitionBusyAction)" @click="competitionExecutionMode = 'step'">
+                            {{ isCurrentLanguageZh() ? '分步讲解' : 'Step mode' }}
+                          </button>
+                        </div>
                         <div class="competition-action-row">
                           <button type="button" class="ox-btn ox-btn--secondary" :disabled="Boolean(competitionBusyAction)" @click="decideCompetitionApproval('REJECTED')"><i class="fa-solid fa-xmark"></i><span>{{ isCurrentLanguageZh() ? '拒绝' : 'Reject' }}</span></button>
                           <button type="button" class="ox-btn ox-btn--primary" :disabled="Boolean(competitionBusyAction)" @click="decideCompetitionApproval('APPROVED')"><i class="fa-solid fa-check"></i><span>{{ isCurrentLanguageZh() ? '批准处置' : 'Approve' }}</span></button>
@@ -19232,8 +19357,9 @@ function updateElement(el, rawMarkdown, formatFn) {
                         <i class="fa-solid fa-circle-check"></i>
                         <strong>{{ isCurrentLanguageZh() ? '处置与独立验证均已完成' : 'Remediation and verification complete' }}</strong>
                         <div class="competition-action-row">
-                          <button type="button" class="ox-btn ox-btn--secondary" :disabled="Boolean(competitionBusyAction)" @click="exportCompetitionRetrospective"><i class="fa-solid fa-bolt"></i><span>{{ isCurrentLanguageZh() ? '沉淀并启用企业 Skill' : 'Publish Enterprise Skill' }}</span></button>
-                          <button type="button" class="ox-btn ox-btn--primary" :disabled="Boolean(competitionBusyAction)" @click="createCompetitionDemoIncident"><i class="fa-solid fa-plus"></i><span>{{ competitionBusyAction === 'create' ? (isCurrentLanguageZh() ? '创建中' : 'Creating') : (isCurrentLanguageZh() ? '创建新演示事件' : 'Create New Demo Incident') }}</span></button>
+                          <button type="button" class="ox-btn ox-btn--secondary" :disabled="Boolean(competitionBusyAction)" @click="exportCompetitionRetrospective"><i class="fa-solid fa-bolt"></i><span>{{ isCurrentLanguageZh() ? '沉淀候选 Skill' : 'Crystallize Candidate Skill' }}</span></button>
+                          <button type="button" class="ox-btn ox-btn--secondary" :disabled="Boolean(competitionBusyAction)" @click="exportCompetitionEvaluation"><i class="fa-solid fa-file-export"></i><span>{{ isCurrentLanguageZh() ? '导出复赛证据' : 'Export Evaluation' }}</span></button>
+                          <button v-if="competitionRehearsalVisible" type="button" class="ox-btn ox-btn--primary" :disabled="Boolean(competitionBusyAction)" @click="createCompetitionDemoIncident"><i class="fa-solid fa-plus"></i><span>{{ competitionBusyAction === 'create' ? (isCurrentLanguageZh() ? '创建中' : 'Creating') : (isCurrentLanguageZh() ? '创建新演示事件' : 'Create New Demo Incident') }}</span></button>
                         </div>
                       </div>
 
@@ -19261,6 +19387,58 @@ function updateElement(el, rawMarkdown, formatFn) {
                       </div>
                     </section>
                   </div>
+
+                  <section v-if="getCompetitionActiveTaskGraph()" class="competition-task-graph">
+                    <div class="competition-section-heading">
+                      <div>
+                        <span class="competition-eyebrow">Task Graph · Revision {{ getCompetitionActiveTaskGraph().revision }}</span>
+                        <h3>{{ isCurrentLanguageZh() ? '动态任务图' : 'Dynamic Task Graph' }}</h3>
+                      </div>
+                      <span class="competition-status" :class="getCompetitionStatusClass(getCompetitionActiveTaskGraph().status)">{{ getCompetitionStatusLabel(getCompetitionActiveTaskGraph().status) }}</span>
+                    </div>
+                    <div class="competition-task-graph__policies">
+                      <span v-for="policy in getCompetitionActiveTaskGraph().conflictPolicies" :key="policy">{{ policy }}</span>
+                    </div>
+                    <div class="competition-task-graph__lanes">
+                      <section v-for="lane in getCompetitionTaskGraphLanes()" :key="lane.lane" class="competition-task-lane">
+                        <header><strong>{{ lane.label }}</strong><span>{{ lane.nodes.length }}</span></header>
+                        <article v-for="node in lane.nodes" :key="node.nodeId" class="competition-task-node" :class="'is-' + String(node.status || 'PENDING').toLowerCase()">
+                          <div>
+                            <i :class="getCompetitionPlanStepIcon(node.status)"></i>
+                            <strong>{{ node.title }}</strong>
+                          </div>
+                          <code v-if="node.toolName">{{ node.toolName }}</code>
+                          <small v-if="node.assignedAgentName"><i class="fa-regular fa-user"></i> {{ node.assignedAgentName }} · {{ node.assignmentMode }}</small>
+                          <small>{{ getCompetitionStatusLabel(node.status) }} · {{ node.parallelGroup || (isCurrentLanguageZh() ? '串行' : 'Sequential') }}</small>
+                          <span v-if="node.dependsOn?.length">{{ isCurrentLanguageZh() ? '依赖' : 'Depends on' }}: {{ node.dependsOn.join(', ') }}</span>
+                          <div v-if="getCompetitionTaskNodeResult(node)" class="competition-task-node__result" :class="getCompetitionStatusClass(getCompetitionTaskNodeResult(node).status)">
+                            <strong>{{ getCompetitionStatusLabel(getCompetitionTaskNodeResult(node).status) }}</strong>
+                            <span>{{ getCompetitionTaskNodeResult(node).summary }}</span>
+                            <code v-if="getCompetitionTaskNodeResult(node).evidenceId">{{ getCompetitionTaskNodeResult(node).evidenceId }}</code>
+                            <code v-if="getCompetitionTaskNodeResult(node).errorCode">{{ getCompetitionTaskNodeResult(node).errorCode }}</code>
+                          </div>
+                        </article>
+                      </section>
+                    </div>
+                    <details v-if="getCompetitionTaskGraphEvents().length" class="competition-task-events">
+                      <summary>
+                        <span><i class="fa-solid fa-code-branch"></i>{{ isCurrentLanguageZh() ? '协同检查点与异常恢复' : 'Coordination Checkpoints and Recovery' }}</span>
+                        <b>{{ getCompetitionTaskGraphEvents().length }}</b>
+                      </summary>
+                      <ol>
+                        <li v-for="event in getCompetitionTaskGraphEvents()" :key="event.eventId" :class="{ 'is-exception': ['WORKER_TIMEOUT', 'TASK_FAILED', 'RESOURCE_CONFLICT_DETECTED'].includes(event.eventType), 'is-recovery': ['TASK_REASSIGNED', 'TRACE_RESUMED'].includes(event.eventType) }">
+                          <i :class="['WORKER_TIMEOUT', 'TASK_FAILED', 'RESOURCE_CONFLICT_DETECTED'].includes(event.eventType) ? 'fa-solid fa-triangle-exclamation' : (['TASK_REASSIGNED', 'TRACE_RESUMED'].includes(event.eventType) ? 'fa-solid fa-rotate' : 'fa-solid fa-check')"></i>
+                          <div>
+                            <strong>{{ getCompetitionTaskGraphEventLabel(event.eventType) }}</strong>
+                            <span>#{{ event.attempt }} · {{ event.reasonCode }}</span>
+                            <small>{{ event.fromRoleCardId || '-' }} → {{ event.toRoleCardId || '-' }} · Evidence {{ event.evidenceIds?.length || 0 }}</small>
+                            <code>{{ event.checkpointDigest }}</code>
+                          </div>
+                          <time>{{ formatCompetitionTime(event.createdAt) }}</time>
+                        </li>
+                      </ol>
+                    </details>
+                  </section>
 
                   <section v-if="getCompetitionActiveAction()" class="competition-plan-flow">
                     <div class="competition-section-heading">
@@ -19316,6 +19494,34 @@ function updateElement(el, rawMarkdown, formatFn) {
                       </div>
                       <span>{{ getCompetitionActiveAgentDecisions().length }}</span>
                     </div>
+                    <div class="competition-context-flow">
+                      <div class="competition-context-flow__heading">
+                        <strong>{{ isCurrentLanguageZh() ? '上下文交接' : 'Context Handoffs' }}</strong>
+                        <span>{{ getCompetitionContextTransfers().length }}</span>
+                      </div>
+                      <ol>
+                        <li v-for="transfer in getCompetitionContextTransfers()" :key="transfer.id" :class="getCompetitionStatusClass(transfer.status)">
+                          <div class="competition-context-flow__route">
+                            <b>{{ transfer.sequence }}</b>
+                            <strong>{{ transfer.from }}</strong>
+                            <i class="fa-solid fa-arrow-right"></i>
+                            <strong>{{ transfer.to }}</strong>
+                            <span>{{ transfer.stage }}</span>
+                          </div>
+                          <p>{{ transfer.summary }}</p>
+                          <div class="competition-context-flow__tools">
+                            <code v-for="toolName in transfer.requestedToolNames" :key="`${transfer.id}-${toolName}`">{{ toolName }}</code>
+                            <span>{{ transfer.evidenceIds.length }} Evidence</span>
+                            <span>{{ transfer.matrixEventCount }} Matrix Events</span>
+                          </div>
+                          <div class="competition-context-flow__digests">
+                            <span>Input <code>{{ transfer.inputDigest }}</code></span>
+                            <i class="fa-solid fa-arrow-right"></i>
+                            <span>Output <code>{{ transfer.outputDigest }}</code></span>
+                          </div>
+                        </li>
+                      </ol>
+                    </div>
                     <ol class="competition-agent-flow__list">
                       <li v-for="item in getCompetitionActiveAgentDecisions()" :key="item.decisionId">
                         <div class="competition-agent-flow__marker"><i :class="item.teamRole === 'leader' ? 'fa-solid fa-sitemap' : (item.teamRole === 'verifier' ? 'fa-solid fa-shield-halved' : 'fa-solid fa-magnifying-glass-chart')"></i></div>
@@ -19333,9 +19539,97 @@ function updateElement(el, rawMarkdown, formatFn) {
                             <div><dt>Evidence</dt><dd>{{ item.evidenceIds?.length || 0 }}</dd></div>
                             <div><dt>Confidence</dt><dd>{{ Math.round(Number(item.confidence || 0) * 100) }}%</dd></div>
                           </dl>
+                          <details v-if="item.transportEvents?.length" class="competition-agent-events">
+                            <summary><i class="fa-solid fa-message"></i><span>{{ isCurrentLanguageZh() ? 'Matrix 原始事件' : 'Matrix source events' }}</span><b>{{ item.transportEvents.length }}</b></summary>
+                            <ol>
+                              <li v-for="event in item.transportEvents" :key="`${item.decisionId}-${event.sequence}-${event.eventId}`">
+                                <div>
+                                  <strong>{{ event.kind }}</strong>
+                                  <span>{{ event.direction }} · #{{ event.sequence }}</span>
+                                  <time>{{ formatCompetitionTime(event.originServerTs ? new Date(event.originServerTs).toISOString() : event.observedAt) }}</time>
+                                </div>
+                                <code>{{ event.sender }} → {{ event.recipient }}</code>
+                                <small>{{ event.roomId }} · {{ event.eventId }}</small>
+                                <pre>{{ event.redactedBody }}</pre>
+                                <small>SHA-256 {{ event.bodyDigest }} · Ledger {{ event.ledgerDigest }}</small>
+                              </li>
+                            </ol>
+                          </details>
                         </div>
                       </li>
                     </ol>
+                  </section>
+
+                  <section class="competition-assurance-grid">
+                    <section class="competition-completion-gates">
+                      <div class="competition-section-heading">
+                        <div>
+                          <span class="competition-eyebrow">Closure Contract</span>
+                          <h3>{{ isCurrentLanguageZh() ? '任务完成门禁' : 'Task Completion Gates' }}</h3>
+                        </div>
+                        <span class="competition-status" :class="getCompetitionCompletionSummary().complete ? 'is-success' : 'is-warning'">
+                          {{ getCompetitionCompletionSummary().passed }}/{{ getCompetitionCompletionSummary().total }}
+                        </span>
+                      </div>
+                      <ol>
+                        <li v-for="gate in getCompetitionCompletionGates()" :key="gate.id" :class="'is-' + gate.status.toLowerCase()">
+                          <i :class="gate.status === 'PASSED' ? 'fa-solid fa-check' : (gate.status === 'FAILED' ? 'fa-solid fa-xmark' : 'fa-solid fa-hourglass-half')"></i>
+                          <div>
+                            <strong>{{ gate.label }}</strong>
+                            <span>{{ gate.expectation }}</span>
+                            <code>{{ gate.observed }}</code>
+                          </div>
+                          <b>{{ gate.status }}</b>
+                        </li>
+                      </ol>
+                      <div class="competition-completion-verdict" :class="getCompetitionCompletionSummary().complete ? 'is-complete' : 'is-pending'">
+                        <i :class="getCompetitionCompletionSummary().complete ? 'fa-solid fa-circle-check' : 'fa-solid fa-shield-halved'"></i>
+                        <div>
+                          <strong>{{ getCompetitionCompletionSummary().complete ? (isCurrentLanguageZh() ? '允许关闭任务' : 'Task Closure Allowed') : (isCurrentLanguageZh() ? '尚未满足关闭条件' : 'Closure Conditions Not Met') }}</strong>
+                          <span>Incident {{ getCompetitionActiveIncident().status }} · Verifier {{ [...getCompetitionActiveAgentDecisions()].reverse().find(item => item.stage === 'VERIFICATION_CONCLUSION')?.decision || 'PENDING' }}</span>
+                        </div>
+                      </div>
+                    </section>
+
+                    <aside class="competition-memory-skill">
+                      <div class="competition-section-heading">
+                        <div>
+                          <span class="competition-eyebrow">SynapXnet Memory V3</span>
+                          <h3>{{ isCurrentLanguageZh() ? '记忆与 Skill 沉淀' : 'Memory and Skill Crystallization' }}</h3>
+                        </div>
+                        <button type="button" class="competition-icon-button" :disabled="competitionMemoryLoading" :title="isCurrentLanguageZh() ? '刷新记忆证据' : 'Refresh memory evidence'" @click="loadCompetitionMemoryArtifacts(true)">
+                          <i :class="competitionMemoryLoading ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-rotate-right'"></i>
+                        </button>
+                      </div>
+                      <dl class="competition-memory-skill__summary">
+                        <div><dt>Skill</dt><dd>{{ getCompetitionActiveSkillUsage()?.skillId || '-' }}</dd></div>
+                        <div><dt>{{ isCurrentLanguageZh() ? '调用状态' : 'Usage' }}</dt><dd>{{ getCompetitionActiveSkillUsage()?.status || 'PENDING' }}</dd></div>
+                        <div><dt>{{ isCurrentLanguageZh() ? '进化轮次' : 'Evolution Rounds' }}</dt><dd>{{ getCompetitionActiveSkillEvolution()?.rounds?.length || 0 }}</dd></div>
+                        <div><dt>{{ isCurrentLanguageZh() ? '审计链' : 'Audit Chain' }}</dt><dd>{{ competitionMemoryStatus ? (competitionMemoryStatus.auditHealthy ? 'HEALTHY' : 'FAILED') : 'PENDING' }}</dd></div>
+                      </dl>
+                      <ol v-if="getCompetitionActiveSkillEvolution()?.rounds?.length" class="competition-skill-rounds">
+                        <li v-for="round in getCompetitionActiveSkillEvolution().rounds" :key="`${getCompetitionActiveSkillEvolution().evolutionId}-${round.round}`" :class="'is-' + round.outcome.toLowerCase()">
+                          <b>{{ round.round }}</b>
+                          <div><strong>{{ round.role }} · {{ round.stage }}</strong><span>{{ round.question }}</span><code>{{ round.outputDigest }}</code></div>
+                          <em>{{ round.outcome }}</em>
+                        </li>
+                      </ol>
+                      <div v-if="competitionMemoryError" class="competition-memory-skill__error"><i class="fa-solid fa-triangle-exclamation"></i><span>{{ competitionMemoryError }}</span></div>
+                      <div v-else-if="competitionMemoryRecords.length" class="competition-memory-record">
+                        <div><i class="fa-solid fa-database"></i><strong>{{ competitionMemoryRecords[0].title }}</strong><span>v{{ competitionMemoryRecords[0].version }}</span></div>
+                        <p>{{ competitionMemoryRecords[0].contentPreview }}</p>
+                        <dl>
+                          <div><dt>Memory ID</dt><dd>{{ competitionMemoryRecords[0].memoryId }}</dd></div>
+                          <div><dt>Owner</dt><dd>{{ competitionMemoryRecords[0].ownerAgent }}</dd></div>
+                          <div><dt>Record SHA-256</dt><dd>{{ competitionMemoryRecords[0].recordSha256 }}</dd></div>
+                          <div><dt>Permissions</dt><dd>{{ competitionMemoryRecords[0].permissions.join(', ') }}</dd></div>
+                        </dl>
+                      </div>
+                      <div v-else class="competition-memory-skill__pending">
+                        <i class="fa-solid fa-hourglass-half"></i>
+                        <span>{{ getCompetitionActiveSkillEvolution() ? (isCurrentLanguageZh() ? '等待 Memory V3 回执' : 'Waiting for Memory V3 receipt') : (isCurrentLanguageZh() ? '独立验证通过后自动写入闭环记忆；候选 Skill 单独结晶' : 'Closure memory is written after independent verification; candidate Skill crystallization is separate') }}</span>
+                      </div>
+                    </aside>
                   </section>
 
                   <div class="competition-evidence-grid">
@@ -19366,10 +19660,19 @@ function updateElement(el, rawMarkdown, formatFn) {
                         <div><span class="competition-eyebrow">{{ isCurrentLanguageZh() ? '可信决策' : 'Trusted Decision' }}</span><h3>{{ isCurrentLanguageZh() ? '神经符号与知识图谱' : 'Neuro-symbolic & Knowledge Graph' }}</h3></div>
                         <span class="competition-status is-success">{{ isCurrentLanguageZh() ? '已对齐' : 'Aligned' }}</span>
                       </div>
-                      <div class="competition-knowledge-summary__item">
-                        <div><strong>{{ isCurrentLanguageZh() ? '规则命中 · 风险动作' : 'Rule Match · Risk Action' }}</strong><span class="competition-status is-warning">HUMAN GATE</span></div>
-                        <code>evidence_complete ∧ high_risk_action → approval_required</code>
-                        <p>{{ isCurrentLanguageZh() ? '跨平台证据完整且处置涉及生产修订，强制进入人工审批与独立验证。' : 'Complete cross-platform evidence and a production revision force human approval and independent verification.' }}</p>
+                      <div v-if="getCompetitionPrimaryReasoningDecision()" class="competition-knowledge-summary__item competition-reasoning-decision">
+                        <div>
+                          <strong>{{ getCompetitionPrimaryReasoningDecision().decisionType }}</strong>
+                          <span class="competition-status is-warning">{{ getCompetitionPrimaryReasoningDecision().retrievalMode }}</span>
+                        </div>
+                        <p>{{ getCompetitionPrimaryReasoningDecision().explanation }}</p>
+                        <ol class="competition-reasoning-candidates">
+                          <li v-for="candidate in getCompetitionPrimaryReasoningDecision().candidates" :key="candidate.candidateId" :class="{ 'is-selected': candidate.candidateId === getCompetitionPrimaryReasoningDecision().selectedCandidateId, 'is-rejected': !candidate.eligible }">
+                            <div><strong>{{ candidate.title }}</strong><span>{{ formatCompetitionReasoningScore(candidate.totalScore) }}</span></div>
+                            <small>{{ candidate.authorityLevel }} · {{ candidate.riskClass }} · {{ candidate.evidenceGrade }} · {{ candidate.policyDecision }}</small>
+                            <code>{{ candidate.ruleCodes.join(' ∧ ') }}</code>
+                          </li>
+                        </ol>
                       </div>
                       <dl class="competition-knowledge-summary__metrics">
                         <div><dt>{{ isCurrentLanguageZh() ? 'Agent 决策' : 'Agent Decisions' }}</dt><dd>{{ getCompetitionActiveAgentDecisions().length }}</dd></div>
@@ -20870,6 +21173,43 @@ function updateElement(el, rawMarkdown, formatFn) {
                         </button>
                       </div>
 
+                      <div class="enterprise-sandbox-work-tabs" role="tablist" :aria-label="isCurrentLanguageZh() ? '企业任务视图' : 'Enterprise task views'">
+                        <button
+                          type="button"
+                          role="tab"
+                          class="enterprise-sandbox-work-tab"
+                          :class="{ 'is-active': enterpriseSandboxWorkView === 'chat' }"
+                          :aria-selected="enterpriseSandboxWorkView === 'chat'"
+                          @click="setEnterpriseSandboxWorkView('chat')"
+                        >
+                          <i class="fa-solid fa-comments"></i>
+                          <span>{{ isCurrentLanguageZh() ? '协作' : 'Collaboration' }}</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          class="enterprise-sandbox-work-tab"
+                          :class="{ 'is-active': enterpriseSandboxWorkView === 'work' }"
+                          :aria-selected="enterpriseSandboxWorkView === 'work'"
+                          @click="setEnterpriseSandboxWorkView('work')"
+                        >
+                          <i class="fa-solid fa-diagram-project"></i>
+                          <span>{{ isCurrentLanguageZh() ? '工作安排' : 'Work plan' }}</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          class="enterprise-sandbox-work-tab"
+                          :class="{ 'is-active': enterpriseSandboxWorkView === 'audit' }"
+                          :aria-selected="enterpriseSandboxWorkView === 'audit'"
+                          @click="setEnterpriseSandboxWorkView('audit')"
+                        >
+                          <i class="fa-solid fa-shield-halved"></i>
+                          <span>{{ isCurrentLanguageZh() ? '审计' : 'Audit' }}</span>
+                        </button>
+                      </div>
+
+                      <template v-if="enterpriseSandboxWorkView === 'chat'">
                       <div class="enterprise-sandbox-chat-members">
                         <button
                           v-for="role in getEnterpriseChatAvailableStaff()"
@@ -20955,6 +21295,41 @@ function updateElement(el, rawMarkdown, formatFn) {
                                 <span v-if="message.operation.approvalId">Approval {{ message.operation.approvalId }}</span>
                                 <span v-if="message.operation.evidenceIds && message.operation.evidenceIds.length">Evidence {{ message.operation.evidenceIds.length }}</span>
                               </div>
+                              <div v-if="getEnterpriseMessageInvocations(message).length" class="enterprise-sandbox-operation__invocations">
+                                <div
+                                  v-for="invocation in getEnterpriseMessageInvocations(message)"
+                                  :key="message.id + '-' + invocation.invocationId"
+                                  class="enterprise-sandbox-invocation enterprise-sandbox-invocation--compact"
+                                >
+                                  <div class="enterprise-sandbox-invocation__heading">
+                                    <strong>{{ invocation.toolName }}</strong>
+                                    <span :class="'is-' + invocation.status.toLowerCase()">{{ invocation.status }}</span>
+                                  </div>
+                                  <div class="enterprise-sandbox-invocation__meta">
+                                    <span>{{ getEnterpriseInvocationActorLabel(invocation) }}</span>
+                                    <span>{{ getEnterprisePlatformLabel(invocation.platform) }}</span>
+                                    <span>{{ getEnterpriseInvocationDuration(invocation) }}</span>
+                                  </div>
+                                  <dl class="enterprise-sandbox-invocation__details">
+                                    <div>
+                                      <dt>{{ isCurrentLanguageZh() ? '参数摘要' : 'Arguments digest' }}</dt>
+                                      <dd>{{ invocation.argumentsDigest }}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>{{ isCurrentLanguageZh() ? '结果' : 'Result' }}</dt>
+                                      <dd>{{ getEnterpriseInvocationResult(invocation) }}</dd>
+                                    </div>
+                                    <div v-if="getEnterpriseInvocationEvidence(invocation)">
+                                      <dt>Evidence</dt>
+                                      <dd>{{ getEnterpriseInvocationEvidence(invocation).evidenceId }} · {{ getEnterpriseInvocationEvidence(invocation).contentDigest }}</dd>
+                                    </div>
+                                    <div v-if="getEnterpriseInvocationReceipt(invocation)">
+                                      <dt>AuditReceipt</dt>
+                                      <dd>{{ getEnterpriseInvocationReceipt(invocation).receiptId }} · {{ getEnterpriseInvocationReceipt(invocation).outcome }}</dd>
+                                    </div>
+                                  </dl>
+                                </div>
+                              </div>
                             </div>
                             <div v-if="message.taskId || message.traceId" class="enterprise-sandbox-chat-message__audit">
                               <span v-if="message.taskId"><i class="fa-solid fa-list-check"></i> {{ message.taskId }}</span>
@@ -20965,6 +21340,39 @@ function updateElement(el, rawMarkdown, formatFn) {
                       </div>
 
                       <div class="enterprise-sandbox-chat-input">
+                        <div class="enterprise-sandbox-chat-taskbar">
+                          <el-select
+                            v-model="enterpriseCompetitionScenarioType"
+                            size="mini"
+                            class="enterprise-sandbox-chat-scenario-select"
+                            :placeholder="isCurrentLanguageZh() ? '选择演示场景' : 'Select scenario'"
+                          >
+                            <el-option
+                              v-for="scenario in getCompetitionDemoScenarioTemplates()"
+                              :key="'enterprise-scenario-' + scenario.id"
+                              :label="isCurrentLanguageZh() ? scenario.nameZh : scenario.nameEn"
+                              :value="scenario.id"
+                            ></el-option>
+                          </el-select>
+                          <el-radio-group v-model="competitionTeamRuntime" size="mini">
+                            <el-radio-button label="builtin">OpenXnet</el-radio-button>
+                            <el-radio-button label="agentteams">AgentTeams</el-radio-button>
+                          </el-radio-group>
+                          <el-select
+                            v-if="competitionTeamRuntime === 'agentteams'"
+                            v-model="competitionTeamTemplateId"
+                            size="mini"
+                            class="enterprise-sandbox-chat-team-select"
+                            :placeholder="isCurrentLanguageZh() ? '选择协作团队' : 'Select team'"
+                          >
+                            <el-option
+                              v-for="template in getCompetitionAvailableTeamTemplates(getEnterpriseChatWorkspaceId())"
+                              :key="'chat-team-' + template.id"
+                              :label="template.name"
+                              :value="template.id"
+                            ></el-option>
+                          </el-select>
+                        </div>
                         <div v-if="enterpriseChatRecipientIds.length" class="enterprise-sandbox-chat-input__recipients">
                           <span
                             v-for="role in getEnterpriseChatAvailableStaff().filter(item => enterpriseChatRecipientIds.includes(item.id))"
@@ -20976,21 +21384,198 @@ function updateElement(el, rawMarkdown, formatFn) {
                           type="textarea"
                           :autosize="{ minRows: 2, maxRows: 5 }"
                           :placeholder="isCurrentLanguageZh() ? '向协作群发送消息' : 'Message the team'"
-                          :disabled="enterpriseChatSending"
+                          :disabled="enterpriseChatSending || enterpriseChatTaskStarting"
                           @keydown.enter.exact.prevent="sendEnterpriseMessage()"
                           class="enterprise-sandbox-chat-textarea"
                         >
                         </el-input>
                         <button
                           type="button"
+                          class="enterprise-sandbox-chat-task"
+                          :disabled="!enterpriseChatInput.trim() || enterpriseChatSending || enterpriseChatTaskStarting || (competitionTeamRuntime === 'agentteams' && !competitionTeamTemplateId)"
+                          :title="isCurrentLanguageZh() ? '作为受控企业任务发起' : 'Start as governed enterprise task'"
+                          @click="startEnterpriseCompetitionTask()"
+                        >
+                          <i :class="enterpriseChatTaskStarting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-play'"></i>
+                          <span>{{ isCurrentLanguageZh() ? '发起任务' : 'Start task' }}</span>
+                        </button>
+                        <button
+                          type="button"
                           class="enterprise-sandbox-chat-send"
-                          :disabled="!enterpriseChatInput.trim() || enterpriseChatSending"
+                          :disabled="!enterpriseChatInput.trim() || enterpriseChatSending || enterpriseChatTaskStarting"
                           :title="isCurrentLanguageZh() ? '发送消息' : 'Send message'"
                           @click="sendEnterpriseMessage()"
                         >
                           <i :class="enterpriseChatSending ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-paper-plane'"></i>
                         </button>
                       </div>
+                      </template>
+
+                      <template v-else>
+                        <div class="enterprise-sandbox-incident-picker">
+                          <div class="enterprise-sandbox-incident-picker__label">
+                            <span>{{ isCurrentLanguageZh() ? '当前任务' : 'Current incident' }}</span>
+                            <strong v-if="getEnterpriseAuditIncident()">{{ getEnterpriseScenarioLabel(getEnterpriseAuditIncident().scenario.scenarioType) }}</strong>
+                          </div>
+                          <el-select
+                            v-model="enterpriseAuditIncidentId"
+                            size="small"
+                            class="enterprise-sandbox-incident-select"
+                            :placeholder="isCurrentLanguageZh() ? '选择任务' : 'Select incident'"
+                            @change="selectEnterpriseAuditIncident"
+                          >
+                            <el-option
+                              v-for="incident in getEnterpriseSandboxIncidents()"
+                              :key="'sandbox-incident-' + incident.incidentId"
+                              :label="incident.title"
+                              :value="incident.incidentId"
+                            ></el-option>
+                          </el-select>
+                        </div>
+
+                        <div v-if="!getEnterpriseAuditIncident()" class="enterprise-sandbox-work-empty">
+                          <i class="fa-solid fa-inbox"></i>
+                          <strong>{{ isCurrentLanguageZh() ? '当前范围暂无企业任务' : 'No enterprise task in this scope' }}</strong>
+                          <span>{{ isCurrentLanguageZh() ? '在“协作”中选择场景并发起任务后，这里会显示完整执行链路。' : 'Start a scenario from Collaboration to populate the execution chain.' }}</span>
+                        </div>
+
+                        <div v-else-if="enterpriseSandboxWorkView === 'work'" class="enterprise-sandbox-work-view">
+                          <div class="enterprise-sandbox-incident-summary">
+                            <div>
+                              <span>{{ getCompetitionStatusLabel(getEnterpriseAuditIncident().status) }}</span>
+                              <strong>{{ getEnterpriseAuditIncident().title }}</strong>
+                              <small>{{ getEnterpriseAuditIncident().summary }}</small>
+                            </div>
+                            <div class="enterprise-sandbox-incident-summary__refs">
+                              <span><i class="fa-solid fa-list-check"></i>{{ getEnterpriseAuditIncident().incidentId }}</span>
+                              <span v-if="getEnterpriseAuditTrace()"><i class="fa-solid fa-wave-square"></i>{{ getEnterpriseAuditTrace().traceId }}</span>
+                            </div>
+                          </div>
+
+                          <section class="enterprise-sandbox-work-section">
+                            <div class="enterprise-sandbox-work-section__heading">
+                              <div>
+                                <i class="fa-solid fa-diagram-project"></i>
+                                <strong>{{ isCurrentLanguageZh() ? '动态任务图' : 'Dynamic task graph' }}</strong>
+                              </div>
+                              <span v-if="getEnterpriseAuditTaskGraph()">R{{ getEnterpriseAuditTaskGraph().revision }} · {{ getEnterpriseAuditTaskGraph().status }}</span>
+                            </div>
+                            <div v-if="!getEnterpriseAuditTaskGraph()" class="enterprise-sandbox-inline-empty">{{ isCurrentLanguageZh() ? '任务图尚未生成' : 'Task graph is not available yet' }}</div>
+                            <div v-else class="enterprise-sandbox-task-lanes">
+                              <div v-for="lane in getEnterpriseAuditTaskGraphLanes()" :key="'sandbox-lane-' + lane.lane" class="enterprise-sandbox-task-lane">
+                                <div class="enterprise-sandbox-task-lane__heading">
+                                  <span>{{ lane.label }}</span>
+                                  <small>{{ lane.nodes.length }}</small>
+                                </div>
+                                <div
+                                  v-for="node in lane.nodes"
+                                  :key="'sandbox-node-' + node.nodeId"
+                                  class="enterprise-sandbox-task-node"
+                                  :class="'is-' + node.status.toLowerCase()"
+                                >
+                                  <div class="enterprise-sandbox-task-node__status"><i :class="getEnterpriseOperationPhaseIcon(node.status)"></i></div>
+                                  <div class="enterprise-sandbox-task-node__body">
+                                    <strong>{{ node.title }}</strong>
+                                    <span>{{ node.assignedAgentName }} · {{ getEnterpriseTaskNodeStatusLabel(node.status) }}</span>
+                                    <small v-if="node.toolName"><i class="fa-solid fa-screwdriver-wrench"></i>{{ node.toolName }}</small>
+                                    <small v-if="node.dependsOn && node.dependsOn.length"><i class="fa-solid fa-code-branch"></i>{{ node.dependsOn.join(' · ') }}</small>
+                                  </div>
+                                  <span v-if="node.evidenceIds && node.evidenceIds.length" class="enterprise-sandbox-task-node__evidence">EV {{ node.evidenceIds.length }}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </section>
+
+                          <section class="enterprise-sandbox-work-section">
+                            <div class="enterprise-sandbox-work-section__heading">
+                              <div>
+                                <i class="fa-solid fa-layer-group"></i>
+                                <strong>{{ isCurrentLanguageZh() ? '跨平台证据' : 'Cross-platform evidence' }}</strong>
+                              </div>
+                              <span>{{ getEnterpriseAuditEvidence().length }}</span>
+                            </div>
+                            <div class="enterprise-sandbox-evidence-list">
+                              <div v-for="evidence in getEnterpriseAuditEvidence()" :key="evidence.evidenceId" class="enterprise-sandbox-evidence-row">
+                                <span class="enterprise-sandbox-platform" :class="'is-' + evidence.platform">{{ getEnterprisePlatformLabel(evidence.platform) }}</span>
+                                <div>
+                                  <strong>{{ evidence.toolName }}</strong>
+                                  <span>{{ evidence.summary }}</span>
+                                  <small>{{ evidence.evidenceId }} · RV {{ evidence.resourceVersion }} · {{ evidence.contentDigest }}</small>
+                                </div>
+                              </div>
+                            </div>
+                          </section>
+                        </div>
+
+                        <div v-else class="enterprise-sandbox-audit-view">
+                          <div class="enterprise-sandbox-audit-summary">
+                            <div><span>{{ isCurrentLanguageZh() ? '工具调用' : 'Invocations' }}</span><strong>{{ getEnterpriseAuditInvocations().length }}</strong></div>
+                            <div><span>{{ isCurrentLanguageZh() ? '审批' : 'Approvals' }}</span><strong>{{ getEnterpriseAuditApprovals().length }}</strong></div>
+                            <div><span>AuditReceipt</span><strong>{{ getEnterpriseAuditReceipts().length }}</strong></div>
+                            <div><span>Matrix</span><strong>{{ getEnterpriseAuditTransportEvents().length }}</strong></div>
+                          </div>
+
+                          <section class="enterprise-sandbox-work-section">
+                            <div class="enterprise-sandbox-work-section__heading">
+                              <div>
+                                <i class="fa-solid fa-timeline"></i>
+                                <strong>{{ isCurrentLanguageZh() ? '工具调用时间线' : 'Tool invocation timeline' }}</strong>
+                              </div>
+                              <span v-if="getEnterpriseAuditTrace()">{{ getEnterpriseAuditTrace().status }}</span>
+                            </div>
+                            <div v-if="getEnterpriseAuditInvocations().length === 0" class="enterprise-sandbox-inline-empty">{{ isCurrentLanguageZh() ? '暂无工具调用' : 'No tool invocations' }}</div>
+                            <div v-for="invocation in getEnterpriseAuditInvocations()" :key="invocation.invocationId" class="enterprise-sandbox-invocation">
+                              <div class="enterprise-sandbox-invocation__rail"><span></span></div>
+                              <div class="enterprise-sandbox-invocation__body">
+                                <div class="enterprise-sandbox-invocation__heading">
+                                  <strong>{{ invocation.toolName }}</strong>
+                                  <span :class="'is-' + invocation.status.toLowerCase()">{{ invocation.status }}</span>
+                                </div>
+                                <div class="enterprise-sandbox-invocation__meta">
+                                  <span><i class="fa-solid fa-user-gear"></i>{{ getEnterpriseInvocationActorLabel(invocation) }}</span>
+                                  <span>{{ getEnterprisePlatformLabel(invocation.platform) }}</span>
+                                  <span>{{ getEnterpriseInvocationDuration(invocation) }}</span>
+                                </div>
+                                <dl class="enterprise-sandbox-invocation__details">
+                                  <div><dt>Invocation</dt><dd>{{ invocation.invocationId }}</dd></div>
+                                  <div><dt>Request</dt><dd>{{ invocation.requestId }}</dd></div>
+                                  <div><dt>{{ isCurrentLanguageZh() ? '参数摘要' : 'Arguments digest' }}</dt><dd>{{ invocation.argumentsDigest }}</dd></div>
+                                  <div><dt>{{ isCurrentLanguageZh() ? '结果' : 'Result' }}</dt><dd>{{ getEnterpriseInvocationResult(invocation) }}</dd></div>
+                                  <div v-if="getEnterpriseInvocationEvidence(invocation)"><dt>Evidence</dt><dd>{{ getEnterpriseInvocationEvidence(invocation).evidenceId }} · {{ getEnterpriseInvocationEvidence(invocation).contentDigest }}</dd></div>
+                                  <div v-if="getEnterpriseInvocationReceipt(invocation)"><dt>AuditReceipt</dt><dd>{{ getEnterpriseInvocationReceipt(invocation).receiptId }} · {{ getEnterpriseInvocationReceipt(invocation).outcome }} · RV {{ getEnterpriseInvocationReceipt(invocation).resourceVersionBefore }} → {{ getEnterpriseInvocationReceipt(invocation).resourceVersionAfter }}</dd></div>
+                                </dl>
+                              </div>
+                            </div>
+                          </section>
+
+                          <section class="enterprise-sandbox-work-section">
+                            <div class="enterprise-sandbox-work-section__heading">
+                              <div><i class="fa-solid fa-user-check"></i><strong>{{ isCurrentLanguageZh() ? '人工审批与回执' : 'Human approvals and receipts' }}</strong></div>
+                            </div>
+                            <div v-if="getEnterpriseAuditApprovals().length === 0 && getEnterpriseAuditReceipts().length === 0" class="enterprise-sandbox-inline-empty">{{ isCurrentLanguageZh() ? '暂无审批或写操作回执' : 'No approvals or write receipts' }}</div>
+                            <div v-for="approval in getEnterpriseAuditApprovals()" :key="approval.approvalId" class="enterprise-sandbox-audit-row">
+                              <i class="fa-solid fa-user-shield"></i>
+                              <div><strong>{{ approval.approvalId }} · {{ getEnterpriseApprovalStatusLabel(approval.status) }}</strong><span>{{ approval.reason }}</span><small>{{ approval.requestedBy }} → {{ approval.decidedBy || '-' }} · {{ approval.planDigest }}</small></div>
+                            </div>
+                            <div v-for="receipt in getEnterpriseAuditReceipts()" :key="receipt.receiptId" class="enterprise-sandbox-audit-row">
+                              <i class="fa-solid fa-file-shield"></i>
+                              <div><strong>{{ receipt.receiptId }} · {{ receipt.outcome }}</strong><span>{{ receipt.toolName }} · RV {{ receipt.resourceVersionBefore }} → {{ receipt.resourceVersionAfter }}</span><small>{{ receipt.actorId }} · {{ receipt.idempotencyKey }} · {{ receipt.requestId }}</small></div>
+                            </div>
+                          </section>
+
+                          <section class="enterprise-sandbox-work-section">
+                            <div class="enterprise-sandbox-work-section__heading">
+                              <div><i class="fa-solid fa-link"></i><strong>{{ isCurrentLanguageZh() ? 'AgentTeams 原始事件账本' : 'AgentTeams event ledger' }}</strong></div>
+                              <span>{{ getEnterpriseAuditTransportEvents().length }}</span>
+                            </div>
+                            <div v-if="getEnterpriseAuditTransportEvents().length === 0" class="enterprise-sandbox-inline-empty">{{ isCurrentLanguageZh() ? 'Builtin 模式没有 Matrix 原始事件；切换 AgentTeams 后生成。' : 'Builtin mode has no Matrix events. Use AgentTeams to generate them.' }}</div>
+                            <div v-for="event in getEnterpriseAuditTransportEvents()" :key="event.decisionId + '-' + event.sequence" class="enterprise-sandbox-ledger-row">
+                              <span>{{ event.sequence }}</span>
+                              <div><strong>{{ event.kind }} · {{ event.direction }}</strong><span>{{ event.sender }} → {{ event.recipient }}</span><small>{{ event.agentName }} · {{ event.eventId }} · {{ event.ledgerDigest }}</small></div>
+                            </div>
+                          </section>
+                        </div>
+                      </template>
                     </div>
                   </transition>
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "跨平台只读取证"
+  short_description: "为 AgentTeams 收集三平台有界证据并保持来源可追溯"
+  default_prompt: "Use $goai-evidence-collect to collect a bounded read-only evidence set for an OpenXnet incident."

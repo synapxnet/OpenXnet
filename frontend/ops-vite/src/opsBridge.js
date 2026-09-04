@@ -11,6 +11,22 @@ const featurePackRuntime = {
   unsubscribe: null,
 };
 
+const synapxnetMemoryRuntime = {
+  status: null,
+  recovery: null,
+  recoveryAttempted: false,
+  items: [],
+  selectedMemoryId: '',
+  selectedMemory: null,
+  history: [],
+  integrity: null,
+  actorAgent: '',
+  query: '',
+  includeRetired: false,
+  loading: false,
+  error: '',
+};
+
 const featurePackDefinitions = [
   {
     capabilityId: 'voice',
@@ -927,12 +943,250 @@ function buildEnterpriseSnapshot(host, isZh) {
   };
 }
 
+/** 返回 Memory V3 可操作的 Desktop typed API；无输入，缺少完整契约时抛出固定错误。 */
+function requireSynapxnetMemoryApi() {
+  const api = getDesktopCoreApi();
+  const methods = [
+    'recoverSynapxnetMemories',
+    'getSynapxnetMemoryStatus',
+    'listSynapxnetMemories',
+    'getSynapxnetMemoryHistory',
+    'createSynapxnetMemory',
+    'editSynapxnetMemory',
+    'rollbackSynapxnetMemory',
+    'retireSynapxnetMemory',
+    'exportSynapxnetMemories',
+    'importSynapxnetMemories',
+    'verifySynapxnetMemory',
+  ];
+  if (!api || methods.some((name) => typeof api[name] !== 'function')) {
+    throw new Error('SynapXnet Memory runtime is unavailable.');
+  }
+  return api;
+}
+
+/** 生成可切换的记忆 Agent 身份；输入宿主和语言，返回去重后的主 Agent 与角色卡列表。 */
+function buildSynapxnetMemoryAgentOptions(host, isZh) {
+  const agents = host?.agents && typeof host.agents === 'object' ? host.agents : {};
+  const enterpriseRoles = toArray(host?.enterpriseRoleCards || host?.staffRoles);
+  const options = [
+    {
+      id: String(host?.mainAgent || 'openxnet-model'),
+      name: isZh ? '当前主智能体' : 'Current main agent',
+    },
+    ...Object.entries(agents).map(([id, agent]) => ({
+      id: String(id),
+      name: String(agent?.name || id),
+    })),
+    ...enterpriseRoles.map((role) => ({
+      id: String(role?.id || ''),
+      name: String(role?.name || role?.displayName || role?.id || ''),
+    })),
+  ];
+  const seen = new Set();
+  return options.filter((item) => item.id && !seen.has(item.id) && seen.add(item.id));
+}
+
+/** 读取一条记忆的完整版本链；输入记忆 ID，更新选中内容和时间线。 */
+async function loadSynapxnetMemoryHistory(memoryId) {
+  const selectedId = String(memoryId || '').trim();
+  if (!selectedId) {
+    synapxnetMemoryRuntime.selectedMemoryId = '';
+    synapxnetMemoryRuntime.selectedMemory = null;
+    synapxnetMemoryRuntime.history = [];
+    return null;
+  }
+  const api = requireSynapxnetMemoryApi();
+  const result = await api.getSynapxnetMemoryHistory({
+    memoryId: selectedId,
+    requesterAgent: synapxnetMemoryRuntime.actorAgent,
+  });
+  const versions = Array.isArray(result?.versions) ? result.versions : [];
+  const selected = [...versions].sort((left, right) => Number(right?.version || 0) - Number(left?.version || 0))[0] || null;
+  synapxnetMemoryRuntime.selectedMemoryId = selectedId;
+  synapxnetMemoryRuntime.selectedMemory = selected;
+  synapxnetMemoryRuntime.history = versions;
+  return selected;
+}
+
+/** 加载当前 Agent 可见的 Memory V3 数据；输入筛选条件，更新状态、列表和完整选中记录。 */
+async function loadSynapxnetMemories(filters = {}) {
+  const host = getHostApp();
+  const api = requireSynapxnetMemoryApi();
+  const agentOptions = buildSynapxnetMemoryAgentOptions(host, isCurrentLanguageZh(host));
+  synapxnetMemoryRuntime.actorAgent = String(
+    filters.actorAgent
+    || synapxnetMemoryRuntime.actorAgent
+    || agentOptions[0]?.id
+    || 'openxnet-model'
+  ).trim();
+  synapxnetMemoryRuntime.query = String(filters.query ?? synapxnetMemoryRuntime.query ?? '').trim();
+  synapxnetMemoryRuntime.includeRetired = filters.includeRetired === undefined
+    ? synapxnetMemoryRuntime.includeRetired
+    : !!filters.includeRetired;
+  synapxnetMemoryRuntime.loading = true;
+  synapxnetMemoryRuntime.error = '';
+  try {
+    if (!synapxnetMemoryRuntime.recoveryAttempted) {
+      synapxnetMemoryRuntime.recovery = await api.recoverSynapxnetMemories({
+        actorAgent: synapxnetMemoryRuntime.actorAgent,
+      });
+      synapxnetMemoryRuntime.recoveryAttempted = true;
+      if (synapxnetMemoryRuntime.recovery?.integrity) {
+        synapxnetMemoryRuntime.integrity = synapxnetMemoryRuntime.recovery.integrity;
+      }
+    }
+    const [status, listing] = await Promise.all([
+      api.getSynapxnetMemoryStatus(),
+      api.listSynapxnetMemories({
+        requesterAgent: synapxnetMemoryRuntime.actorAgent,
+        query: synapxnetMemoryRuntime.query,
+        ownerAgent: '',
+        includeRetired: synapxnetMemoryRuntime.includeRetired,
+        limit: 500,
+      }),
+    ]);
+    synapxnetMemoryRuntime.status = status;
+    synapxnetMemoryRuntime.items = Array.isArray(listing?.items) ? listing.items : [];
+    const selectedId = synapxnetMemoryRuntime.items.some((item) => item.memoryId === synapxnetMemoryRuntime.selectedMemoryId)
+      ? synapxnetMemoryRuntime.selectedMemoryId
+      : String(synapxnetMemoryRuntime.items[0]?.memoryId || '');
+    await loadSynapxnetMemoryHistory(selectedId);
+    return listing;
+  } catch (error) {
+    synapxnetMemoryRuntime.error = String(error?.message || 'SynapXnet Memory runtime is unavailable.');
+    throw error;
+  } finally {
+    synapxnetMemoryRuntime.loading = false;
+  }
+}
+
+/** 选择并读取一条 Memory V3 记录；输入记忆 ID，返回含正文的最新版本。 */
+async function selectSynapxnetMemory(memoryId) {
+  synapxnetMemoryRuntime.error = '';
+  return loadSynapxnetMemoryHistory(memoryId);
+}
+
+/** 创建当前 Agent 所有的长期记忆；输入编辑器草稿，返回提交后的最新记录。 */
+async function createSynapxnetMemory(draft = {}) {
+  const api = requireSynapxnetMemoryApi();
+  const actorAgent = synapxnetMemoryRuntime.actorAgent || 'openxnet-model';
+  const record = await api.createSynapxnetMemory({
+    ownerAgent: actorAgent,
+    actorAgent,
+    taskId: String(draft.taskId || '').trim(),
+    title: String(draft.title || '').trim(),
+    content: String(draft.content || '').trim(),
+    qualityScore: Number(draft.qualityScore ?? 0.8),
+    permissions: Array.isArray(draft.permissions) ? draft.permissions : [],
+    tags: Array.isArray(draft.tags) ? draft.tags : [],
+    source: 'user-created',
+  });
+  synapxnetMemoryRuntime.selectedMemoryId = record.memoryId;
+  await loadSynapxnetMemories();
+  return record;
+}
+
+/** 把当前记忆编辑为新版本；输入草稿，绑定基础版本防止并发覆盖。 */
+async function editSynapxnetMemory(draft = {}) {
+  const api = requireSynapxnetMemoryApi();
+  const record = await api.editSynapxnetMemory({
+    memoryId: String(draft.memoryId || '').trim(),
+    baseVersion: Number(draft.baseVersion || 0),
+    actorAgent: synapxnetMemoryRuntime.actorAgent || 'openxnet-model',
+    title: String(draft.title || '').trim(),
+    content: String(draft.content || '').trim(),
+    qualityScore: Number(draft.qualityScore ?? 0.8),
+    permissions: Array.isArray(draft.permissions) ? draft.permissions : [],
+    tags: Array.isArray(draft.tags) ? draft.tags : [],
+    reason: String(draft.reason || '').trim(),
+  });
+  synapxnetMemoryRuntime.selectedMemoryId = record.memoryId;
+  await loadSynapxnetMemories();
+  return record;
+}
+
+/** 从历史版本创建新的回滚版本；输入记忆、版本和原因，保留全部旧版本。 */
+async function rollbackSynapxnetMemory(memoryId, targetVersion, reason = '') {
+  const api = requireSynapxnetMemoryApi();
+  const record = await api.rollbackSynapxnetMemory({
+    memoryId: String(memoryId || '').trim(),
+    targetVersion: Number(targetVersion || 0),
+    actorAgent: synapxnetMemoryRuntime.actorAgent || 'openxnet-model',
+    reason: String(reason || '').trim(),
+  });
+  synapxnetMemoryRuntime.selectedMemoryId = record.memoryId;
+  await loadSynapxnetMemories();
+  return record;
+}
+
+/** 退役一条长期记忆；输入记忆 ID，返回退役后的最新记录。 */
+async function retireSynapxnetMemory(memoryId) {
+  const api = requireSynapxnetMemoryApi();
+  const record = await api.retireSynapxnetMemory({
+    memoryId: String(memoryId || '').trim(),
+    actorAgent: synapxnetMemoryRuntime.actorAgent || 'openxnet-model',
+  });
+  synapxnetMemoryRuntime.selectedMemoryId = record.memoryId;
+  await loadSynapxnetMemories();
+  return record;
+}
+
+/** 导出当前 Agent 有权读取的迁移包；输入记忆 ID 数组，返回签名清单。 */
+async function exportSynapxnetMemories(memoryIds = []) {
+  return requireSynapxnetMemoryApi().exportSynapxnetMemories({
+    requesterAgent: synapxnetMemoryRuntime.actorAgent || 'openxnet-model',
+    memoryIds: [...memoryIds],
+  });
+}
+
+/** 导入经完整性校验的迁移包；输入文档，将所有权迁移到当前 Agent。 */
+async function importSynapxnetMemories(document) {
+  const actorAgent = synapxnetMemoryRuntime.actorAgent || 'openxnet-model';
+  const result = await requireSynapxnetMemoryApi().importSynapxnetMemories({
+    actorAgent,
+    targetOwnerAgent: actorAgent,
+    document,
+  });
+  await loadSynapxnetMemories();
+  return result;
+}
+
+/** 校验一条或全部 Memory V3 的记录链与审计链；输入可选记忆 ID，返回完整性结果。 */
+async function verifySynapxnetMemory(memoryId = '') {
+  const result = await requireSynapxnetMemoryApi().verifySynapxnetMemory({
+    requesterAgent: synapxnetMemoryRuntime.actorAgent || 'openxnet-model',
+    memoryId: String(memoryId || '').trim(),
+  });
+  synapxnetMemoryRuntime.integrity = result;
+  return result;
+}
+
+/** 构建 Memory V3 的只读界面快照；输入宿主和语言，返回列表、时间线和审计状态。 */
+function buildSynapxnetMemorySnapshot(host, isZh) {
+  const agentOptions = buildSynapxnetMemoryAgentOptions(host, isZh);
+  if (!synapxnetMemoryRuntime.actorAgent) {
+    synapxnetMemoryRuntime.actorAgent = agentOptions[0]?.id || 'openxnet-model';
+  }
+  return {
+    available: !!getDesktopCoreApi()?.listSynapxnetMemories,
+    ...synapxnetMemoryRuntime,
+    items: [...synapxnetMemoryRuntime.items],
+    history: [...synapxnetMemoryRuntime.history],
+    agentOptions,
+  };
+}
+
+/** 构建存储工作台快照；输入宿主和语言，返回文件、Recall 与 Memory V3 数据。 */
 function buildStorageSnapshot(host, isZh) {
   const tabs = toArray(host?.storageTiles).map((tile) => ({
     id: String(tile?.id || ''),
     icon: String(tile?.icon || 'fa-solid fa-circle'),
     label: getTileLabel(host, tile, isZh),
   }));
+  if (!tabs.some((item) => item.id === 'memory-v3')) {
+    tabs.push({ id: 'memory-v3', icon: 'fa-solid fa-brain', label: isZh ? 'Memory V3' : 'Memory V3' });
+  }
   const activeTab = String(host?.subMenu || 'text');
   const textFiles = toArray(host?.textFiles).slice(0, 8).map((file, index) => ({
     id: String(file?.id || file?.path || `text-${index}`),
@@ -956,8 +1210,21 @@ function buildStorageSnapshot(host, isZh) {
     subtitle: isZh ? '统一管理文本、图片、视频和续接素材' : 'Manage text, images, videos, and recall assets together',
     tabs,
     activeTab,
-    meta: host?.getPrototypeStorageDetailMeta?.(activeTab) || { title: '', summary: '', chips: [] },
-    stats: mapStats(host?.getPrototypeStorageDetailStats?.(activeTab)),
+    meta: activeTab === 'memory-v3'
+      ? {
+        title: 'SynapXnet Memory V3',
+        summary: isZh ? '可共享、可编辑、可追溯、可回滚的长期记忆。' : 'Shareable, editable, traceable, and rollback-capable long-term memory.',
+        chips: [],
+      }
+      : host?.getPrototypeStorageDetailMeta?.(activeTab) || { title: '', summary: '', chips: [] },
+    stats: activeTab === 'memory-v3'
+      ? [
+        { label: isZh ? '长期记忆' : 'Memories', value: String(synapxnetMemoryRuntime.status?.tiers?.longTerm?.memories || 0) },
+        { label: isZh ? '版本' : 'Versions', value: String(synapxnetMemoryRuntime.status?.tiers?.longTerm?.versions || 0) },
+        { label: isZh ? '共享版本' : 'Shared', value: String(synapxnetMemoryRuntime.status?.sharedVersions || 0) },
+        { label: isZh ? '审计事件' : 'Audit Events', value: String(synapxnetMemoryRuntime.status?.auditEvents || 0) },
+      ]
+      : mapStats(host?.getPrototypeStorageDetailStats?.(activeTab)),
     overviewStats: toArray(host?.getPrototypeStorageOverviewStats?.()),
     textFiles,
     imageFiles,
@@ -967,6 +1234,7 @@ function buildStorageSnapshot(host, isZh) {
       { id: 'video-3', name: 'bug-repro.webm', size: '45 MB', duration: '02:47' },
     ],
     recallItems,
+    memoryV3: buildSynapxnetMemorySnapshot(host, isZh),
   };
 }
 
@@ -1466,7 +1734,9 @@ async function ensureLoaded(surface) {
       }
       break;
     case 'storage':
-      if (typeof host.switchStorageTile === 'function') {
+      if (String(host.subMenu || '') === 'memory-v3') {
+        await loadSynapxnetMemories();
+      } else if (typeof host.switchStorageTile === 'function') {
         await host.switchStorageTile(host.subMenu || 'text');
       }
       break;
@@ -1524,7 +1794,10 @@ async function selectSurfaceTab(surface, tabId) {
       }
       break;
     case 'storage':
-      if (typeof host.switchStorageTile === 'function') {
+      if (tabId === 'memory-v3') {
+        host.subMenu = 'memory-v3';
+        await loadSynapxnetMemories();
+      } else if (typeof host.switchStorageTile === 'function') {
         await host.switchStorageTile(tabId);
       } else {
         host.subMenu = tabId;
@@ -1574,7 +1847,8 @@ async function refreshSurface(surface) {
       }
       break;
     case 'storage':
-      await ensureLoaded(surface);
+      if (String(host.subMenu || '') === 'memory-v3') await loadSynapxnetMemories();
+      else await ensureLoaded(surface);
       break;
     case 'kernel':
       if (typeof host.loadKernelConsole === 'function') {
@@ -2378,5 +2652,14 @@ export function createOpsBridge() {
     saveEnterpriseKnowledgeBase,
     deleteEnterpriseKnowledgeBase,
     loadEnterpriseKnowledgeBaseVersions,
+    loadSynapxnetMemories,
+    selectSynapxnetMemory,
+    createSynapxnetMemory,
+    editSynapxnetMemory,
+    rollbackSynapxnetMemory,
+    retireSynapxnetMemory,
+    exportSynapxnetMemories,
+    importSynapxnetMemories,
+    verifySynapxnetMemory,
   };
 }

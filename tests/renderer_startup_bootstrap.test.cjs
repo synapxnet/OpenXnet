@@ -120,6 +120,14 @@ test("deferred Renderer tasks wait for workspace readiness and run once per idle
 });
 
 test("desktop account access uses typed IPC and only consumes redacted auth metadata", () => {
+  const rendererHtml = fs.readFileSync(
+    path.resolve(__dirname, "../static/index.html"),
+    "utf8",
+  );
+  const dialogStyles = fs.readFileSync(
+    path.resolve(__dirname, "../static/css/dialog-rebuild.css"),
+    "utf8",
+  );
   const rendererMethods = fs.readFileSync(
     path.resolve(__dirname, "../static/js/vue_methods.js"),
     "utf8",
@@ -144,6 +152,19 @@ test("desktop account access uses typed IPC and only consumes redacted auth meta
   assert.doesNotMatch(uiPlanMethods, /snapshot\.authSession\?\.accessToken\s*\|\|/);
   assert.match(preload, /openxnet:application-auth:save-session/);
   assert.match(preload, /openxnet:application-access:request/);
+  assert.match(rendererHtml, /personal-center-form-head-row/);
+  assert.match(rendererHtml, /personal-center-form-head-actions/);
+  assert.match(rendererHtml, /personal-center-signout-button/);
+  assert.match(rendererHtml, /personal-center-save-button/);
+  assert.match(rendererHtml, /@click="openPasswordReset"/);
+  assert.match(rendererHtml, /sendAccessSmsCode\('reset_password'\)/);
+  assert.match(rendererMethods, /\/v1\/access\/auth\/password\/reset/);
+  assert.match(rendererMethods, /'Invalid credentials':/);
+  assert.match(rendererMethods, /手机号或密码错误/);
+  assert.equal((rendererHtml.match(/@click="logoutMockUser"/g) || []).length, 1);
+  assert.equal((rendererHtml.match(/@click="submitPersonalCenterProfile"/g) || []).length, 1);
+  assert.doesNotMatch(rendererHtml, /personal-center-action-row/);
+  assert.match(dialogStyles, /personal-center-signout-button:hover:not\(:disabled\)/);
 });
 
 test("desktop file metadata routes through the typed Core artifact boundary", () => {

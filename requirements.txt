@@ -1,11 +1,11 @@
-fastapi 
+fastapi>=0.141.1
 uvicorn[standard]
 openai
-Pillow>=11,<13
+Pillow>=12.3,<13
 tzlocal
-python-multipart
-requests
-aiohttp
+python-multipart>=0.0.32
+requests>=2.34.2,<2.35
+aiohttp>=3.14.3
 httpx
 tavily-python
 bs4
@@ -14,8 +14,8 @@ ollama
 appdirs
 aiosqlite
 e2b-code-interpreter
-wikipedia-api
-arxiv
+wikipedia-api>=0.15,<1
+arxiv>=4,<5
 ddgs
 aiofiles
 pip-licenses 

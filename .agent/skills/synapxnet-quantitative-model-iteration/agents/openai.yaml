@@ -1,0 +1,4 @@
+interface:
+  display_name: "量化模型归因与受控迭代"
+  short_description: "对量化模型执行归因、训练评估、模拟灰度、回滚和独立验证"
+  default_prompt: "Use $synapxnet-quantitative-model-iteration to run a traceable post-market attribution and governed model iteration workflow."

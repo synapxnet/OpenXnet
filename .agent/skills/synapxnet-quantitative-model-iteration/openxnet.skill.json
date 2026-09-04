@@ -1,0 +1,46 @@
+{
+  "schema": "openxnet.skill-engineering.v2",
+  "skill_id": "synapxnet-quantitative-model-iteration",
+  "name": "量化模型归因与受控迭代",
+  "description": "根据盘后数据就绪事件完成模型归因、迭代审批、训练评估和可审计模拟发布。",
+  "version": "1.1.0",
+  "family_id": "family-synapxnet-quantitative-model-iteration",
+  "problem_fingerprint": "quantitative-iteration:ic-and-factor-degradation",
+  "evidence_origin": "work",
+  "derivation_method": "work_crystallization",
+  "environment_scope": "simulation",
+  "environment_fingerprint": "goai-ashare-quantitative-iteration-v3",
+  "lifecycle_status": "verified",
+  "scenario_type": "quantitative-iteration",
+  "plan_step_count": 7,
+  "strategies": [
+    {
+      "strategy_id": "attribution-before-iteration",
+      "name": "归因驱动的受控迭代",
+      "description": "先固定真实数据摘要、基线归因和多周期动量因子变更，再完成受限训练、真实测试集评估与模拟盘灰度。",
+      "workflow": ["training-dataset-build", "feature-pipeline-publish", "parallel-training-search", "candidate-evaluation", "candidate-register", "simulation-canary", "simulation-promote"],
+      "tool_chain": ["dataops.training.dataset.build", "mlops.feature.pipeline.publish", "mlops.training.search.start", "mlops.model.evaluation.run", "mlops.model.register", "mlops.deployment.canary.apply", "mlops.deployment.promote"],
+      "risk_level": "high",
+      "cost_score": 0.8,
+      "source_event_ids": []
+    }
+  ],
+  "certifications": [
+    {
+      "scope": "simulation",
+      "status": "verified",
+      "environment_fingerprint": "goai-fixture-quantitative-iteration-v3",
+      "evidence_event_ids": ["test:quantitative-iteration-complete"]
+    },
+    {
+      "scope": "staging",
+      "status": "candidate",
+      "environment_fingerprint": "goai-staging",
+      "evidence_event_ids": []
+    }
+  ],
+  "contracts": {
+    "input_schema": "synapxnet.skill.quantitative-iteration.input.v1",
+    "output_schema": "synapxnet.skill.quantitative-iteration.output.v1"
+  }
+}

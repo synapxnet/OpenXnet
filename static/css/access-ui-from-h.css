@@ -568,6 +568,12 @@
   margin-bottom: 16px;
 }
 
+.login-entry-password-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -8px;
+}
+
 .login-entry-form-card--register .login-entry-form .el-form-item {
   margin-bottom: 12px;
 }

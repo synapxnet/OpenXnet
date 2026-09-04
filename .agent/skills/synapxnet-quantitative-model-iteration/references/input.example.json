@@ -1,0 +1,15 @@
+{
+  "schema": "synapxnet.skill.quantitative-iteration.input.v1",
+  "workspaceId": "ws_goai_demo",
+  "incidentId": "inc_quantitative_iteration",
+  "traceId": "trace_quantitative_iteration",
+  "scenarioType": "quantitative-iteration",
+  "environmentScope": "simulation",
+  "evidenceIds": ["ev_health", "ev_quality", "ev_workflow", "ev_attribution", "ev_deployment", "ev_probe"],
+  "expectedResourceVersion": "61",
+  "approvalId": "apr_quantitative_iteration",
+  "planDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "approvedStepIds": ["training-dataset-build", "feature-pipeline-publish", "parallel-training-search", "candidate-evaluation", "candidate-register", "simulation-canary", "simulation-promote"],
+  "compensationStepIds": ["quantitative-model-rollback"],
+  "allowedTools": ["dataops.training.dataset.build", "mlops.feature.pipeline.publish", "mlops.training.search.start", "mlops.model.evaluation.run", "mlops.model.register", "mlops.deployment.canary.apply", "mlops.deployment.promote"]
+}

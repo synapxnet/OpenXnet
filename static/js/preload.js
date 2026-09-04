@@ -284,8 +284,10 @@ const APPLICATION_AGENTTEAMS_RUNTIME_CHANNELS = Object.freeze({
 });
 
 const APPLICATION_COMPETITION_RUNTIME_CHANNELS = Object.freeze({
+  getUiProfile: "openxnet:application-competition-runtime:get-ui-profile",
   getSnapshot: "openxnet:application-competition-runtime:get-snapshot",
   resetDemoData: "openxnet:application-competition-runtime:reset-demo-data",
+  startEnterpriseTask: "openxnet:application-competition-runtime:start-enterprise-task",
   createIncident: "openxnet:application-competition-runtime:create-incident",
   runInvestigation: "openxnet:application-competition-runtime:run-investigation",
   decideApproval: "openxnet:application-competition-runtime:decide-approval",
@@ -293,6 +295,7 @@ const APPLICATION_COMPETITION_RUNTIME_CHANNELS = Object.freeze({
   verifyRemediation: "openxnet:application-competition-runtime:verify-remediation",
   readResource: "openxnet:application-competition-runtime:read-resource",
   exportRetrospective: "openxnet:application-competition-runtime:export-retrospective",
+  exportEvaluation: "openxnet:application-competition-runtime:export-evaluation",
   setAdapterMode: "openxnet:application-competition-runtime:set-adapter-mode",
 });
 
@@ -345,6 +348,20 @@ const APPLICATION_MEMORY_MANAGEMENT_CHANNELS = Object.freeze({
   updateRecord: "openxnet:application-memory-management:update-record",
   deleteRecord: "openxnet:application-memory-management:delete-record",
   removeCollection: "openxnet:application-memory-management:remove-collection",
+});
+
+const APPLICATION_SYNAPXNET_MEMORY_CHANNELS = Object.freeze({
+  recover: "openxnet:application-synapxnet-memory:recover",
+  status: "openxnet:application-synapxnet-memory:status",
+  list: "openxnet:application-synapxnet-memory:list",
+  history: "openxnet:application-synapxnet-memory:history",
+  create: "openxnet:application-synapxnet-memory:create",
+  edit: "openxnet:application-synapxnet-memory:edit",
+  rollback: "openxnet:application-synapxnet-memory:rollback",
+  retire: "openxnet:application-synapxnet-memory:retire",
+  export: "openxnet:application-synapxnet-memory:export",
+  import: "openxnet:application-synapxnet-memory:import",
+  verify: "openxnet:application-synapxnet-memory:verify",
 });
 
 const LEGACY_RENDERER_STATE_CHANNELS = Object.freeze({
@@ -763,8 +780,12 @@ function exposeDesktopCore() {
     getApplicationAgentTeamsTeam: (request) => ipcRenderer.invoke(APPLICATION_AGENTTEAMS_RUNTIME_CHANNELS.getTeam, request),
     /** 读取竞赛控制面快照；无输入，不访问三平台。 */
     getApplicationCompetitionSnapshot: () => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.getSnapshot),
+    /** 读取事件中心发布配置；无输入，返回生产或比赛 staging 的公开界面能力。 */
+    getApplicationCompetitionUiProfile: () => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.getUiProfile),
     /** 重置竞赛演示数据；输入固定确认标记，仅清除竞赛控制面状态。 */
     resetApplicationCompetitionDemoData: (request) => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.resetDemoData, request),
+    /** 从企业项目群发起主 Demo；输入固定场景和团队选择，返回待审批状态。 */
+    startApplicationCompetitionEnterpriseTask: (request) => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.startEnterpriseTask, request),
     /** 创建竞赛事件；输入固定场景，操作者由 Main 企业会话注入。 */
     createApplicationCompetitionIncident: (request) => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.createIncident, request),
     /** 启动跨域取证；输入事件和 Runtime 选择，返回待审批状态。 */
@@ -779,6 +800,8 @@ function exposeDesktopCore() {
     readApplicationCompetitionResource: (request) => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.readResource, request),
     /** 导出复盘 Skill；输入已解决事件 ID，返回本机输出路径。 */
     exportApplicationCompetitionRetrospective: (request) => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.exportRetrospective, request),
+    /** 导出复赛评测与 OTLP 风格遥测；输入终态事件 ID，返回两个 UTF-8 JSON 路径。 */
+    exportApplicationCompetitionEvaluation: (request) => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.exportEvaluation, request),
     /** 切换 Fixture/Live Adapter；输入固定模式，返回最新快照。 */
     setApplicationCompetitionAdapterMode: (request) => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.setAdapterMode, request),
     /** 读取企业用量面板；输入分组和数量，返回 Main SQLite 聚合且不启动 Python。 */
@@ -838,6 +861,19 @@ function exposeDesktopCore() {
     deleteApplicationMemoryRecord: (request) => ipcRenderer.invoke(APPLICATION_MEMORY_MANAGEMENT_CHANNELS.deleteRecord, request),
     /** 删除一个记忆集合；输入稳定集合 ID，返回固定变更结果。 */
     removeApplicationMemoryCollection: (request) => ipcRenderer.invoke(APPLICATION_MEMORY_MANAGEMENT_CHANNELS.removeCollection, request),
+    /** 恢复本机可信历史或发行版内置的完整性锁定记忆；输入目标 Agent，返回恢复回执。 */
+    recoverSynapxnetMemories: (request) => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.recover, request),
+    /** 读取 Memory V3 分层和审计状态；无输入，返回不含正文的统计。 */
+    getSynapxnetMemoryStatus: () => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.status),
+    listSynapxnetMemories: (request) => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.list, request),
+    getSynapxnetMemoryHistory: (request) => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.history, request),
+    createSynapxnetMemory: (request) => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.create, request),
+    editSynapxnetMemory: (request) => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.edit, request),
+    rollbackSynapxnetMemory: (request) => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.rollback, request),
+    retireSynapxnetMemory: (request) => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.retire, request),
+    exportSynapxnetMemories: (request) => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.export, request),
+    importSynapxnetMemories: (request) => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.import, request),
+    verifySynapxnetMemory: (request) => ipcRenderer.invoke(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.verify, request),
     getLegacyRendererState: () => ipcRenderer.invoke(LEGACY_RENDERER_STATE_CHANNELS.getSnapshot),
     saveLegacyRendererSettings: (request) => ipcRenderer.invoke(LEGACY_RENDERER_STATE_CHANNELS.saveSettings, request),
     saveLegacyRendererConversations: (request) => ipcRenderer.invoke(LEGACY_RENDERER_STATE_CHANNELS.saveConversations, request),

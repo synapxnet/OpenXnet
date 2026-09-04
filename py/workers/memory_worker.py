@@ -12,10 +12,12 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 from typing import Any, Callable
 
 from py.memory.vector_worker_store import VectorWorkerStore, register_mem0_vector_worker_store
 from py.memory.recall_runtime import RecallRuntimeService
+from py.memory.synapxnet_v3_runtime import SynapXnetMemoryV3Runtime
 from py.vector_worker_client import VectorWorkerClient
 from py.workers.runtime import WorkerRuntime
 
@@ -34,6 +36,7 @@ class MemoryWorkerHandlers:
         *,
         memory_factory: Callable[[Mapping[str, Any]], Any] | None = None,
         vector_client: VectorWorkerClient | None = None,
+        synapxnet_runtime: SynapXnetMemoryV3Runtime | None = None,
         max_instances: int = DEFAULT_MAX_MEMORY_INSTANCES,
     ) -> None:
         """Create handlers restricted to the application-owned memory-cache directory."""
@@ -43,6 +46,7 @@ class MemoryWorkerHandlers:
         self._memory_root.mkdir(parents=True, exist_ok=True)
         self._memory_factory = memory_factory
         self._vector_client = vector_client or VectorWorkerClient.from_environment()
+        self._synapxnet_runtime = synapxnet_runtime or SynapXnetMemoryV3Runtime(self._storage_root)
         self._max_instances = max(1, int(max_instances))
         self._memories: dict[str, tuple[str, Any]] = {}
 
@@ -53,7 +57,107 @@ class MemoryWorkerHandlers:
             "dependencyAvailable": importlib.util.find_spec("mem0") is not None,
             "vectorWorkerConfigured": self._vector_client.configured,
             "loadedInstances": len(self._memories),
+            "synapxnetMemory": self._synapxnet_runtime.status(),
         }
+
+    async def synapxnet_status(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Return the content-free V3 tier and audit overview."""
+
+        self._read_exact_payload(payload, set())
+        return await asyncio.to_thread(self._synapxnet_runtime.status)
+
+    async def synapxnet_list(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """List latest V3 memories visible to one requesting agent."""
+
+        request = self._read_exact_payload(
+            payload,
+            {"requesterAgent", "query", "ownerAgent", "includeRetired", "limit"},
+        )
+        return await asyncio.to_thread(self._synapxnet_runtime.list_memories, request)
+
+    async def synapxnet_history(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """List immutable versions for one authorized V3 memory."""
+
+        request = self._read_exact_payload(payload, {"memoryId", "requesterAgent"})
+        return await asyncio.to_thread(self._synapxnet_runtime.get_history, request)
+
+    async def synapxnet_recall(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Recall bounded V3 context for one authorized Agent and chat request."""
+
+        request = self._read_exact_payload(
+            payload,
+            {"requesterAgent", "query", "taskId", "requiredTags", "limit", "maximumCharacters"},
+        )
+        return await asyncio.to_thread(self._synapxnet_runtime.recall_memories, request)
+
+    async def synapxnet_create(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Create one V3 long-term memory owned by the actor agent."""
+
+        request = self._read_exact_payload(
+            payload,
+            {
+                "ownerAgent", "actorAgent", "taskId", "title", "content",
+                "qualityScore", "permissions", "tags", "source",
+            },
+        )
+        return await asyncio.to_thread(self._synapxnet_runtime.create_memory, request)
+
+    async def synapxnet_edit(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Append an edited V3 version after optimistic concurrency validation."""
+
+        request = self._read_exact_payload(
+            payload,
+            {
+                "memoryId", "baseVersion", "actorAgent", "title", "content",
+                "qualityScore", "permissions", "tags", "reason",
+            },
+        )
+        return await asyncio.to_thread(self._synapxnet_runtime.edit_memory, request)
+
+    async def synapxnet_rollback(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Append a new version restored from one historical V3 version."""
+
+        request = self._read_exact_payload(
+            payload,
+            {"memoryId", "targetVersion", "actorAgent", "reason"},
+        )
+        return await asyncio.to_thread(self._synapxnet_runtime.rollback_memory, request)
+
+    async def synapxnet_retire(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Retire the latest committed V3 version while preserving history."""
+
+        request = self._read_exact_payload(payload, {"memoryId", "actorAgent"})
+        return await asyncio.to_thread(self._synapxnet_runtime.retire_memory, request)
+
+    async def synapxnet_export(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Create an integrity-protected V3 transfer document without filesystem paths."""
+
+        request = self._read_exact_payload(payload, {"requesterAgent", "memoryIds"})
+        return await asyncio.to_thread(self._synapxnet_runtime.export_memories, request)
+
+    async def synapxnet_import(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Verify and import a V3 transfer document into the actor's ownership scope."""
+
+        request = self._read_exact_payload(
+            payload,
+            {"actorAgent", "targetOwnerAgent", "document"},
+        )
+        return await asyncio.to_thread(self._synapxnet_runtime.import_memories, request)
+
+    async def synapxnet_verify(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Verify V3 content hashes, record hashes and the operation audit chain."""
+
+        request = self._read_exact_payload(payload, {"requesterAgent", "memoryId"})
+        return await asyncio.to_thread(self._synapxnet_runtime.verify_integrity, request)
+
+    async def synapxnet_append_short_term(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Record hash-only short-term exchange evidence with a bounded TTL."""
+
+        request = self._read_exact_payload(
+            payload,
+            {"sessionId", "requesterAgent", "input", "output", "tokenCount", "ttlSeconds"},
+        )
+        return await asyncio.to_thread(self._synapxnet_runtime.append_short_term_event, request)
 
     async def search(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         """Search one user's long-term memory using a bounded query and result limit."""
@@ -617,9 +721,19 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def configure_utf8_standard_streams() -> None:
+    """把 Memory Worker 标准流固定为 UTF-8/LF，避免 Windows 管道使用本地代码页。"""
+
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="strict", newline="\n")
+
+
 async def run() -> None:
     """Create Memory Worker handlers and serve NDJSON requests on stdio."""
 
+    configure_utf8_standard_streams()
     arguments = parse_arguments()
     handlers = MemoryWorkerHandlers(
         arguments.storage_root,
@@ -635,6 +749,18 @@ async def run() -> None:
     runtime.register_handler("memory.collection.update", handlers.update_collection_record)
     runtime.register_handler("memory.collection.delete-record", handlers.delete_collection_record)
     runtime.register_handler("memory.collection.remove", handlers.remove_collection)
+    runtime.register_handler("memory.v3.status", handlers.synapxnet_status)
+    runtime.register_handler("memory.v3.list", handlers.synapxnet_list)
+    runtime.register_handler("memory.v3.history", handlers.synapxnet_history)
+    runtime.register_handler("memory.v3.recall", handlers.synapxnet_recall)
+    runtime.register_handler("memory.v3.create", handlers.synapxnet_create)
+    runtime.register_handler("memory.v3.edit", handlers.synapxnet_edit)
+    runtime.register_handler("memory.v3.rollback", handlers.synapxnet_rollback)
+    runtime.register_handler("memory.v3.retire", handlers.synapxnet_retire)
+    runtime.register_handler("memory.v3.export", handlers.synapxnet_export)
+    runtime.register_handler("memory.v3.import", handlers.synapxnet_import)
+    runtime.register_handler("memory.v3.verify", handlers.synapxnet_verify)
+    runtime.register_handler("memory.v3.short-term.append", handlers.synapxnet_append_short_term)
     runtime.register_handler("recall.bootstrap", recall_handlers.bootstrap)
     runtime.register_handler("recall.search", recall_handlers.search)
     runtime.register_handler("recall.timeline", recall_handlers.timeline)

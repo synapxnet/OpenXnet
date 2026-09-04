@@ -1,0 +1,10 @@
+{
+  "schema": "synapxnet.skill.quantitative-iteration.output.v1",
+  "outcome": "SUCCEEDED",
+  "actionId": "action_quantitative_iteration",
+  "completedStepIds": ["training-dataset-build", "feature-pipeline-publish", "parallel-training-search", "candidate-evaluation", "candidate-register", "simulation-canary", "simulation-promote"],
+  "verificationEvidenceIds": ["ev_health_after", "ev_dataset_after", "ev_attribution_after", "ev_deployment_after", "ev_release_after", "ev_probe_after"],
+  "finalResourceVersion": "63",
+  "retrospectiveSkillId": "synapxnet-quantitative-model-iteration",
+  "summary": "训练数据、归因门槛、风险评估、目标修订、模拟盘流量和推理探针均通过独立验证。"
+}

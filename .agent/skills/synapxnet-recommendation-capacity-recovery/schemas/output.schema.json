@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openxnet.synapxnet.com/skills/synapxnet-recommendation-capacity-recovery/1.0.0/output.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "outcome", "actionId", "completedStepIds", "verificationEvidenceIds", "finalResourceVersion", "retrospectiveSkillId", "summary"],
+  "properties": {
+    "schema": { "const": "synapxnet.skill.recommendation-capacity.output.v1" },
+    "outcome": { "enum": ["SUCCEEDED", "ROLLBACK_REQUIRED", "HALT"] },
+    "actionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "completedStepIds": { "type": "array", "maxItems": 7, "uniqueItems": true, "items": { "type": "string" } },
+    "verificationEvidenceIds": { "type": "array", "minItems": 4, "maxItems": 32, "uniqueItems": true, "items": { "type": "string" } },
+    "finalResourceVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "retrospectiveSkillId": { "const": "synapxnet-recommendation-capacity-recovery" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 16384 }
+  }
+}

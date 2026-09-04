@@ -204,7 +204,11 @@ function handlePrimaryAction() {
   } else if (props.surface === 'workbench') {
     bridge.openTaskCenter().finally(refreshSnapshot);
   } else if (props.surface === 'storage') {
-    bridge.jumpToMenu('storage', 'text').finally(refreshSnapshot);
+    if (snapshot.value?.activeTab === 'memory-v3') {
+      openMemoryCreateEditor();
+    } else {
+      bridge.jumpToMenu('storage', 'text').finally(refreshSnapshot);
+    }
   } else if (props.surface === 'kernel') {
     bridge.selectSurfaceTab('kernel', 'actions').finally(refreshSnapshot);
   } else if (props.surface === 'system') {
@@ -244,6 +248,24 @@ const enterpriseKbDraft = ref({
 const sandboxSelectedWorkspaceId = ref('');
 const sandboxSelectedProjectId = ref('');
 const sandboxSelectedAgentId = ref('');
+const memoryQuery = ref('');
+const memoryActorAgent = ref('');
+const memoryIncludeRetired = ref(false);
+const memoryEditorOpen = ref(false);
+const memoryEditorMode = ref('create');
+const memoryActionBusy = ref(false);
+const memoryActionError = ref('');
+const memoryDraft = ref({
+  memoryId: '',
+  baseVersion: 0,
+  taskId: '',
+  title: '',
+  content: '',
+  qualityScore: 0.8,
+  permissionsText: '',
+  tagsText: '',
+  reason: '',
+});
 
 function handleVrmStart() {
   bridge.startVrm().finally(refreshSnapshot);
@@ -461,6 +483,281 @@ function handleEnterpriseKbDelete(row) {
   });
 }
 
+function parseMemoryListInput(value) {
+  return [...new Set(String(value || '')
+    .split(/[,，\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean))];
+}
+
+function openMemoryCreateEditor() {
+  memoryEditorMode.value = 'create';
+  memoryActionError.value = '';
+  memoryDraft.value = {
+    memoryId: '',
+    baseVersion: 0,
+    taskId: '',
+    title: '',
+    content: '',
+    qualityScore: 0.8,
+    permissionsText: '',
+    tagsText: '',
+    reason: '',
+  };
+  memoryEditorOpen.value = true;
+}
+
+function openMemoryEditEditor() {
+  const selected = data.value.memoryV3?.selectedMemory;
+  if (!selected) return;
+  memoryEditorMode.value = 'edit';
+  memoryActionError.value = '';
+  memoryDraft.value = {
+    memoryId: String(selected.memoryId || ''),
+    baseVersion: Number(selected.version || 0),
+    taskId: String(selected.taskId || ''),
+    title: String(selected.title || ''),
+    content: String(selected.content || ''),
+    qualityScore: Number(selected.qualityScore ?? 0.8),
+    permissionsText: (selected.permissions || []).join(', '),
+    tagsText: (selected.tags || []).join(', '),
+    reason: '',
+  };
+  memoryEditorOpen.value = true;
+}
+
+async function submitMemoryEditor() {
+  const draft = memoryDraft.value;
+  if (!String(draft.title || '').trim() || !String(draft.content || '').trim()) return;
+  if (memoryEditorMode.value === 'create' && !String(draft.taskId || '').trim()) return;
+  memoryActionBusy.value = true;
+  memoryActionError.value = '';
+  try {
+    const payload = {
+      ...draft,
+      qualityScore: Number(draft.qualityScore ?? 0.8),
+      permissions: parseMemoryListInput(draft.permissionsText),
+      tags: parseMemoryListInput(draft.tagsText),
+    };
+    if (memoryEditorMode.value === 'edit') {
+      await bridge.editSynapxnetMemory(payload);
+    } else {
+      await bridge.createSynapxnetMemory(payload);
+    }
+    memoryEditorOpen.value = false;
+    refreshSnapshot();
+  } catch (error) {
+    memoryActionError.value = String(error?.message || 'Memory operation failed.');
+  } finally {
+    memoryActionBusy.value = false;
+  }
+}
+
+async function applyMemoryFilters() {
+  memoryActionBusy.value = true;
+  memoryActionError.value = '';
+  try {
+    await bridge.loadSynapxnetMemories({
+      actorAgent: memoryActorAgent.value,
+      query: memoryQuery.value,
+      includeRetired: memoryIncludeRetired.value,
+    });
+    refreshSnapshot();
+  } catch (error) {
+    memoryActionError.value = String(error?.message || 'Memory list could not be loaded.');
+  } finally {
+    memoryActionBusy.value = false;
+  }
+}
+
+async function handleMemorySelect(memoryId) {
+  memoryActionError.value = '';
+  try {
+    await bridge.selectSynapxnetMemory(memoryId);
+    refreshSnapshot();
+  } catch (error) {
+    memoryActionError.value = String(error?.message || 'Memory history could not be loaded.');
+  }
+}
+
+async function handleMemoryRollback(version) {
+  const selected = data.value.memoryV3?.selectedMemory;
+  if (!selected || Number(version?.version) === Number(selected.version)) return;
+  const confirmed = window.confirm(
+    isZh.value
+      ? `确认从 v${version.version} 创建一个新的回滚版本？历史版本不会被覆盖。`
+      : `Create a new rollback version from v${version.version}? Existing history will remain unchanged.`
+  );
+  if (!confirmed) return;
+  memoryActionBusy.value = true;
+  try {
+    await bridge.rollbackSynapxnetMemory(selected.memoryId, version.version, isZh.value ? '用户从版本时间线回滚' : 'User rollback from version timeline');
+    refreshSnapshot();
+  } catch (error) {
+    memoryActionError.value = String(error?.message || 'Rollback failed.');
+  } finally {
+    memoryActionBusy.value = false;
+  }
+}
+
+async function handleMemoryRetire() {
+  const selected = data.value.memoryV3?.selectedMemory;
+  if (!selected) return;
+  const confirmed = window.confirm(isZh.value ? '确认退役当前记忆？历史版本仍会保留。' : 'Retire this memory? Its version history will be preserved.');
+  if (!confirmed) return;
+  memoryActionBusy.value = true;
+  try {
+    await bridge.retireSynapxnetMemory(selected.memoryId);
+    refreshSnapshot();
+  } catch (error) {
+    memoryActionError.value = String(error?.message || 'Retire failed.');
+  } finally {
+    memoryActionBusy.value = false;
+  }
+}
+
+async function handleMemoryVerify() {
+  memoryActionBusy.value = true;
+  try {
+    await bridge.verifySynapxnetMemory('');
+    refreshSnapshot();
+  } catch (error) {
+    memoryActionError.value = String(error?.message || 'Integrity verification failed.');
+  } finally {
+    memoryActionBusy.value = false;
+  }
+}
+
+async function handleMemoryExport() {
+  const selected = data.value.memoryV3?.selectedMemory;
+  if (!selected) return;
+  memoryActionBusy.value = true;
+  try {
+    const document = await bridge.exportSynapxnetMemories([selected.memoryId]);
+    const blob = new Blob([JSON.stringify(document, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = window.document.createElement('a');
+    anchor.href = url;
+    anchor.download = `openxnet-memory-${selected.memoryId.slice(0, 12)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    memoryActionError.value = String(error?.message || 'Memory export failed.');
+  } finally {
+    memoryActionBusy.value = false;
+  }
+}
+
+function handleMemoryImport() {
+  const input = window.document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    memoryActionBusy.value = true;
+    try {
+      const document = JSON.parse(await file.text());
+      await bridge.importSynapxnetMemories(document);
+      refreshSnapshot();
+    } catch (error) {
+      memoryActionError.value = String(error?.message || 'Memory import failed.');
+    } finally {
+      memoryActionBusy.value = false;
+    }
+  }, { once: true });
+  input.click();
+}
+
+function formatMemoryTime(value) {
+  return value ? new Date(value).toLocaleString() : '--';
+}
+
+function shortMemoryHash(value) {
+  const normalized = String(value || '');
+  return normalized ? `${normalized.slice(0, 8)}...${normalized.slice(-6)}` : '--';
+}
+
+/**
+ * 将稳定记忆类型转换为当前语言的用户可读标签。
+ *
+ * @param {string} value Memory V3 返回的稳定类型。
+ * @returns {string} 当前语言下的类型名称。
+ */
+function getMemoryTypeLabel(value) {
+  const labels = {
+    skill: isZh.value ? '技能记忆' : 'Skill',
+    incident: isZh.value ? '事件记忆' : 'Incident',
+    collaboration: isZh.value ? '协作记忆' : 'Collaboration',
+    decision: isZh.value ? '决策记忆' : 'Decision',
+    manual: isZh.value ? '人工记忆' : 'Manual',
+  };
+  return labels[String(value || 'manual')] || labels.manual;
+}
+
+/**
+ * 为不同记忆类型选择稳定图标，便于快速识别来源。
+ *
+ * @param {string} value Memory V3 返回的稳定类型。
+ * @returns {string} Font Awesome 图标类名。
+ */
+function getMemoryTypeIcon(value) {
+  return {
+    skill: 'fa-solid fa-wand-magic-sparkles',
+    incident: 'fa-solid fa-circle-nodes',
+    collaboration: 'fa-solid fa-people-group',
+    decision: 'fa-solid fa-code-branch',
+    manual: 'fa-solid fa-pen-to-square',
+  }[String(value || 'manual')] || 'fa-solid fa-pen-to-square';
+}
+
+/**
+ * 过滤内部类型标签并翻译常用业务标签，技术标识保持原值。
+ *
+ * @param {object} memory Memory V3 记忆记录。
+ * @returns {Array<{key: string, label: string}>} 可直接渲染的标签列表。
+ */
+function getMemoryDisplayTags(memory) {
+  const labels = {
+    competition: isZh.value ? '比赛闭环' : 'Competition',
+    'goai-staging': isZh.value ? '复赛验证环境' : 'GOAI staging',
+    'resolved-incident': isZh.value ? '已验证事件' : 'Verified incident',
+    'recommendation-capacity': isZh.value ? '推荐容量治理' : 'Recommendation capacity',
+    'quantitative-iteration': isZh.value ? '量化模型迭代' : 'Quantitative iteration',
+    'feature-drift': isZh.value ? '跨域特征漂移' : 'Feature drift',
+  };
+  return (memory?.tags || [])
+    .filter((tag) => !String(tag).startsWith('memory-type:'))
+    .map((tag) => ({ key: String(tag), label: labels[String(tag)] || String(tag) }));
+}
+
+/**
+ * 生成记忆完整性与恢复来源文案；输入 Memory V3 快照，返回简短可验证状态。
+ *
+ * @param {object} memoryData Memory V3 界面快照。
+ * @returns {string} 当前语言下的完整性和恢复结果。
+ */
+function getMemoryIntegrityMessage(memoryData) {
+  const integrity = memoryData?.integrity;
+  if (!integrity?.healthy) {
+    return isZh.value ? '完整性校验发现异常' : 'Integrity verification found problems';
+  }
+  const recovery = memoryData?.recovery;
+  if (recovery?.source === 'bundled-transfer' && Number(recovery.importedVersions || 0) > 0) {
+    return isZh.value
+      ? `已恢复 ${recovery.importedVersions} 个可信版本，记录链与审计链完整`
+      : `${recovery.importedVersions} trusted versions restored; record and audit chains are healthy`;
+  }
+  if (recovery?.source === 'competition-history' && Number(recovery.reconciledMemories || 0) > 0) {
+    return isZh.value
+      ? `已补投影 ${recovery.reconciledMemories} 条成功闭环，记录链与审计链完整`
+      : `${recovery.reconciledMemories} resolved workflows reconciled; record and audit chains are healthy`;
+  }
+  return isZh.value
+    ? `已校验 ${integrity.checkedVersions} 个版本，记录链与审计链完整`
+    : `${integrity.checkedVersions} versions verified; record and audit chains are healthy`;
+}
+
 async function handleEnterpriseKbVersions(row) {
   enterpriseKbEditorOpen.value = false;
   enterpriseKbSideMode.value = 'versions';
@@ -485,6 +782,11 @@ const enterpriseRoleTemplates = computed(() => enterpriseRolePanel.value.templat
 const enterpriseWorkspacePanel = computed(() => data.value.workspacePanel || {});
 const enterpriseSandboxPanel = computed(() => data.value.sandboxPanel || {});
 const enterpriseKnowledgePanel = computed(() => data.value.knowledgePanel || {});
+const synapxnetMemoryData = computed(() => data.value.memoryV3 || {});
+const canEditSelectedMemory = computed(() => {
+  const selected = synapxnetMemoryData.value.selectedMemory;
+  return !!selected && String(selected.ownerAgent || '') === String(synapxnetMemoryData.value.actorAgent || '');
+});
 const enterpriseRoleCategories = computed(() => {
   const seen = new Set();
   const categories = [];
@@ -682,6 +984,16 @@ watch(
     }
   },
   { deep: true }
+);
+
+watch(
+  synapxnetMemoryData,
+  (memory) => {
+    if (!memoryActorAgent.value) memoryActorAgent.value = String(memory?.actorAgent || '');
+    if (!memoryQuery.value && memory?.query) memoryQuery.value = String(memory.query);
+    memoryIncludeRetired.value = !!memory?.includeRetired;
+  },
+  { deep: true, immediate: true }
 );
 
 onMounted(() => {
@@ -1241,7 +1553,7 @@ onBeforeUnmount(() => {
             class="ox-vite-ops-primary-btn"
             @click="handlePrimaryAction"
           >
-            <i class="fa-solid fa-arrow-right"></i>
+            <i :class="props.surface === 'storage' && data.activeTab === 'memory-v3' ? 'fa-solid fa-plus' : 'fa-solid fa-arrow-right'"></i>
             <span>
               {{
                 props.surface === 'deploy'
@@ -1249,7 +1561,7 @@ onBeforeUnmount(() => {
                   : props.surface === 'workbench'
                     ? (isZh ? '打开任务中心' : 'Open task center')
                     : props.surface === 'storage'
-                      ? (isZh ? '进入文件库' : 'Open file vault')
+                      ? (data.activeTab === 'memory-v3' ? (isZh ? '新建记忆' : 'New memory') : (isZh ? '进入文件库' : 'Open file vault'))
                       : props.surface === 'kernel'
                         ? (isZh ? '查看行动队列' : 'Open action queue')
                         : (data.activeTab === 'about' ? (isZh ? '检查更新' : 'Check Updates') : (isZh ? '查看更新内容' : 'Open update content'))
@@ -3094,7 +3406,235 @@ onBeforeUnmount(() => {
                 </span>
               </section>
 
-              <section v-if="data.activeTab === 'text'" class="ox-vite-panel-card">
+              <section v-if="data.activeTab === 'memory-v3'" class="ox-vite-memory-workbench">
+                <div class="ox-vite-memory-toolbar">
+                  <label class="ox-vite-memory-actor">
+                    <i class="fa-solid fa-user-gear"></i>
+                    <select v-model="memoryActorAgent" @change="applyMemoryFilters">
+                      <option v-for="agent in synapxnetMemoryData.agentOptions || []" :key="agent.id" :value="agent.id">
+                        {{ agent.name }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="ox-vite-memory-search">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input
+                      v-model="memoryQuery"
+                      type="search"
+                      :placeholder="isZh ? '搜索标题、内容、任务或标签' : 'Search title, content, task, or tags'"
+                      @keyup.enter="applyMemoryFilters"
+                    />
+                  </label>
+                  <label class="ox-vite-memory-check">
+                    <input v-model="memoryIncludeRetired" type="checkbox" @change="applyMemoryFilters" />
+                    <span>{{ isZh ? '显示已退役' : 'Show retired' }}</span>
+                  </label>
+                  <div class="ox-vite-memory-toolbar__actions">
+                    <button type="button" class="ox-vite-icon-btn" :title="isZh ? '校验完整性' : 'Verify integrity'" :disabled="memoryActionBusy" @click="handleMemoryVerify">
+                      <i class="fa-solid fa-shield-halved"></i>
+                    </button>
+                    <button type="button" class="ox-vite-icon-btn" :title="isZh ? '导入记忆' : 'Import memory'" :disabled="memoryActionBusy" @click="handleMemoryImport">
+                      <i class="fa-solid fa-file-import"></i>
+                    </button>
+                    <button type="button" class="ox-vite-ops-primary-btn" :disabled="memoryActionBusy" @click="openMemoryCreateEditor">
+                      <i class="fa-solid fa-plus"></i>
+                      <span>{{ isZh ? '新建记忆' : 'New Memory' }}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="memoryActionError || synapxnetMemoryData.error" class="ox-vite-memory-notice is-error">
+                  <i class="fa-solid fa-circle-exclamation"></i>
+                  <span>{{ memoryActionError || synapxnetMemoryData.error }}</span>
+                </div>
+                <div v-else-if="synapxnetMemoryData.integrity" class="ox-vite-memory-notice" :class="{ 'is-ok': synapxnetMemoryData.integrity.healthy }">
+                  <i :class="synapxnetMemoryData.integrity.healthy ? 'fa-solid fa-circle-check' : 'fa-solid fa-triangle-exclamation'"></i>
+                  <span>{{ getMemoryIntegrityMessage(synapxnetMemoryData) }}</span>
+                </div>
+
+                <div class="ox-vite-memory-layout" :class="{ 'is-loading': synapxnetMemoryData.loading || memoryActionBusy }">
+                  <aside class="ox-vite-memory-library">
+                    <div class="ox-vite-memory-pane-head">
+                      <div>
+                        <span>{{ isZh ? '记忆池' : 'Memory Pool' }}</span>
+                        <strong>{{ (synapxnetMemoryData.items || []).length }}</strong>
+                      </div>
+                      <button type="button" class="ox-vite-icon-btn" :title="isZh ? '刷新' : 'Refresh'" @click="applyMemoryFilters">
+                        <i class="fa-solid fa-rotate-right"></i>
+                      </button>
+                    </div>
+                    <div v-if="(synapxnetMemoryData.items || []).length" class="ox-vite-memory-list">
+                      <button
+                        v-for="item in synapxnetMemoryData.items || []"
+                        :key="item.memoryId"
+                        type="button"
+                        class="ox-vite-memory-row"
+                        :class="{ active: synapxnetMemoryData.selectedMemoryId === item.memoryId }"
+                        @click="handleMemorySelect(item.memoryId)"
+                      >
+                        <div class="ox-vite-memory-row__head">
+                          <strong>{{ item.title }}</strong>
+                          <div class="ox-vite-memory-row__badges">
+                            <span class="ox-vite-memory-type-badge" :data-memory-type="item.memoryType">
+                              <i :class="getMemoryTypeIcon(item.memoryType)"></i>
+                              {{ getMemoryTypeLabel(item.memoryType) }}
+                            </span>
+                            <span>v{{ item.version }}</span>
+                          </div>
+                        </div>
+                        <p>{{ item.contentPreview || (isZh ? '暂无摘要' : 'No preview') }}</p>
+                        <div class="ox-vite-memory-row__meta">
+                          <span><i class="fa-regular fa-user"></i>{{ item.ownerAgent }}</span>
+                          <span :class="{ 'is-retired': item.status === 'RETIRED' }">{{ item.status === 'RETIRED' ? (isZh ? '已退役' : 'Retired') : (isZh ? '生效中' : 'Active') }}</span>
+                        </div>
+                      </button>
+                    </div>
+                    <div v-else class="ox-vite-memory-empty">
+                      <i class="fa-regular fa-folder-open"></i>
+                      <span>{{ isZh ? '当前 Agent 暂无可见记忆' : 'No visible memory for this agent' }}</span>
+                    </div>
+                  </aside>
+
+                  <main class="ox-vite-memory-inspector">
+                    <template v-if="memoryEditorOpen">
+                      <div class="ox-vite-memory-pane-head">
+                        <div>
+                          <span>{{ memoryEditorMode === 'edit' ? (isZh ? '编辑为新版本' : 'Edit as New Version') : (isZh ? '新建长期记忆' : 'Create Long-term Memory') }}</span>
+                          <strong>{{ memoryEditorMode === 'edit' ? `v${memoryDraft.baseVersion + 1}` : 'V3' }}</strong>
+                        </div>
+                        <button type="button" class="ox-vite-icon-btn" :title="isZh ? '关闭' : 'Close'" @click="memoryEditorOpen = false">
+                          <i class="fa-solid fa-xmark"></i>
+                        </button>
+                      </div>
+                      <div class="ox-vite-memory-form">
+                        <label v-if="memoryEditorMode === 'create'" class="ox-vite-field">
+                          <span>{{ isZh ? '任务标识' : 'Task ID' }}</span>
+                          <input v-model="memoryDraft.taskId" type="text" />
+                        </label>
+                        <label class="ox-vite-field ox-vite-field--wide">
+                          <span>{{ isZh ? '标题' : 'Title' }}</span>
+                          <input v-model="memoryDraft.title" type="text" />
+                        </label>
+                        <label class="ox-vite-field ox-vite-field--wide">
+                          <span>{{ isZh ? '记忆内容' : 'Memory Content' }}</span>
+                          <textarea v-model="memoryDraft.content" rows="10"></textarea>
+                        </label>
+                        <label class="ox-vite-field">
+                          <span>{{ isZh ? '共享 Agent' : 'Shared Agents' }}</span>
+                          <input v-model="memoryDraft.permissionsText" type="text" :placeholder="isZh ? '用逗号分隔，* 表示公开' : 'Comma-separated; * means public'" />
+                        </label>
+                        <label class="ox-vite-field">
+                          <span>{{ isZh ? '标签' : 'Tags' }}</span>
+                          <input v-model="memoryDraft.tagsText" type="text" :placeholder="isZh ? '用逗号分隔' : 'Comma-separated'" />
+                        </label>
+                        <label class="ox-vite-field">
+                          <span>{{ isZh ? '质量评分' : 'Quality Score' }} {{ Number(memoryDraft.qualityScore).toFixed(2) }}</span>
+                          <input v-model.number="memoryDraft.qualityScore" type="range" min="0" max="1" step="0.05" />
+                        </label>
+                        <label v-if="memoryEditorMode === 'edit'" class="ox-vite-field ox-vite-field--wide">
+                          <span>{{ isZh ? '修改原因' : 'Change Reason' }}</span>
+                          <input v-model="memoryDraft.reason" type="text" />
+                        </label>
+                      </div>
+                      <div class="ox-vite-memory-actions">
+                        <button type="button" class="ox-vite-ops-secondary-btn" @click="memoryEditorOpen = false">
+                          <span>{{ isZh ? '取消' : 'Cancel' }}</span>
+                        </button>
+                        <button
+                          type="button"
+                          class="ox-vite-ops-primary-btn"
+                          :disabled="memoryActionBusy || !memoryDraft.title || !memoryDraft.content || (memoryEditorMode === 'create' && !memoryDraft.taskId)"
+                          @click="submitMemoryEditor"
+                        >
+                          <i class="fa-solid fa-check"></i>
+                          <span>{{ isZh ? '提交版本' : 'Commit Version' }}</span>
+                        </button>
+                      </div>
+                    </template>
+
+                    <template v-else-if="synapxnetMemoryData.selectedMemory">
+                      <div class="ox-vite-memory-pane-head">
+                        <div>
+                          <span>{{ synapxnetMemoryData.selectedMemory.taskId }}</span>
+                          <strong>v{{ synapxnetMemoryData.selectedMemory.version }}</strong>
+                        </div>
+                        <div class="ox-vite-memory-header-actions">
+                          <button type="button" class="ox-vite-icon-btn" :title="isZh ? '导出迁移包' : 'Export transfer package'" @click="handleMemoryExport">
+                            <i class="fa-solid fa-file-export"></i>
+                          </button>
+                          <button v-if="canEditSelectedMemory" type="button" class="ox-vite-icon-btn" :title="isZh ? '编辑' : 'Edit'" @click="openMemoryEditEditor">
+                            <i class="fa-solid fa-pen"></i>
+                          </button>
+                        </div>
+                      </div>
+                      <div class="ox-vite-memory-document">
+                        <h2>{{ synapxnetMemoryData.selectedMemory.title }}</h2>
+                        <div class="ox-vite-memory-tags">
+                          <span class="ox-vite-memory-type-badge" :data-memory-type="synapxnetMemoryData.selectedMemory.memoryType">
+                            <i :class="getMemoryTypeIcon(synapxnetMemoryData.selectedMemory.memoryType)"></i>
+                            {{ getMemoryTypeLabel(synapxnetMemoryData.selectedMemory.memoryType) }}
+                          </span>
+                          <span v-for="tag in getMemoryDisplayTags(synapxnetMemoryData.selectedMemory)" :key="tag.key">{{ tag.label }}</span>
+                        </div>
+                        <p>{{ synapxnetMemoryData.selectedMemory.content }}</p>
+                      </div>
+                      <dl class="ox-vite-memory-facts">
+                        <div><dt>{{ isZh ? '所有者' : 'Owner' }}</dt><dd>{{ synapxnetMemoryData.selectedMemory.ownerAgent }}</dd></div>
+                        <div><dt>{{ isZh ? '共享范围' : 'Shared With' }}</dt><dd>{{ (synapxnetMemoryData.selectedMemory.permissions || []).join(', ') || (isZh ? '仅所有者' : 'Owner only') }}</dd></div>
+                        <div><dt>{{ isZh ? '记录哈希' : 'Record Hash' }}</dt><dd :title="synapxnetMemoryData.selectedMemory.recordSha256">{{ shortMemoryHash(synapxnetMemoryData.selectedMemory.recordSha256) }}</dd></div>
+                        <div><dt>{{ isZh ? '提交时间' : 'Committed' }}</dt><dd>{{ formatMemoryTime(synapxnetMemoryData.selectedMemory.committedAtUtc) }}</dd></div>
+                      </dl>
+                      <div v-if="canEditSelectedMemory && synapxnetMemoryData.selectedMemory.status !== 'RETIRED'" class="ox-vite-memory-actions">
+                        <button type="button" class="ox-vite-ops-secondary-btn is-danger" @click="handleMemoryRetire">
+                          <i class="fa-solid fa-box-archive"></i>
+                          <span>{{ isZh ? '退役记忆' : 'Retire Memory' }}</span>
+                        </button>
+                      </div>
+                    </template>
+
+                    <div v-else class="ox-vite-memory-empty">
+                      <i class="fa-solid fa-brain"></i>
+                      <span>{{ isZh ? '选择或新建一条记忆' : 'Select or create a memory' }}</span>
+                    </div>
+                  </main>
+
+                  <aside class="ox-vite-memory-history">
+                    <div class="ox-vite-memory-pane-head">
+                      <div>
+                        <span>{{ isZh ? '版本时间线' : 'Version Timeline' }}</span>
+                        <strong>{{ (synapxnetMemoryData.history || []).length }}</strong>
+                      </div>
+                    </div>
+                    <div v-if="(synapxnetMemoryData.history || []).length" class="ox-vite-memory-version-list">
+                      <article v-for="version in synapxnetMemoryData.history || []" :key="version.recordSha256" class="ox-vite-memory-version">
+                        <div class="ox-vite-memory-version__rail"><span></span></div>
+                        <div class="ox-vite-memory-version__body">
+                          <div class="ox-vite-memory-version__head">
+                            <strong>v{{ version.version }}</strong>
+                            <span>{{ version.operation }}</span>
+                          </div>
+                          <p>{{ formatMemoryTime(version.committedAtUtc) }}</p>
+                          <small :title="version.recordSha256">{{ shortMemoryHash(version.recordSha256) }}</small>
+                          <button
+                            v-if="canEditSelectedMemory && version.version !== synapxnetMemoryData.selectedMemory?.version"
+                            type="button"
+                            class="ox-vite-memory-version__rollback"
+                            @click="handleMemoryRollback(version)"
+                          >
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                            <span>{{ isZh ? '回滚至此版本' : 'Rollback to this version' }}</span>
+                          </button>
+                        </div>
+                      </article>
+                    </div>
+                    <div v-else class="ox-vite-memory-empty is-compact">
+                      <span>{{ isZh ? '暂无版本记录' : 'No version history' }}</span>
+                    </div>
+                  </aside>
+                </div>
+              </section>
+
+              <section v-else-if="data.activeTab === 'text'" class="ox-vite-panel-card">
                 <div class="ox-vite-list">
                   <article v-for="file in data.textFiles || []" :key="file.id" class="ox-vite-list-row">
                     <div><strong>{{ file.name }}</strong><p>{{ file.ext }} · {{ file.size }}</p></div>
@@ -5938,6 +6478,571 @@ onBeforeUnmount(() => {
 
 .ox-vite-empty-state .ox-vite-ops-primary-btn {
   margin-top: 8px;
+}
+
+/* SynapXnet Memory V3 */
+.ox-vite-memory-workbench {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ox-vite-memory-toolbar {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ox-vite-memory-actor,
+.ox-vite-memory-search {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.1));
+  border-radius: 6px;
+  background: var(--ox-vite-surface, #fff);
+  color: var(--ox-vite-text-secondary, #64748b);
+  padding: 0 11px;
+}
+
+.ox-vite-memory-actor {
+  flex: 0 1 230px;
+}
+
+.ox-vite-memory-search {
+  flex: 1 1 320px;
+  max-width: 540px;
+}
+
+.ox-vite-memory-actor select,
+.ox-vite-memory-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ox-vite-text-primary, #1e293b);
+  font: inherit;
+}
+
+.ox-vite-memory-actor select {
+  height: 38px;
+}
+
+.ox-vite-memory-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  color: var(--ox-vite-text-secondary, #64748b);
+  font-size: 13px;
+}
+
+.ox-vite-memory-check input {
+  accent-color: var(--ox-accent, #378ba3);
+}
+
+.ox-vite-memory-toolbar__actions,
+.ox-vite-memory-header-actions,
+.ox-vite-memory-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ox-vite-memory-toolbar__actions {
+  margin-left: auto;
+}
+
+.ox-vite-icon-btn {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.1));
+  border-radius: 6px;
+  background: var(--ox-vite-surface, #fff);
+  color: var(--ox-vite-text-secondary, #64748b);
+  cursor: pointer;
+}
+
+.ox-vite-icon-btn:hover:not(:disabled) {
+  color: var(--ox-accent, #378ba3);
+  border-color: color-mix(in srgb, var(--ox-accent, #378ba3) 42%, transparent);
+}
+
+.ox-vite-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ox-vite-memory-notice {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, #2c8c72 32%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, #2c8c72 8%, var(--ox-vite-surface, #fff));
+  color: #26735f;
+  font-size: 13px;
+}
+
+.ox-vite-memory-notice.is-error {
+  border-color: color-mix(in srgb, #cf4f64 32%, transparent);
+  background: color-mix(in srgb, #cf4f64 8%, var(--ox-vite-surface, #fff));
+  color: #b63e52;
+}
+
+.ox-vite-memory-layout {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.8fr) minmax(360px, 1.55fr) minmax(250px, 0.85fr);
+  min-height: 510px;
+  max-height: 680px;
+  border: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.1));
+  border-radius: 8px;
+  background: var(--ox-vite-surface, #fff);
+  overflow: hidden;
+  transition: opacity 120ms ease;
+}
+
+.ox-vite-memory-layout.is-loading {
+  opacity: 0.72;
+}
+
+.ox-vite-memory-library,
+.ox-vite-memory-inspector,
+.ox-vite-memory-history {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ox-vite-memory-library,
+.ox-vite-memory-history {
+  background: var(--ox-vite-shell-bg, #f8fafc);
+}
+
+.ox-vite-memory-library {
+  border-right: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.1));
+}
+
+.ox-vite-memory-history {
+  border-left: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.1));
+}
+
+.ox-vite-memory-pane-head {
+  min-height: 52px;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.1));
+}
+
+.ox-vite-memory-pane-head > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ox-vite-memory-pane-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ox-vite-text-secondary, #64748b);
+  font-size: 12px;
+}
+
+.ox-vite-memory-pane-head strong {
+  color: var(--ox-vite-text-primary, #1e293b);
+  font-size: 14px;
+}
+
+.ox-vite-memory-list,
+.ox-vite-memory-version-list,
+.ox-vite-memory-inspector {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ox-vite-text-secondary, #64748b) 40%, transparent) transparent;
+}
+
+.ox-vite-memory-list::-webkit-scrollbar,
+.ox-vite-memory-version-list::-webkit-scrollbar,
+.ox-vite-memory-inspector::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ox-vite-memory-list::-webkit-scrollbar-thumb,
+.ox-vite-memory-version-list::-webkit-scrollbar-thumb,
+.ox-vite-memory-inspector::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ox-vite-text-secondary, #64748b) 40%, transparent);
+}
+
+.ox-vite-memory-row {
+  width: 100%;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+  border: 0;
+  border-bottom: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.08));
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ox-vite-memory-row:hover,
+.ox-vite-memory-row.active {
+  background: color-mix(in srgb, var(--ox-accent, #378ba3) 8%, var(--ox-vite-surface, #fff));
+}
+
+.ox-vite-memory-row.active {
+  box-shadow: inset 3px 0 var(--ox-accent, #378ba3);
+}
+
+.ox-vite-memory-row__head,
+.ox-vite-memory-row__meta,
+.ox-vite-memory-version__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ox-vite-memory-row__head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ox-vite-text-primary, #1e293b);
+  font-size: 13px;
+}
+
+.ox-vite-memory-row__badges {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ox-vite-memory-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, #2d7d67 20%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, #2d7d67 9%, var(--ox-vite-surface, #fff));
+  color: #26705e !important;
+  font-size: 10px !important;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ox-vite-memory-type-badge[data-memory-type='incident'] {
+  border-color: color-mix(in srgb, #b45c3f 22%, transparent);
+  background: color-mix(in srgb, #b45c3f 9%, var(--ox-vite-surface, #fff));
+  color: #984a33 !important;
+}
+
+.ox-vite-memory-type-badge[data-memory-type='collaboration'] {
+  border-color: color-mix(in srgb, #357da0 22%, transparent);
+  background: color-mix(in srgb, #357da0 9%, var(--ox-vite-surface, #fff));
+  color: #2d6b89 !important;
+}
+
+.ox-vite-memory-type-badge[data-memory-type='decision'] {
+  border-color: color-mix(in srgb, #665da8 22%, transparent);
+  background: color-mix(in srgb, #665da8 9%, var(--ox-vite-surface, #fff));
+  color: #5c5398 !important;
+}
+
+.ox-vite-memory-type-badge[data-memory-type='manual'] {
+  border-color: color-mix(in srgb, #64748b 22%, transparent);
+  background: color-mix(in srgb, #64748b 8%, var(--ox-vite-surface, #fff));
+  color: #556274 !important;
+}
+
+.ox-vite-memory-row__head span,
+.ox-vite-memory-row__meta,
+.ox-vite-memory-version p,
+.ox-vite-memory-version small {
+  color: var(--ox-vite-text-secondary, #64748b);
+  font-size: 11px;
+}
+
+.ox-vite-memory-row p {
+  margin: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  color: var(--ox-vite-text-secondary, #64748b);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ox-vite-memory-row__meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ox-vite-memory-row__meta .is-retired {
+  color: #a35a67;
+}
+
+.ox-vite-memory-inspector {
+  padding-bottom: 16px;
+}
+
+.ox-vite-memory-inspector > .ox-vite-memory-pane-head {
+  flex: 0 0 auto;
+}
+
+.ox-vite-memory-document {
+  padding: 22px 24px 16px;
+}
+
+.ox-vite-memory-document h2 {
+  margin: 0 0 10px;
+  color: var(--ox-vite-text-primary, #1e293b);
+  font-size: 20px;
+}
+
+.ox-vite-memory-document p {
+  margin: 16px 0 0;
+  color: var(--ox-vite-text-primary, #1e293b);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.75;
+}
+
+.ox-vite-memory-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ox-vite-memory-tags span {
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, #665da8 10%, var(--ox-vite-surface, #fff));
+  color: #665da8;
+  font-size: 11px;
+}
+
+.ox-vite-memory-facts {
+  margin: 0 24px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.08));
+}
+
+.ox-vite-memory-facts > div {
+  min-width: 0;
+  padding: 11px 0;
+  display: grid;
+  gap: 4px;
+}
+
+.ox-vite-memory-facts dt {
+  color: var(--ox-vite-text-secondary, #64748b);
+  font-size: 11px;
+}
+
+.ox-vite-memory-facts dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ox-vite-text-primary, #1e293b);
+  font-family: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ox-vite-memory-actions {
+  justify-content: flex-end;
+  padding: 14px 24px 0;
+}
+
+.ox-vite-ops-secondary-btn.is-danger {
+  color: #b63e52;
+  border-color: color-mix(in srgb, #cf4f64 30%, transparent);
+}
+
+.ox-vite-memory-form {
+  padding: 16px 20px 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ox-vite-memory-form textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 150px;
+  max-height: 300px;
+  border: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.1));
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--ox-vite-surface, #fff);
+  color: var(--ox-vite-text-primary, #1e293b);
+  font: inherit;
+  line-height: 1.6;
+}
+
+.ox-vite-memory-version {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  padding: 11px 12px 0;
+}
+
+.ox-vite-memory-version__rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.ox-vite-memory-version__rail::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: -11px;
+  width: 1px;
+  background: var(--ox-vite-border, rgba(15, 23, 42, 0.12));
+}
+
+.ox-vite-memory-version:last-child .ox-vite-memory-version__rail::after {
+  display: none;
+}
+
+.ox-vite-memory-version__rail span {
+  position: relative;
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--ox-accent, #378ba3);
+}
+
+.ox-vite-memory-version__body {
+  min-width: 0;
+  padding: 0 0 13px 7px;
+}
+
+.ox-vite-memory-version__head strong {
+  color: var(--ox-vite-text-primary, #1e293b);
+  font-size: 13px;
+}
+
+.ox-vite-memory-version__head span {
+  color: #665da8;
+  font-size: 11px;
+}
+
+.ox-vite-memory-version p {
+  margin: 4px 0;
+}
+
+.ox-vite-memory-version__rollback {
+  margin-top: 7px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--ox-accent, #378ba3);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ox-vite-memory-empty {
+  flex: 1 1 auto;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  color: var(--ox-vite-text-secondary, #64748b);
+  text-align: center;
+}
+
+.ox-vite-memory-empty i {
+  font-size: 24px;
+}
+
+.ox-vite-memory-empty.is-compact {
+  min-height: 100px;
+  font-size: 12px;
+}
+
+@media (max-width: 1180px) {
+  .ox-vite-memory-layout {
+    grid-template-columns: minmax(220px, 0.75fr) minmax(360px, 1.25fr);
+    max-height: none;
+  }
+
+  .ox-vite-memory-history {
+    grid-column: 1 / -1;
+    min-height: 210px;
+    border-left: 0;
+    border-top: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.1));
+  }
+
+  .ox-vite-memory-version-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .ox-vite-memory-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .ox-vite-memory-actor,
+  .ox-vite-memory-search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .ox-vite-memory-toolbar__actions {
+    margin-left: 0;
+  }
+
+  .ox-vite-memory-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .ox-vite-memory-library,
+  .ox-vite-memory-history {
+    min-height: 240px;
+    border: 0;
+    border-bottom: 1px solid var(--ox-vite-border, rgba(15, 23, 42, 0.1));
+  }
+
+  .ox-vite-memory-version-list,
+  .ox-vite-memory-facts,
+  .ox-vite-memory-form {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 1240px) {

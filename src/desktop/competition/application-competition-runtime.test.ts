@@ -6,10 +6,13 @@ import test from "node:test";
 
 import {
   FixtureCompetitionToolAdapter,
+  type CompetitionToolAdapter,
 } from "./competition-tool-adapter";
 import {
   ApplicationCompetitionRuntimeError,
   ApplicationCompetitionRuntimeService,
+  type ApplicationCompetitionEnterpriseTaskConversationInput,
+  type ApplicationCompetitionResolvedMemoryPublicationRequest,
   type ApplicationCompetitionRetrospectiveSkillPublicationRequest,
 } from "./application-competition-runtime";
 import { ApplicationEnterpriseRuntimeService } from "../enterprise/application-enterprise-runtime";
@@ -59,6 +62,31 @@ function createRuntime(
     readonly publishRetrospectiveSkill?: (
       request: ApplicationCompetitionRetrospectiveSkillPublicationRequest,
     ) => Promise<{ readonly skillId: string }>;
+    readonly resolveEnabledEnterpriseSkill?: (
+      workspaceId: string,
+      skillId: string,
+    ) => Promise<{
+      readonly sourceIncidentId: string | null;
+      readonly lifecycleStatus: "candidate" | "verified" | "active" | "deprecated" | "retired" | "legacy";
+      readonly environmentScope: "synthetic" | "simulation" | "staging" | "shadow" | "canary" | "production" | "legacy";
+      readonly productionEligible: boolean;
+    } | null>;
+    readonly retrieveCompetitionKnowledge?: (
+      workspaceId: string,
+      query: string,
+    ) => Promise<readonly {
+      readonly subject: string;
+      readonly predicate: string;
+      readonly object: string;
+      readonly confidence: number;
+    }[]>;
+    readonly purgeEnterpriseTaskConversations?: (request: {
+      readonly incidentIds: readonly string[];
+      readonly traceIds: readonly string[];
+    }) => Promise<unknown>;
+    readonly persistResolvedIncidentMemory?: (
+      request: ApplicationCompetitionResolvedMemoryPublicationRequest,
+    ) => Promise<unknown>;
   } = {},
 ): ApplicationCompetitionRuntimeService {
   let sequence = 0;
@@ -86,6 +114,26 @@ async function createAgentTeamsTaskResult(input: CompetitionAgentTeamsTaskInput)
   const decision = input.stage === "INVESTIGATION_PLAN"
     ? "COLLECT_EVIDENCE"
     : input.stage === "INVESTIGATION_CONCLUSION" ? "REQUEST_APPROVAL" : "CLOSE";
+  const taskEventId = `$${input.stage.toLowerCase()}`;
+  const taskSender = `@${expectedRole}:agentteams.test`;
+  const transportEvent = (
+    kind: "ROUTE_REQUEST" | "ROUTE_RESPONSE" | "TASK_REQUEST" | "TASK_RESPONSE",
+    direction: "OUTBOUND" | "INBOUND",
+    eventId: string,
+    sender: string,
+    recipient: string,
+  ) => ({
+    kind,
+    direction,
+    roomId: "!goai-room:agentteams.test",
+    eventId,
+    sender,
+    recipient,
+    originServerTs: direction === "INBOUND" ? 1_786_000_000_000 : null,
+    observedAt: "2026-08-03T02:00:00.000Z",
+    redactedBody: `${kind} redacted body`,
+    bodyDigest: "c".repeat(64),
+  });
   return {
     taskId: `task-${input.stage.toLowerCase()}`,
     stage: input.stage,
@@ -100,8 +148,8 @@ async function createAgentTeamsTaskResult(input: CompetitionAgentTeamsTaskInput)
       roleCardId: member.roleCardId,
       agentName: member.name,
       teamRole: expectedRole,
-      transportSender: `@${expectedRole}:agentteams.test`,
-      eventId: `$${input.stage.toLowerCase()}`,
+      transportSender: taskSender,
+      eventId: taskEventId,
       decision,
       summary: input.stage === "INVESTIGATION_CONCLUSION"
         ? "结".repeat(496)
@@ -113,6 +161,14 @@ async function createAgentTeamsTaskResult(input: CompetitionAgentTeamsTaskInput)
       skillVersion: input.skill.version,
       outputDigest: "b".repeat(64),
     },
+    transportEvents: [
+      ...(expectedRole === "leader" ? [] : [
+        transportEvent("ROUTE_REQUEST", "OUTBOUND", `$route-request-${input.stage}`, "@gateway:agentteams.test", "@leader:agentteams.test"),
+        transportEvent("ROUTE_RESPONSE", "INBOUND", `$route-response-${input.stage}`, "@leader:agentteams.test", "@gateway:agentteams.test"),
+      ]),
+      transportEvent("TASK_REQUEST", "OUTBOUND", `$task-request-${input.stage}`, "@gateway:agentteams.test", taskSender),
+      transportEvent("TASK_RESPONSE", "INBOUND", taskEventId, taskSender, "@gateway:agentteams.test"),
+    ],
     completedAt: "2026-08-03T02:00:00.000Z",
   };
 }
@@ -121,10 +177,14 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
   const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-"));
   try {
     const publications: ApplicationCompetitionRetrospectiveSkillPublicationRequest[] = [];
+    const resolvedMemories: ApplicationCompetitionResolvedMemoryPublicationRequest[] = [];
     const runtime = createRuntime(directory, {
       publishRetrospectiveSkill: async (request) => {
         publications.push(request);
         return { skillId: request.skillId };
+      },
+      persistResolvedIncidentMemory: async (request) => {
+        resolvedMemories.push(request);
       },
     });
     const created = await runtime.createIncident(createIncidentRequest());
@@ -139,6 +199,21 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
     assert.equal(investigated.snapshot.evidence.length, 9);
     assert.equal(investigated.snapshot.invocations.every((item) => item.status === "SUCCEEDED"), true);
     assert.equal(investigated.snapshot.incidents[0]?.status, "AWAITING_APPROVAL");
+    assert.equal(investigated.snapshot.reasoningDecisions.length, 2);
+    assert.deepEqual(investigated.snapshot.reasoningDecisions.map((item) => item.decisionType), [
+      "SKILL_SELECTION",
+      "PLAN_SELECTION",
+    ]);
+    const planSelection = investigated.snapshot.reasoningDecisions[1];
+    assert.equal(planSelection?.candidates.length, 3);
+    assert.equal(planSelection?.selectedCandidateId, "plan:feature-drift-full-recovery-v2");
+    assert.equal(planSelection?.candidates.find((item) => item.strategyId === "direct-write")?.policyDecision, "DENY");
+    const taskGraph = investigated.snapshot.taskGraphs[0];
+    assert.equal(taskGraph?.status, "AWAITING_APPROVAL");
+    assert.equal(taskGraph?.nodes.filter((item) => item.parallelGroup === "parallel-evidence").length, 9);
+    assert.equal(taskGraph?.nodes.find((item) => item.nodeId === "fuse-cross-platform-evidence")?.status, "SUCCEEDED");
+    assert.equal(taskGraph?.nodes.find((item) => item.lane === "EVIDENCE")?.assignedAgentName, "Evidence Agent");
+    assert.equal(taskGraph?.nodes.find((item) => item.lane === "EXECUTION")?.assignedAgentName, "OpenXnet Controlled Executor");
     const approvalId = assertNonNull(investigated.approvalId);
     const traceId = assertNonNull(investigated.snapshot.traces[0]?.traceId ?? null);
     const traceResource = await runtime.readResource({
@@ -220,6 +295,14 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
     assert.equal(verified.snapshot.actions[0]?.status, "SUCCEEDED");
     assert.equal(verified.snapshot.actions[0]?.verificationEvidenceIds.length, 5);
     assert.equal(verified.snapshot.auditReceipts.at(-1)?.outcome, "SUCCEEDED");
+    assert.equal(resolvedMemories.length, 1);
+    assert.equal(resolvedMemories[0]?.incidentId, created.incidentId);
+    assert.equal(resolvedMemories[0]?.traceId, traceId);
+    assert.equal(resolvedMemories[0]?.scenarioType, "feature-drift");
+    assert.equal(resolvedMemories[0]?.verificationEvidenceIds.length, 5);
+    assert.equal(resolvedMemories[0]?.evidenceIds.length, 30);
+    assert.equal(await runtime.reconcileResolvedMemories(), 1);
+    assert.equal(resolvedMemories.length, 2);
 
     const resource = await runtime.readResource({
       uri: `openxnet://workspaces/ws_goai_demo/actions/${actionId}`,
@@ -235,6 +318,25 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
     assert.match(markdown, /dataops\.feature\.backfill\.start/u);
     assert.match(markdown, /mlops\.deployment\.promote/u);
     assert.equal(retrospective.retrospectiveSkillId, "synapxnet-feature-drift-recovery");
+    assert.equal(retrospective.snapshot.taskGraphs[0]?.status, "SUCCEEDED");
+    assert.equal(retrospective.snapshot.taskGraphs[0]?.nodes.find((item) => item.nodeId === "crystallize-retrospective-skill")?.status, "SUCCEEDED");
+    const builtinEvolution = retrospective.snapshot.skillEvolutionRuns[0];
+    assert.equal(builtinEvolution?.status, "CANDIDATE");
+    assert.deepEqual(builtinEvolution?.rounds.map((round) => round.stage), [
+      "PROBLEM_REPRODUCTION",
+      "STRATEGY_COMPARISON",
+      "PROGRESSIVE_CHALLENGE",
+      "INDEPENDENT_CERTIFICATION",
+    ]);
+    assert.deepEqual(builtinEvolution?.rounds.map((round) => round.role), [
+      "TESTER",
+      "DEVELOPER",
+      "TESTER",
+      "VERIFIER",
+    ]);
+    assert.equal(builtinEvolution?.rounds.slice(0, 3).every((round) => round.outcome === "PASSED"), true);
+    assert.equal(builtinEvolution?.rounds[3]?.outcome, "FAILED");
+    assert.equal(builtinEvolution?.rounds.every((round) => /^[a-f0-9]{64}$/u.test(round.outputDigest)), true);
     assert.equal(publications[0]?.workspaceId, "ws_goai_demo");
     assert.equal(publications[0]?.sourceEventIds.includes(created.incidentId), true);
 
@@ -261,11 +363,51 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
       "auditReceipts",
       "teamBindings",
       "agentDecisions",
+      "taskGraphs",
+      "reasoningDecisions",
     ] as const) {
       assert.deepEqual(reset[collection], []);
     }
     assert.equal(await readFile(retrospectivePath, "utf8"), markdown);
     assert.equal((await restarted.getSnapshot()).incidents.length, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("competition runtime records Workspace-scoped online graph retrieval in neuro-symbolic Skill selection", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-hybrid-retrieval-"));
+  try {
+    const runtime = createRuntime(directory, {
+      retrieveCompetitionKnowledge: async (workspaceId, query) => {
+        assert.equal(workspaceId, "ws_goai_demo");
+        assert.match(query, /feature-drift|风控/u);
+        return [{
+          subject: "Incident:inc_source_resolved",
+          predicate: "uses_scenario",
+          object: "Scenario:feature-drift",
+          confidence: 0.98,
+        }, {
+          subject: "Incident:inc_source_resolved",
+          predicate: "crystallized_as_skill",
+          object: "Skill:synapxnet-feature-drift-recovery",
+          confidence: 1,
+        }];
+      },
+    });
+    const created = await runtime.createIncident(createIncidentRequest());
+    const investigated = await runtime.runInvestigation({
+      incidentId: created.incidentId,
+      actorId: "incident-commander",
+      teamRuntime: "builtin",
+      teamTemplateId: null,
+    });
+    const selection = investigated.snapshot.reasoningDecisions.find((item) => item.decisionType === "SKILL_SELECTION");
+    assert.equal(selection?.retrievalMode, "ONLINE_HYBRID_RAG_KG");
+    assert.equal(selection?.knowledgeRefs.length, 2);
+    assert.equal(selection?.candidates[0]?.skillId, "synapxnet-feature-drift-recovery");
+    assert.equal(selection?.candidates[0]?.graphScore, 1);
+    assert.equal(selection?.candidates.filter((item) => item.eligible).length, 1);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -278,7 +420,7 @@ test("competition runtime completes recommendation capacity and quantitative ite
       actionTool: "aiops.gpu.capacity.ensure",
       planId: "recommendation-capacity-recovery-v2",
       executionStepCount: 7,
-      verificationEvidenceCount: 4,
+      verificationEvidenceCount: 5,
       targetRevision: 20,
       title: "推荐服务 GPU 推理队列拥塞",
       overrides: {
@@ -292,29 +434,29 @@ test("competition runtime completes recommendation capacity and quantitative ite
         deploymentUid: "deploy_recommendation_prod",
         failingRevision: 6,
         targetRevision: 20,
-        testDatasetRef: "fixture://goai/recommendation-capacity-v1",
+        testDatasetRef: "staging://goai/recommendation-dcn-v1/probe",
       },
     },
     {
       scenarioType: "quantitative-iteration",
       actionTool: "dataops.training.dataset.build",
-      planId: "quantitative-model-iteration-v2",
+      planId: "quantitative-ashare-model-iteration-v3",
       executionStepCount: 7,
       verificationEvidenceCount: 6,
-      targetRevision: 19,
+      targetRevision: 2,
       title: "量化模型归因与受控迭代",
       overrides: {
         alertUid: "alert_quant_ic_degradation",
         serviceUid: "service_quant_signal",
         namespace: "quant-prod",
         workloadName: "quant-signal-inference",
-        reportUid: "report_quant_attribution_close",
-        assetUid: "asset_market_features_eod",
-        workflowInstanceUid: "task_quant_eod_ready",
-        deploymentUid: "deploy_quant_value_prod",
-        failingRevision: 18,
-        targetRevision: 19,
-        testDatasetRef: "fixture://goai/quant-eod-v1",
+        reportUid: "report_quant_a_share_v1",
+        assetUid: "asset_quant_market_daily",
+        workflowInstanceUid: "task_quant_a_share_eod_ready",
+        deploymentUid: "deploy_quant_ashare_research",
+        failingRevision: 1,
+        targetRevision: 2,
+        testDatasetRef: "quant://a-share-factor-demo-v1/test",
       },
     },
   ] as const;
@@ -341,7 +483,7 @@ test("competition runtime completes recommendation capacity and quantitative ite
         assert.equal(metrics?.data.batchQueueSize, 1000);
       } else {
         const attribution = investigated.snapshot.evidence.find((entry) => entry.toolName === "mlops.attribution.report.get");
-        assert.equal(attribution?.data.informationCoefficient, 0.01);
+        assert.equal(attribution?.data.informationCoefficient, -0.00993273);
       }
       await runtime.decideApproval({
         approvalId,
@@ -371,10 +513,13 @@ test("competition runtime completes recommendation capacity and quantitative ite
       assert.equal(verified.snapshot.auditReceipts.at(-1)?.outcome, "SUCCEEDED");
       if (item.scenarioType === "recommendation-capacity") {
         const metrics = verified.snapshot.evidence.filter((entry) => entry.toolName === "aiops.inference.metrics.get").at(-1);
+        const probe = verified.snapshot.evidence.filter((entry) => entry.toolName === "mlops.inference.probe").at(-1);
         assert.equal(metrics?.data.p99Ms, 80);
+        assert.equal(probe?.data.algorithmId, "dcn_1");
+        assert.equal(probe?.data.candidateCount, 8);
       } else {
         const attribution = verified.snapshot.evidence.filter((entry) => entry.toolName === "mlops.attribution.report.get").at(-1);
-        assert.equal(attribution?.data.informationCoefficient, 0.035);
+        assert.equal(attribution?.data.informationCoefficient, 0.25228567);
       }
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -495,13 +640,15 @@ test("competition runtime synchronizes sanitized knowledge and purges it before 
   const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-knowledge-"));
   const projections: ApplicationCompetitionKnowledgeProjectionRequest[] = [];
   const purges: ApplicationCompetitionKnowledgePurgeRequest[] = [];
+  const conversationPurges: Array<{ readonly incidentIds: readonly string[]; readonly traceIds: readonly string[] }> = [];
   try {
     const runtime = createRuntime(directory, {
       synchronizeKnowledge: async (request) => { projections.push(request); },
       purgeKnowledge: async (request) => { purges.push(request); },
+      purgeEnterpriseTaskConversations: async (request) => { conversationPurges.push(request); },
     });
     const created = await runtime.createIncident(createIncidentRequest());
-    await runtime.runInvestigation({
+    const investigated = await runtime.runInvestigation({
       incidentId: created.incidentId,
       actorId: "incident-commander",
       teamRuntime: "builtin",
@@ -520,6 +667,10 @@ test("competition runtime synchronizes sanitized knowledge and purges it before 
     assert.deepEqual(purges, [{
       schema: "openxnet.competition-knowledge.v1",
       projections: [{ workspaceId: "ws_goai_demo", incidentId: created.incidentId }],
+    }]);
+    assert.deepEqual(conversationPurges, [{
+      incidentIds: [created.incidentId],
+      traceIds: [assertNonNull(investigated.traceId)],
     }]);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -632,10 +783,14 @@ test("competition runtime fails the action when independent verification does no
   const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-verification-failed-"));
   try {
     const adapter = new FixtureCompetitionToolAdapter();
+    const resolvedMemories: ApplicationCompetitionResolvedMemoryPublicationRequest[] = [];
     const runtime = new ApplicationCompetitionRuntimeService({
       userDataDirectory: directory,
       fixtureAdapter: adapter,
       liveAdapter: adapter,
+      persistResolvedIncidentMemory: async (request) => {
+        resolvedMemories.push(request);
+      },
     });
     const request = createIncidentRequest();
     request.scenario.testDatasetRef = "fixture://goai/verification-failure-v1";
@@ -673,6 +828,13 @@ test("competition runtime fails the action when independent verification does no
     assert.equal(failed.actions[0]?.compensationSteps.length, 2);
     assert.equal(failed.actions[0]?.compensationSteps.every((step) => step.status === "SUCCEEDED"), true);
     assert.equal(failed.evidence.length, 25);
+    assert.equal(resolvedMemories.length, 0);
+    const exported = await runtime.exportEvaluation({ incidentId: created.incidentId });
+    const report = JSON.parse(await readFile(exported.reportPath, "utf8")) as {
+      readonly failurePath: { readonly compensationStatus: string };
+    };
+    assert.equal(exported.outcome, "FAILED");
+    assert.equal(report.failurePath.compensationStatus, "SUCCEEDED");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -828,6 +990,64 @@ test("competition runtime persists immutable enterprise team-template role snaps
         .map((item) => item.teamRole),
       ["worker", "leader", "verifier"],
     );
+    const transportEvents = agentVerified.snapshot.agentDecisions
+      .filter((item) => item.incidentId === enabledIncident.incidentId)
+      .flatMap((item) => item.transportEvents);
+    assert.equal(transportEvents.length, 10);
+    assert.deepEqual(transportEvents.map((item) => item.sequence), Array.from({ length: 10 }, (_item, index) => index + 1));
+    assert.equal(transportEvents[0]?.previousLedgerDigest, "0".repeat(64));
+    assert.equal(transportEvents.every((item) => /^[a-f0-9]{64}$/u.test(item.ledgerDigest)), true);
+    assert.equal(transportEvents.slice(1).every((item, index) => (
+      item.previousLedgerDigest === transportEvents[index]?.ledgerDigest
+    )), true);
+    const completedGraph = agentVerified.snapshot.taskGraphs.find((item) => item.incidentId === enabledIncident.incidentId);
+    assert.equal(completedGraph?.events.some((item) => item.eventType === "TASK_ASSIGNED"), true);
+    assert.equal(completedGraph?.events.some((item) => item.eventType === "CHECKPOINT_SAVED"), true);
+    assert.equal(completedGraph?.events.every((item) => /^[a-f0-9]{64}$/u.test(item.checkpointDigest)), true);
+    const crystallized = await enabledRuntime.exportRetrospective({ incidentId: enabledIncident.incidentId });
+    const agentTeamsEvolution = crystallized.snapshot.skillEvolutionRuns.find((item) => (
+      item.incidentId === enabledIncident.incidentId
+    ));
+    assert.equal(agentTeamsEvolution?.status, "READY_FOR_CERTIFICATION");
+    assert.equal(agentTeamsEvolution?.rounds.length, 4);
+    assert.equal(agentTeamsEvolution?.rounds.every((round) => round.outcome === "PASSED"), true);
+    assert.equal(agentTeamsEvolution?.rejectedStrategyIds.length, 2);
+    const agentTeamsEvaluation = await enabledRuntime.exportEvaluation({ incidentId: enabledIncident.incidentId });
+    const agentTeamsReport = JSON.parse(await readFile(agentTeamsEvaluation.reportPath, "utf8")) as {
+      readonly orchestration: {
+        readonly taskGraph: { readonly checkpointCount: number; readonly coordinationEventCount: number } | null;
+      };
+      readonly skillEngineering: { readonly status: string; readonly roundCount: number } | null;
+      readonly requirementCoverage: {
+        readonly coordinationCheckpoints: boolean;
+        readonly skillEvolutionTrail: boolean;
+      };
+    };
+    const agentTeamsTelemetry = JSON.parse(await readFile(agentTeamsEvaluation.telemetryPath, "utf8")) as {
+      readonly resourceSpans: readonly {
+        readonly scopeSpans: readonly { readonly spans: readonly { readonly name: string }[] }[];
+      }[];
+      readonly resourceMetrics: readonly {
+        readonly scopeMetrics: readonly { readonly metrics: readonly { readonly name: string }[] }[];
+      }[];
+    };
+    const telemetrySpanNames = agentTeamsTelemetry.resourceSpans[0]?.scopeSpans[0]?.spans.map((item) => item.name) ?? [];
+    const telemetryMetricNames = agentTeamsTelemetry.resourceMetrics[0]?.scopeMetrics[0]?.metrics.map((item) => item.name) ?? [];
+    assert.equal(agentTeamsReport.orchestration.taskGraph?.checkpointCount && agentTeamsReport.orchestration.taskGraph.checkpointCount > 0, true);
+    assert.equal(agentTeamsReport.orchestration.taskGraph?.coordinationEventCount && agentTeamsReport.orchestration.taskGraph.coordinationEventCount > 0, true);
+    assert.equal(agentTeamsReport.skillEngineering?.status, "READY_FOR_CERTIFICATION");
+    assert.equal(agentTeamsReport.skillEngineering?.roundCount, 4);
+    assert.equal(agentTeamsReport.requirementCoverage.coordinationCheckpoints, true);
+    assert.equal(agentTeamsReport.requirementCoverage.skillEvolutionTrail, true);
+    assert.equal(telemetrySpanNames.some((name) => name.startsWith("openxnet.coordination.")), true);
+    assert.equal(telemetrySpanNames.some((name) => name.startsWith("openxnet.skill_evolution.")), true);
+    assert.equal(telemetryMetricNames.includes("openxnet.coordination.events"), true);
+    assert.equal(telemetryMetricNames.includes("openxnet.skill_evolution.rounds"), true);
+    const eventLedgerLines = (await readFile(agentTeamsEvaluation.agentTeamsEventsPath, "utf8")).trim().split("\n");
+    const eventManifest = JSON.parse(eventLedgerLines[0] ?? "{}") as { eventCount?: number; finalLedgerDigest?: string };
+    assert.equal(eventManifest.eventCount, 10);
+    assert.equal(eventManifest.finalLedgerDigest, transportEvents.at(-1)?.ledgerDigest);
+    assert.equal(eventLedgerLines.length, 11);
     assert.equal(agentVerified.snapshot.invocations
       .filter((item) => item.incidentId === enabledIncident.incidentId && item.toolName !== "mlops.deployment.rollback")
       .slice(-3)
@@ -842,6 +1062,126 @@ test("competition runtime persists immutable enterprise team-template role snaps
       ...Array.from({ length: 9 }, () => "ACTION_STEP_SUCCEEDED"),
       "VERIFICATION_SUCCEEDED",
     ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("competition runtime resumes a failed Trace and reassigns the failed evidence node to another Worker", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-reassignment-"));
+  try {
+    const identifiers = ["role-leader", "role-worker-one", "role-worker-two", "role-verifier", "template-reassignment"];
+    const enterprise = new ApplicationEnterpriseRuntimeService({
+      userDataDirectory: directory,
+      createId: () => identifiers.shift() ?? "enterprise-id",
+      now: () => new Date("2026-08-03T02:00:00.000Z"),
+    });
+    const leader = (await enterprise.saveRoleCard({
+      mode: "create",
+      roleCard: { name: "事件负责人", department: "SRE", skills: ["orchestrate"] },
+    })).card;
+    const workerOne = (await enterprise.saveRoleCard({
+      mode: "create",
+      roleCard: { name: "数据取证员甲", department: "Data", tools: ["dataops.quality.report.get"] },
+    })).card;
+    const workerTwo = (await enterprise.saveRoleCard({
+      mode: "create",
+      roleCard: { name: "数据取证员乙", department: "Data", tools: ["dataops.quality.report.get"] },
+    })).card;
+    const verifier = (await enterprise.saveRoleCard({
+      mode: "create",
+      roleCard: { name: "独立验证员", department: "QA", permissions: ["verify"] },
+    })).card;
+    const template = (await enterprise.saveTeamTemplate({
+      mode: "create",
+      teamTemplate: {
+        name: "GOAI 异常恢复组",
+        workspaceId: "ws_goai_demo",
+        members: [
+          { roleCardId: leader.id, teamRole: "leader" },
+          { roleCardId: workerOne.id, teamRole: "worker" },
+          { roleCardId: workerTwo.id, teamRole: "worker" },
+          { roleCardId: verifier.id, teamRole: "verifier" },
+        ],
+      },
+    })).teamTemplate;
+    const fixture = new FixtureCompetitionToolAdapter({
+      now: () => new Date("2026-08-03T02:00:00.000Z"),
+    });
+    let failFirstQualityRead = true;
+    const flakyAdapter: CompetitionToolAdapter = {
+      /** 首次质量报告读取返回可重试超时；其余请求转发到确定性 Fixture。 */
+      invoke: async (request) => {
+        const response = await fixture.invoke(request);
+        if (failFirstQualityRead && request.toolName === "dataops.quality.report.get" && request.governance === null) {
+          failFirstQualityRead = false;
+          return {
+            ...response,
+            success: false,
+            data: null,
+            error: {
+              code: "UPSTREAM_UNAVAILABLE",
+              message: "测试注入的 Worker 超时。",
+              retryable: true,
+              details: {},
+            },
+            meta: { ...response.meta, summary: "测试注入的 Worker 超时。" },
+          };
+        }
+        return response;
+      },
+      /** 清理测试 Adapter 的 Fixture 状态；无输入，无返回。 */
+      resetDemoState: () => fixture.resetDemoState(),
+    };
+    let sequence = 0;
+    const runtime = new ApplicationCompetitionRuntimeService({
+      userDataDirectory: directory,
+      fixtureAdapter: flakyAdapter,
+      liveAdapter: flakyAdapter,
+      createId: () => `reassign${++sequence}`,
+      now: () => new Date("2026-08-03T02:00:00.000Z"),
+      resolveTeamTemplate: (teamTemplateId) => enterprise.resolveTeamTemplate(teamTemplateId),
+      agentTeamsIsolatedServiceEnabled: true,
+      prepareAgentTeam: async () => ({ teamName: "goai-reassignment-ready", status: "READY" }),
+      dispatchAgentTeamTask: createAgentTeamsTaskResult,
+    });
+    const created = await runtime.createIncident(createIncidentRequest());
+    await assert.rejects(runtime.runInvestigation({
+      incidentId: created.incidentId,
+      actorId: "incident-commander",
+      teamRuntime: "agentteams",
+      teamTemplateId: template.id,
+    }), (error: unknown) => hasRuntimeCode(error, "UPSTREAM_UNAVAILABLE"));
+    const failedSnapshot = await runtime.getSnapshot();
+    const failedGraph = failedSnapshot.taskGraphs[0];
+    const failedNode = failedGraph?.nodes.find((item) => item.toolName === "dataops.quality.report.get");
+    assert.equal(failedGraph?.status, "FAILED");
+    assert.equal(failedNode?.status, "FAILED");
+    assert.equal(failedNode?.assignedRoleCardId, workerOne.id);
+    assert.equal(failedGraph?.events.some((item) => item.eventType === "WORKER_TIMEOUT"), true);
+
+    const resumed = await runtime.runInvestigation({
+      incidentId: created.incidentId,
+      actorId: "incident-commander",
+      teamRuntime: "agentteams",
+      teamTemplateId: template.id,
+    });
+    const resumedGraph = resumed.snapshot.taskGraphs.at(-1);
+    const resumedNode = resumedGraph?.nodes.find((item) => item.toolName === "dataops.quality.report.get");
+    const reassignment = resumedGraph?.events.find((item) => (
+      item.eventType === "TASK_REASSIGNED" && item.nodeId === resumedNode?.nodeId
+    ));
+    assert.equal(resumedGraph?.revision, 2);
+    assert.equal(resumedGraph?.events.some((item) => item.eventType === "TRACE_RESUMED"), true);
+    assert.equal(resumedNode?.assignedRoleCardId, workerTwo.id);
+    assert.equal(resumedNode?.assignmentMode, "REASSIGNMENT");
+    assert.equal(reassignment?.fromRoleCardId, workerOne.id);
+    assert.equal(reassignment?.toRoleCardId, workerTwo.id);
+    assert.equal(reassignment === undefined ? false : /^[a-f0-9]{64}$/u.test(reassignment.checkpointDigest), true);
+    const reassignedInvocation = resumed.snapshot.invocations.find((item) => (
+      item.traceId === resumedGraph?.traceId && item.toolName === "dataops.quality.report.get"
+    ));
+    assert.equal(reassignedInvocation?.actorId, `agentteams:${workerTwo.id}`);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -866,6 +1206,225 @@ test("competition store migrates legacy team bindings without template fields", 
   assert.equal(migrated.teamBindings[0]?.traceId, "");
   assert.deepEqual(migrated.teamBindings[0]?.memberSnapshots, []);
   assert.deepEqual(migrated.agentDecisions, []);
+});
+
+test("enterprise group chat starts all fixed Demos with project-scoped traceability", async () => {
+  const cases = [
+    {
+      scenarioType: "recommendation-capacity",
+      title: "推荐服务 GPU 推理队列拥塞",
+      severity: "P0",
+      deploymentUid: "deploy_recommendation_prod",
+    },
+    {
+      scenarioType: "quantitative-iteration",
+      title: "量化模型归因与受控迭代",
+      severity: "P1",
+      deploymentUid: "deploy_quant_ashare_research",
+    },
+    {
+      scenarioType: "feature-drift",
+      title: "风控模型输入契约漂移",
+      severity: "P1",
+      deploymentUid: "deploy_risk_prod",
+    },
+  ] as const;
+  for (const item of cases) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-enterprise-task-"));
+    try {
+      const fixture = new FixtureCompetitionToolAdapter({
+        now: () => new Date("2026-08-03T02:00:00.000Z"),
+      });
+      const conversations: ApplicationCompetitionEnterpriseTaskConversationInput[] = [];
+      let sequence = 0;
+      const runtime = new ApplicationCompetitionRuntimeService({
+        userDataDirectory: directory,
+        fixtureAdapter: fixture,
+        liveAdapter: fixture,
+        now: () => new Date("2026-08-03T02:00:00.000Z"),
+        createId: () => `enterprise${++sequence}`,
+        recordEnterpriseTaskConversation: async (input) => {
+          conversations.push(input);
+        },
+      });
+      const content = `请执行${item.title}任务，并给出可审批、可回滚的恢复方案。`;
+      const result = await runtime.startEnterpriseTask({
+        workspaceId: "ws_goai_demo",
+        projectId: "project_risk_control",
+        recipientIds: ["role_leader", "role_worker", "role_verifier"],
+        content,
+        scenarioType: item.scenarioType,
+        teamRuntime: "builtin",
+        teamTemplateId: null,
+      }, "trusted:investigator");
+      const incident = result.snapshot.incidents.find((entry) => entry.incidentId === result.incidentId);
+      assert.equal(incident?.projectId, "project_risk_control");
+      assert.equal(incident?.createdBy, "trusted:investigator");
+      assert.equal(incident?.title, item.title);
+      assert.equal(incident?.severity, item.severity);
+      assert.equal(incident?.scenario.scenarioType, item.scenarioType);
+      assert.equal(incident?.scenario.deploymentUid, item.deploymentUid);
+      assert.equal(result.snapshot.approvals.at(-1)?.status, "PENDING");
+      assert.deepEqual(conversations, [{
+        workspaceId: "ws_goai_demo",
+        projectId: "project_risk_control",
+        taskId: result.incidentId,
+        recipientIds: ["role_leader", "role_worker", "role_verifier"],
+        content,
+      }]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("one human approval can complete execution, independent verification and Skill crystallization", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-automatic-approval-"));
+  try {
+    const publications: ApplicationCompetitionRetrospectiveSkillPublicationRequest[] = [];
+    const runtime = createRuntime(directory, {
+      publishRetrospectiveSkill: async (request) => {
+        publications.push(request);
+        return { skillId: request.skillId };
+      },
+    });
+    const created = await runtime.createIncident(createIncidentRequest());
+    const investigated = await runtime.runInvestigation({
+      incidentId: created.incidentId,
+      actorId: "incident-commander",
+      teamRuntime: "builtin",
+    });
+    const approvalId = assertNonNull(investigated.approvalId);
+    await assert.rejects(
+      runtime.decideApproval({
+        approvalId,
+        decision: "APPROVED",
+        actorId: "human-approver",
+        reason: "证据和补偿计划完整，批准自动闭环。",
+        executionMode: "automatic",
+      }),
+      (error: unknown) => hasRuntimeCode(error, "AUTOMATION_ACTORS_UNAVAILABLE"),
+    );
+    assert.equal((await runtime.getSnapshot()).approvals.at(-1)?.status, "PENDING");
+    const completed = await runtime.decideApproval({
+      approvalId,
+      decision: "APPROVED",
+      actorId: "human-approver",
+      reason: "证据和补偿计划完整，批准自动闭环。",
+      executionMode: "automatic",
+    }, {
+      operatorId: "trusted:operator",
+      verifierId: "trusted:verifier",
+    });
+    const incident = completed.snapshot.incidents.find((item) => item.incidentId === created.incidentId);
+    const action = completed.snapshot.actions.find((item) => item.incidentId === created.incidentId);
+    assert.equal(incident?.status, "RESOLVED");
+    assert.equal(action?.status, "SUCCEEDED");
+    assert.equal(action?.executedBy, "trusted:operator");
+    assert.equal(completed.retrospectiveSkillId, "synapxnet-feature-drift-recovery");
+    assert.equal(publications.length, 1);
+    const evaluation = await runtime.exportEvaluation({ incidentId: created.incidentId });
+    const report = JSON.parse(await readFile(evaluation.reportPath, "utf8")) as {
+      readonly schema: string;
+      readonly requirementCoverage: { readonly independentVerification: boolean };
+    };
+    const telemetry = JSON.parse(await readFile(evaluation.telemetryPath, "utf8")) as {
+      readonly schema: string;
+      readonly resourceSpans: readonly unknown[];
+      readonly resourceMetrics: readonly unknown[];
+    };
+    assert.equal(report.schema, "openxnet.competition-evaluation.v1");
+    assert.equal(report.requirementCoverage.independentVerification, true);
+    assert.equal(telemetry.schema, "openxnet.otlp-evidence.v1");
+    assert.equal(telemetry.resourceSpans.length, 1);
+    assert.equal(telemetry.resourceMetrics.length, 1);
+    await runtime.exportEvaluation({ incidentId: created.incidentId });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("enabled enterprise Skill produces traceable second-use evidence", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-skill-reuse-"));
+  try {
+    const runtime = createRuntime(directory, {
+      resolveEnabledEnterpriseSkill: async (workspaceId, skillId) => {
+        assert.equal(workspaceId, "ws_goai_demo");
+        assert.equal(skillId, "synapxnet-feature-drift-recovery");
+        return {
+          sourceIncidentId: "inc_source_resolved",
+          lifecycleStatus: "verified",
+          environmentScope: "simulation",
+          productionEligible: false,
+        };
+      },
+    });
+    const created = await runtime.createIncident(createIncidentRequest());
+    const investigated = await runtime.runInvestigation({
+      incidentId: created.incidentId,
+      actorId: "incident-commander",
+      teamRuntime: "builtin",
+    });
+    const usage = investigated.snapshot.skillUsages.find((item) => item.incidentId === created.incidentId);
+    assert.equal(usage?.status, "REUSED");
+    assert.equal(usage?.sourceIncidentId, "inc_source_resolved");
+    assert.equal(usage?.problemFingerprint, "feature-drift:service_risk_inference");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("live mode rejects a simulation-only enterprise Skill", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-skill-live-scope-"));
+  try {
+    const runtime = createRuntime(directory, {
+      resolveEnabledEnterpriseSkill: async () => ({
+        sourceIncidentId: "inc_simulation_source",
+        lifecycleStatus: "verified",
+        environmentScope: "simulation",
+        productionEligible: false,
+      }),
+    });
+    await runtime.setAdapterMode({ mode: "live" });
+    const created = await runtime.createIncident(createIncidentRequest());
+    const investigated = await runtime.runInvestigation({
+      incidentId: created.incidentId,
+      actorId: "incident-commander",
+      teamRuntime: "builtin",
+    });
+    const usage = investigated.snapshot.skillUsages.find((item) => item.incidentId === created.incidentId);
+    assert.equal(usage?.status, "BASELINE");
+    assert.equal(usage?.sourceIncidentId, null);
+    assert.match(usage?.matchReason ?? "", /环境认证不覆盖/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("live mode reuses a verified staging enterprise Skill", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-skill-live-reuse-"));
+  try {
+    const runtime = createRuntime(directory, {
+      resolveEnabledEnterpriseSkill: async () => ({
+        sourceIncidentId: "inc_staging_source",
+        lifecycleStatus: "verified",
+        environmentScope: "staging",
+        productionEligible: false,
+      }),
+    });
+    await runtime.setAdapterMode({ mode: "live" });
+    const created = await runtime.createIncident(createIncidentRequest());
+    const investigated = await runtime.runInvestigation({
+      incidentId: created.incidentId,
+      actorId: "incident-commander",
+      teamRuntime: "builtin",
+    });
+    const usage = investigated.snapshot.skillUsages.find((item) => item.incidentId === created.incidentId);
+    assert.equal(usage?.status, "REUSED");
+    assert.equal(usage?.sourceIncidentId, "inc_staging_source");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 /** 要求可空字符串存在；输入字符串，返回非空值，空值时让测试失败。 */

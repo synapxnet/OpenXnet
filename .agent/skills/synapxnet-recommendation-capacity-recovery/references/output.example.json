@@ -1,0 +1,10 @@
+{
+  "schema": "synapxnet.skill.recommendation-capacity.output.v1",
+  "outcome": "SUCCEEDED",
+  "actionId": "action_recommendation_capacity",
+  "completedStepIds": ["gpu-capacity-ensure", "runtime-emergency-tune", "replica-scale-out", "progressive-traffic", "queue-aware-autoscaling", "capacity-convergence", "runtime-normalize"],
+  "verificationEvidenceIds": ["ev_recovery", "ev_workload_after", "ev_deployment_after", "ev_workflow_after"],
+  "finalResourceVersion": "45",
+  "retrospectiveSkillId": "synapxnet-recommendation-capacity-recovery",
+  "summary": "GPU 推理队列、P99、成功率、就绪副本和弹性策略均通过独立验证。"
+}

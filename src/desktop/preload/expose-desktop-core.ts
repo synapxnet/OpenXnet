@@ -364,6 +364,27 @@ import {
   type UpdateApplicationMemoryRecordRequest,
 } from "../contracts/application-memory-management-runtime";
 import {
+  APPLICATION_SYNAPXNET_MEMORY_CHANNELS,
+  type CreateSynapxnetMemoryRequest,
+  type EditSynapxnetMemoryRequest,
+  type ExportSynapxnetMemoriesRequest,
+  type ImportSynapxnetMemoriesRequest,
+  type ListSynapxnetMemoriesRequest,
+  type RecoverSynapxnetMemoriesRequest,
+  type RollbackSynapxnetMemoryRequest,
+  type RetireSynapxnetMemoryRequest,
+  type SynapxnetMemoryHistoryResult,
+  type SynapxnetMemoryIdentityRequest,
+  type SynapxnetMemoryImportResult,
+  type SynapxnetMemoryIntegrityResult,
+  type SynapxnetMemoryListResult,
+  type SynapxnetMemoryRecord,
+  type SynapxnetMemoryRecoveryResult,
+  type SynapxnetMemoryStatusResult,
+  type SynapxnetMemoryTransferDocument,
+  type VerifySynapxnetMemoryRequest,
+} from "../contracts/application-synapxnet-memory-runtime";
+import {
   LEGACY_RENDERER_STATE_CHANNELS,
   type LegacyRendererStateChangedEvent,
   type LegacyRendererStateChangedListener,
@@ -2065,6 +2086,66 @@ export function exposeDesktopCore(options: ExposeDesktopCoreOptions): void {
     );
   }
 
+  /** 恢复可信的 V3 记忆；输入目标 Agent，返回来源、数量与完整性状态。 */
+  function recoverSynapxnetMemories(
+    request: RecoverSynapxnetMemoriesRequest,
+  ): Promise<SynapxnetMemoryRecoveryResult> {
+    return ipcRenderer.invoke<SynapxnetMemoryRecoveryResult>(
+      APPLICATION_SYNAPXNET_MEMORY_CHANNELS.recover,
+      request,
+    );
+  }
+
+  /** 读取 V3 分层、共享和审计总览；无输入，返回不含正文的状态。 */
+  function getSynapxnetMemoryStatus(): Promise<SynapxnetMemoryStatusResult> {
+    return ipcRenderer.invoke<SynapxnetMemoryStatusResult>(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.status);
+  }
+
+  /** 查询可访问的 V3 记忆；输入过滤条件，返回记忆列表。 */
+  function listSynapxnetMemories(request: ListSynapxnetMemoriesRequest): Promise<SynapxnetMemoryListResult> {
+    return ipcRenderer.invoke<SynapxnetMemoryListResult>(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.list, request);
+  }
+
+  /** 查询单条 V3 记忆的版本历史；输入记忆和请求者身份，返回版本链。 */
+  function getSynapxnetMemoryHistory(request: SynapxnetMemoryIdentityRequest): Promise<SynapxnetMemoryHistoryResult> {
+    return ipcRenderer.invoke<SynapxnetMemoryHistoryResult>(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.history, request);
+  }
+
+  /** 创建一条 V3 长期记忆；输入内容和权限，返回已提交记录。 */
+  function createSynapxnetMemory(request: CreateSynapxnetMemoryRequest): Promise<SynapxnetMemoryRecord> {
+    return ipcRenderer.invoke<SynapxnetMemoryRecord>(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.create, request);
+  }
+
+  /** 编辑一条 V3 记忆；输入基础版本和新内容，返回新版本记录。 */
+  function editSynapxnetMemory(request: EditSynapxnetMemoryRequest): Promise<SynapxnetMemoryRecord> {
+    return ipcRenderer.invoke<SynapxnetMemoryRecord>(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.edit, request);
+  }
+
+  /** 回滚一条 V3 记忆；输入目标版本和原因，返回回滚后记录。 */
+  function rollbackSynapxnetMemory(request: RollbackSynapxnetMemoryRequest): Promise<SynapxnetMemoryRecord> {
+    return ipcRenderer.invoke<SynapxnetMemoryRecord>(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.rollback, request);
+  }
+
+  /** 退役一条 V3 记忆；输入记忆和操作者身份，返回退役记录。 */
+  function retireSynapxnetMemory(request: RetireSynapxnetMemoryRequest): Promise<SynapxnetMemoryRecord> {
+    return ipcRenderer.invoke<SynapxnetMemoryRecord>(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.retire, request);
+  }
+
+  /** 导出可迁移的 V3 记忆文档；输入记忆摘要列表，返回完整性受保护的文档。 */
+  function exportSynapxnetMemories(request: ExportSynapxnetMemoriesRequest): Promise<SynapxnetMemoryTransferDocument> {
+    return ipcRenderer.invoke<SynapxnetMemoryTransferDocument>(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.export, request);
+  }
+
+  /** 导入 V3 记忆文档；输入目标所有者和文档，返回导入结果。 */
+  function importSynapxnetMemories(request: ImportSynapxnetMemoriesRequest): Promise<SynapxnetMemoryImportResult> {
+    return ipcRenderer.invoke<SynapxnetMemoryImportResult>(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.import, request);
+  }
+
+  /** 校验 V3 记忆和审计链完整性；输入范围，返回健康结果。 */
+  function verifySynapxnetMemory(request: VerifySynapxnetMemoryRequest): Promise<SynapxnetMemoryIntegrityResult> {
+    return ipcRenderer.invoke<SynapxnetMemoryIntegrityResult>(APPLICATION_SYNAPXNET_MEMORY_CHANNELS.verify, request);
+  }
+
   /** Retrieve legacy Renderer state without starting the Python backend. */
   function getLegacyRendererState(): Promise<LegacyRendererStateSnapshot> {
     return ipcRenderer.invoke<LegacyRendererStateSnapshot>(LEGACY_RENDERER_STATE_CHANNELS.getSnapshot);
@@ -2401,6 +2482,17 @@ export function exposeDesktopCore(options: ExposeDesktopCoreOptions): void {
     updateApplicationMemoryRecord,
     deleteApplicationMemoryRecord,
     removeApplicationMemoryCollection,
+    recoverSynapxnetMemories,
+    getSynapxnetMemoryStatus,
+    listSynapxnetMemories,
+    getSynapxnetMemoryHistory,
+    createSynapxnetMemory,
+    editSynapxnetMemory,
+    rollbackSynapxnetMemory,
+    retireSynapxnetMemory,
+    exportSynapxnetMemories,
+    importSynapxnetMemories,
+    verifySynapxnetMemory,
     getLegacyRendererState,
     saveLegacyRendererSettings,
     saveLegacyRendererConversations,

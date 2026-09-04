@@ -14,14 +14,15 @@ class WorkerProtocolTests(unittest.TestCase):
     """Validate encoding, decoding, and protocol version behavior."""
 
     def test_round_trip_preserves_utf8_payload(self) -> None:
-        """Serialize non-ASCII payload text without escaping away UTF-8 content."""
+        """使用代码页无关的 ASCII JSON 传输并还原完整中文内容。"""
 
         request = WorkerEnvelope.request("voice", "synthesize", {"text": "你好，OpenXnet"})
 
         encoded = request.to_json_line()
         decoded = WorkerEnvelope.from_json_line(encoded)
 
-        self.assertIn("你好，OpenXnet", encoded)
+        self.assertTrue(encoded.isascii())
+        self.assertNotIn("你好，OpenXnet", encoded)
         self.assertEqual(decoded, request)
 
     def test_rejects_unknown_protocol_version(self) -> None:

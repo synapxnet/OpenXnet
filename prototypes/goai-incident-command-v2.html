@@ -1,0 +1,1302 @@
+<!doctype html>
+<!-- 设计输入由 gateway.synapxnet.cloud 的 kimi-k3（响应模型标识 k3）生成，工程约束由 OpenXnet 现有契约校正。 -->
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenXnet GOAI 事件指挥</title>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --surface-subtle: #f8fafb;
+      --surface-active: #edf7f7;
+      --text: #172126;
+      --text-secondary: #4f5d64;
+      --text-muted: #68757c;
+      --border: #d9e0e3;
+      --border-strong: #bfc9ce;
+      --accent: #087f83;
+      --accent-strong: #06676b;
+      --accent-soft: #dff2f1;
+      --success: #157347;
+      --success-soft: #e4f4eb;
+      --warning: #925f00;
+      --warning-soft: #fff2cc;
+      --danger: #bd3131;
+      --danger-soft: #fde8e7;
+      --info: #2267a5;
+      --info-soft: #e7f0fa;
+      --focus: 0 0 0 3px rgba(8, 127, 131, 0.24);
+      --radius: 4px;
+      --rail-width: 64px;
+      --font-sans: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #101619;
+      --surface: #182125;
+      --surface-subtle: #1d282d;
+      --surface-active: #183336;
+      --text: #eef3f4;
+      --text-secondary: #bdc8cc;
+      --text-muted: #8e9da3;
+      --border: #314047;
+      --border-strong: #475960;
+      --accent: #48bfc1;
+      --accent-strong: #70d2d3;
+      --accent-soft: #17383a;
+      --success: #64c68f;
+      --success-soft: #173b2a;
+      --warning: #e5b64c;
+      --warning-soft: #3a3018;
+      --danger: #ef7772;
+      --danger-soft: #432322;
+      --info: #73aee1;
+      --info-soft: #1d344a;
+      --focus: 0 0 0 3px rgba(72, 191, 193, 0.26);
+    }
+
+    * {
+      box-sizing: border-box;
+      letter-spacing: 0;
+    }
+
+    html {
+      min-width: 1120px;
+      background: var(--bg);
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      color: inherit;
+    }
+
+    button:focus-visible,
+    [tabindex]:focus-visible {
+      outline: none;
+      box-shadow: var(--focus);
+    }
+
+    .app-shell {
+      display: grid;
+      min-height: 100vh;
+      grid-template-columns: var(--rail-width) minmax(0, 1fr);
+    }
+
+    .app-rail {
+      position: sticky;
+      top: 0;
+      display: flex;
+      height: 100vh;
+      align-items: center;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px 8px;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      z-index: 10;
+    }
+
+    .brand-mark,
+    .rail-button,
+    .icon-button {
+      display: inline-grid;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 0;
+      border-radius: var(--radius);
+      cursor: pointer;
+    }
+
+    .brand-mark {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 10px;
+      color: #ffffff;
+      background: #172126;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    html[data-theme="dark"] .brand-mark {
+      color: #172126;
+      background: #eef3f4;
+    }
+
+    .rail-button,
+    .icon-button {
+      width: 40px;
+      height: 40px;
+      color: var(--text-muted);
+      background: transparent;
+      transition: color 160ms ease, background 160ms ease;
+    }
+
+    .rail-button:hover,
+    .icon-button:hover {
+      color: var(--text);
+      background: var(--surface-subtle);
+    }
+
+    .rail-button.is-active {
+      color: var(--accent-strong);
+      background: var(--accent-soft);
+    }
+
+    .rail-spacer {
+      flex: 1;
+    }
+
+    .workspace {
+      min-width: 0;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      display: flex;
+      min-height: 68px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      backdrop-filter: blur(12px);
+      z-index: 9;
+    }
+
+    .title-block {
+      min-width: 0;
+    }
+
+    .breadcrumbs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 2px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      overflow: hidden;
+      margin-bottom: 0;
+      font-size: 20px;
+      font-weight: 650;
+      line-height: 1.25;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    h3 {
+      margin-bottom: 0;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .topbar-actions,
+    .status-cluster,
+    .inline-actions,
+    .filter-group,
+    .agent-meta,
+    .section-heading,
+    .platform-row {
+      display: flex;
+      align-items: center;
+    }
+
+    .topbar-actions {
+      flex: 0 0 auto;
+      gap: 8px;
+    }
+
+    .segmented {
+      display: inline-grid;
+      height: 36px;
+      grid-auto-flow: column;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-subtle);
+    }
+
+    .segmented button {
+      min-width: 62px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 4px;
+      color: var(--text-muted);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .segmented button.is-active {
+      color: var(--text);
+      background: var(--surface);
+      box-shadow: 0 1px 3px rgba(23, 33, 38, 0.12);
+    }
+
+    .status-bar {
+      display: grid;
+      min-height: 58px;
+      grid-template-columns: minmax(190px, 1.2fr) repeat(3, minmax(128px, 0.7fr)) minmax(210px, 1fr);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .status-cell {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 16px;
+      border-right: 1px solid var(--border);
+    }
+
+    .status-cell:last-child {
+      border-right: 0;
+    }
+
+    .status-icon {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: var(--radius);
+      color: var(--accent-strong);
+      background: var(--accent-soft);
+    }
+
+    .status-copy {
+      min-width: 0;
+    }
+
+    .status-copy span,
+    .label,
+    dt,
+    .eyebrow {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 550;
+      text-transform: uppercase;
+    }
+
+    .status-copy strong {
+      display: block;
+      overflow: hidden;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status-cell:last-child .status-copy strong {
+      display: -webkit-box;
+      line-height: 1.2;
+      white-space: normal;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      flex: 0 0 auto;
+      border: 2px solid currentColor;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .status-cluster {
+      gap: 6px;
+      color: var(--success);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .badge {
+      display: inline-flex;
+      min-height: 24px;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text-secondary);
+      background: var(--surface-subtle);
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .badge.success {
+      border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+      color: var(--success);
+      background: var(--success-soft);
+    }
+
+    .badge.warning {
+      border-color: color-mix(in srgb, var(--warning) 32%, var(--border));
+      color: var(--warning);
+      background: var(--warning-soft);
+    }
+
+    .badge.danger {
+      border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .badge.info {
+      border-color: color-mix(in srgb, var(--info) 32%, var(--border));
+      color: var(--info);
+      background: var(--info-soft);
+    }
+
+    .page-content {
+      display: grid;
+      gap: 16px;
+      padding: 16px 18px 36px;
+    }
+
+    .command-grid {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: 196px minmax(480px, 1fr) 300px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .stage-nav,
+    .decision-pane {
+      min-width: 0;
+      background: var(--surface-subtle);
+    }
+
+    .stage-nav {
+      padding: 16px 12px;
+      border-right: 1px solid var(--border);
+    }
+
+    .stage-list {
+      display: grid;
+      gap: 4px;
+      margin: 12px 0 18px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .stage-button {
+      display: grid;
+      width: 100%;
+      min-height: 42px;
+      grid-template-columns: 28px minmax(0, 1fr) 16px;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      border: 0;
+      border-radius: var(--radius);
+      color: var(--text-secondary);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .stage-button:hover {
+      background: var(--surface);
+    }
+
+    .stage-button.is-active {
+      color: var(--accent-strong);
+      background: var(--accent-soft);
+    }
+
+    .stage-button.is-complete .stage-number {
+      color: var(--success);
+      background: var(--success-soft);
+    }
+
+    .stage-number {
+      display: grid;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--text-muted);
+      background: var(--surface);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .stage-copy strong,
+    .stage-copy span {
+      display: block;
+    }
+
+    .stage-copy strong {
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .stage-copy span {
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    .event-meta {
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    .event-meta dl {
+      display: grid;
+      gap: 10px;
+      margin: 10px 0 0;
+    }
+
+    .event-meta dd {
+      overflow: hidden;
+      margin: 2px 0 0;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .collaboration-pane {
+      min-width: 0;
+      padding: 18px 20px 20px;
+    }
+
+    .section-heading {
+      min-width: 0;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .section-heading p {
+      margin: 4px 0 0;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .incident-summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) repeat(3, 108px);
+      gap: 12px;
+      margin: 16px 0 18px;
+      padding: 14px 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .incident-title {
+      min-width: 0;
+    }
+
+    .incident-title strong {
+      display: block;
+      overflow: hidden;
+      font-size: 14px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .incident-title p {
+      display: -webkit-box;
+      overflow: hidden;
+      margin: 4px 0 0;
+      color: var(--text-secondary);
+      font-size: 12px;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .metric strong,
+    .metric span {
+      display: block;
+    }
+
+    .metric strong {
+      margin-top: 4px;
+      font-family: var(--font-mono);
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    .agent-chain {
+      position: relative;
+      display: grid;
+      gap: 0;
+      margin-top: 12px;
+    }
+
+    .agent-chain::before {
+      position: absolute;
+      top: 27px;
+      bottom: 27px;
+      left: 16px;
+      width: 1px;
+      background: var(--border-strong);
+      content: "";
+    }
+
+    .agent-row {
+      position: relative;
+      display: grid;
+      min-width: 0;
+      grid-template-columns: 34px 138px minmax(0, 1fr) 96px;
+      align-items: center;
+      gap: 12px;
+      min-height: 86px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .agent-row:last-child {
+      border-bottom: 0;
+    }
+
+    .agent-icon {
+      position: relative;
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border: 1px solid var(--border-strong);
+      border-radius: 50%;
+      color: var(--accent-strong);
+      background: var(--surface);
+      z-index: 1;
+    }
+
+    .agent-name strong,
+    .agent-name span {
+      display: block;
+    }
+
+    .agent-name strong {
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .agent-name span {
+      margin-top: 2px;
+      color: var(--text-muted);
+      font-size: 10px;
+      text-transform: uppercase;
+    }
+
+    .agent-output {
+      min-width: 0;
+    }
+
+    .agent-output p {
+      display: -webkit-box;
+      overflow: hidden;
+      margin: 5px 0 0;
+      color: var(--text-secondary);
+      font-size: 12px;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .agent-meta {
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .agent-meta span {
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .agent-result {
+      text-align: right;
+    }
+
+    .agent-result strong {
+      display: block;
+      margin-top: 5px;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .decision-pane {
+      padding: 16px;
+      border-left: 1px solid var(--border);
+    }
+
+    .attention-line {
+      height: 3px;
+      margin: -16px -16px 15px;
+      background: var(--warning);
+    }
+
+    .approval-summary {
+      margin: 14px 0 0;
+      padding: 13px 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .approval-summary strong {
+      display: block;
+      margin: 5px 0;
+      font-size: 13px;
+    }
+
+    .approval-summary p {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    .approval-facts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 12px 0 0;
+    }
+
+    .approval-facts div {
+      min-width: 0;
+    }
+
+    .approval-facts strong {
+      display: block;
+      overflow: hidden;
+      margin-top: 3px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .decision-actions {
+      display: grid;
+      grid-template-columns: 1fr 1.35fr;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .button {
+      display: inline-flex;
+      min-width: 0;
+      height: 38px;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      color: var(--text-secondary);
+      background: var(--surface);
+      font-size: 12px;
+      font-weight: 650;
+      cursor: pointer;
+      transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+    }
+
+    .button:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent-strong);
+    }
+
+    .button.primary {
+      border-color: var(--accent);
+      color: #ffffff;
+      background: var(--accent);
+    }
+
+    .button.primary:hover:not(:disabled) {
+      border-color: var(--accent-strong);
+      color: #ffffff;
+      background: var(--accent-strong);
+    }
+
+    .button.danger {
+      border-color: var(--danger);
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .button:disabled {
+      cursor: not-allowed;
+      opacity: 0.52;
+    }
+
+    .governance-stack {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .governance-item {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 9px;
+      min-height: 46px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .governance-item:last-child {
+      border-bottom: 0;
+    }
+
+    .governance-icon {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      background: var(--surface);
+    }
+
+    .governance-copy strong,
+    .governance-copy span {
+      display: block;
+    }
+
+    .governance-copy strong {
+      font-size: 11px;
+    }
+
+    .governance-copy span {
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    .lower-grid {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.75fr);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .evidence-pane,
+    .knowledge-pane {
+      min-width: 0;
+      padding: 16px 18px 18px;
+    }
+
+    .knowledge-pane {
+      border-left: 1px solid var(--border);
+      background: var(--surface-subtle);
+    }
+
+    .filter-group {
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-subtle);
+    }
+
+    .filter-button {
+      height: 28px;
+      padding: 0 9px;
+      border: 0;
+      border-radius: 4px;
+      color: var(--text-muted);
+      background: transparent;
+      font-size: 10px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .filter-button.is-active {
+      color: var(--text);
+      background: var(--surface);
+      box-shadow: 0 1px 3px rgba(23, 33, 38, 0.1);
+    }
+
+    .evidence-table {
+      width: 100%;
+      min-height: 258px;
+      margin-top: 12px;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .evidence-table th,
+    .evidence-table td {
+      height: 42px;
+      padding: 7px 9px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .evidence-table th {
+      color: var(--text-muted);
+      background: var(--surface-subtle);
+      font-size: 10px;
+      font-weight: 650;
+      text-transform: uppercase;
+    }
+
+    .evidence-table td {
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    .evidence-table th:nth-child(1) { width: 108px; }
+    .evidence-table th:nth-child(2) { width: 110px; }
+    .evidence-table th:nth-child(4) { width: 88px; }
+    .evidence-table th:nth-child(5) { width: 118px; }
+
+    .evidence-table code {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .evidence-row[hidden] {
+      display: none;
+    }
+
+    .knowledge-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .knowledge-item {
+      padding: 11px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .knowledge-item:last-child {
+      border-bottom: 0;
+    }
+
+    .knowledge-item header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .knowledge-item p {
+      margin: 7px 0 0;
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    .rule-expression {
+      display: block;
+      overflow: hidden;
+      margin-top: 7px;
+      padding: 7px 8px;
+      border-left: 2px solid var(--accent);
+      color: var(--text-secondary);
+      background: var(--surface);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .platform-row {
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 9px;
+    }
+
+    .footer-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      padding: 0;
+      border: 0;
+      margin: -1px;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
+
+    [data-lucide] {
+      width: 16px;
+      height: 16px;
+      stroke-width: 1.8;
+    }
+
+    .status-icon [data-lucide],
+    .agent-icon [data-lucide] {
+      width: 15px;
+      height: 15px;
+    }
+
+    @media (max-width: 1240px) {
+      .command-grid {
+        grid-template-columns: 180px minmax(450px, 1fr) 282px;
+      }
+
+      .status-bar {
+        grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(116px, 0.65fr)) minmax(185px, 0.9fr);
+      }
+
+      .incident-summary {
+        grid-template-columns: minmax(0, 1fr) repeat(3, 92px);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="app-rail" aria-label="OpenXnet 主导航">
+      <div class="brand-mark" aria-label="OpenXnet">OX</div>
+      <button class="rail-button" type="button" aria-label="企业空间" title="企业空间"><i data-lucide="building-2"></i></button>
+      <button class="rail-button is-active" type="button" aria-label="事件指挥" title="事件指挥"><i data-lucide="radio-tower"></i></button>
+      <button class="rail-button" type="button" aria-label="知识图谱" title="知识图谱"><i data-lucide="waypoints"></i></button>
+      <button class="rail-button" type="button" aria-label="企业技能" title="企业技能"><i data-lucide="blocks"></i></button>
+      <div class="rail-spacer"></div>
+      <button class="rail-button" type="button" aria-label="设置" title="设置"><i data-lucide="settings-2"></i></button>
+    </nav>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div class="title-block">
+          <div class="breadcrumbs"><span>企业空间</span><i data-lucide="chevron-right"></i><span>事件指挥</span></div>
+          <h1>跨域特征漂移恢复</h1>
+        </div>
+        <div class="topbar-actions">
+          <div class="segmented" role="group" aria-label="运行模式">
+            <button type="button">Fixture</button>
+            <button type="button" class="is-active">Live</button>
+          </div>
+          <button class="icon-button" id="theme-toggle" type="button" aria-label="切换深色主题" title="切换主题"><i data-lucide="moon"></i></button>
+          <button class="icon-button" type="button" aria-label="刷新事件" title="刷新"><i data-lucide="refresh-cw"></i></button>
+          <button class="icon-button" type="button" aria-label="更多操作" title="更多"><i data-lucide="more-horizontal"></i></button>
+        </div>
+      </header>
+
+      <section class="status-bar" aria-label="运行态势">
+        <div class="status-cell">
+          <span class="status-icon"><i data-lucide="radio"></i></span>
+          <div class="status-copy"><span>事件状态</span><strong>待人工审批 · P1</strong></div>
+          <span class="badge warning"><i data-lucide="clock-3"></i>PENDING</span>
+        </div>
+        <div class="status-cell">
+          <span class="dot" style="color: var(--success)"></span>
+          <div class="status-copy"><span>XnetAIOps</span><strong>在线 · 5 证据</strong></div>
+        </div>
+        <div class="status-cell">
+          <span class="dot" style="color: var(--success)"></span>
+          <div class="status-copy"><span>XnetDataOps</span><strong>在线 · 4 证据</strong></div>
+        </div>
+        <div class="status-cell">
+          <span class="dot" style="color: var(--success)"></span>
+          <div class="status-copy"><span>XnetMLOps</span><strong>在线 · 5 证据</strong></div>
+        </div>
+        <div class="status-cell">
+          <span class="status-icon"><i data-lucide="network"></i></span>
+          <div class="status-copy"><span>协同 Runtime</span><strong>AgentTeams · 3/3 就绪</strong></div>
+          <span class="badge success"><i data-lucide="shield-check"></i>可信</span>
+        </div>
+      </section>
+
+      <div class="page-content">
+        <section class="command-grid" aria-label="事件协同工作台">
+          <aside class="stage-nav">
+            <span class="eyebrow">闭环阶段</span>
+            <ol class="stage-list">
+              <li><button class="stage-button is-complete" type="button" data-stage="事件输入"><span class="stage-number"><i data-lucide="check"></i></span><span class="stage-copy"><strong>事件输入</strong><span>14:02:11</span></span><i data-lucide="chevron-right"></i></button></li>
+              <li><button class="stage-button is-complete" type="button" data-stage="跨域取证"><span class="stage-number"><i data-lucide="check"></i></span><span class="stage-copy"><strong>跨域取证</strong><span>14 条证据</span></span><i data-lucide="chevron-right"></i></button></li>
+              <li><button class="stage-button is-active" type="button" data-stage="人工审批"><span class="stage-number">03</span><span class="stage-copy"><strong>人工审批</strong><span>等待决策</span></span><i data-lucide="chevron-right"></i></button></li>
+              <li><button class="stage-button" type="button" data-stage="受控处置"><span class="stage-number">04</span><span class="stage-copy"><strong>受控处置</strong><span>未开始</span></span><i data-lucide="chevron-right"></i></button></li>
+              <li><button class="stage-button" type="button" data-stage="独立验证"><span class="stage-number">05</span><span class="stage-copy"><strong>独立验证</strong><span>未开始</span></span><i data-lucide="chevron-right"></i></button></li>
+              <li><button class="stage-button" type="button" data-stage="经验沉淀"><span class="stage-number">06</span><span class="stage-copy"><strong>经验沉淀</strong><span>未开始</span></span><i data-lucide="chevron-right"></i></button></li>
+            </ol>
+            <div class="event-meta">
+              <span class="eyebrow">事件上下文</span>
+              <dl>
+                <div><dt>Incident</dt><dd>inc_4b718376</dd></div>
+                <div><dt>Trace</dt><dd>trace_08114a72</dd></div>
+                <div><dt>Workspace</dt><dd>ws_goai_demo</dd></div>
+                <div><dt>资源版本</dt><dd>risk-model:v18</dd></div>
+              </dl>
+            </div>
+          </aside>
+
+          <section class="collaboration-pane">
+            <header class="section-heading">
+              <div>
+                <span class="eyebrow">AgentTeams 决策链</span>
+                <h2 id="stage-title">人工审批</h2>
+                <p>上下文、工具结果和中间结论沿同一 Trace 传递</p>
+              </div>
+              <span class="badge info"><i data-lucide="git-branch"></i>Matrix Identity</span>
+            </header>
+
+            <div class="incident-summary">
+              <div class="incident-title">
+                <span class="label">业务异常</span>
+                <strong>优质客户自动审批通过率连续下降</strong>
+                <p>基础设施指标正常，模型高分客户占比由 25% 降至 15%，触发跨域特征漂移调查。</p>
+              </div>
+              <div class="metric"><span class="label">特征 PSI</span><strong style="color: var(--danger)">0.32</strong></div>
+              <div class="metric"><span class="label">就绪副本</span><strong>3 / 3</strong></div>
+              <div class="metric"><span class="label">错误率</span><strong>0.8%</strong></div>
+            </div>
+
+            <div class="agent-chain">
+              <article class="agent-row">
+                <span class="agent-icon"><i data-lucide="search-check"></i></span>
+                <div class="agent-name"><strong>Evidence Agent</strong><span>Worker · 取证</span></div>
+                <div class="agent-output">
+                  <div class="agent-meta"><span>INPUT: 三平台快照</span><span>OUTPUT: 9 条根因证据</span></div>
+                  <p>定位设备指纹特征 PSI=0.32，并沿 DataOps 血缘追踪到 iOS SDK 从 IDFA 切换 VendorID。</p>
+                </div>
+                <div class="agent-result"><span class="badge success"><i data-lucide="check"></i>已完成</span><strong>COLLECT</strong></div>
+              </article>
+
+              <article class="agent-row">
+                <span class="agent-icon"><i data-lucide="workflow"></i></span>
+                <div class="agent-name"><strong>Incident Commander</strong><span>Leader · 编排</span></div>
+                <div class="agent-output">
+                  <div class="agent-meta"><span>INPUT: 根因与资源版本</span><span>OUTPUT: 审批请求</span></div>
+                  <p>生成受控回滚计划：将风险模型从 v42 回滚到 v18，绑定 deployment UID、资源版本和回滚窗口。</p>
+                </div>
+                <div class="agent-result"><span class="badge warning"><i data-lucide="clock-3"></i>待审批</span><strong>REQUEST</strong></div>
+              </article>
+
+              <article class="agent-row">
+                <span class="agent-icon"><i data-lucide="shield-check"></i></span>
+                <div class="agent-name"><strong>Verification Agent</strong><span>Verifier · 独立验证</span></div>
+                <div class="agent-output">
+                  <div class="agent-meta"><span>INPUT: 处置结果</span><span>OUTPUT: 验证报告</span></div>
+                  <p>处置完成后独立检查推理契约、服务健康、K3S 就绪副本与错误率；验证失败将要求停止放量。</p>
+                </div>
+                <div class="agent-result"><span class="badge"><i data-lucide="circle-dashed"></i>等待中</span><strong>VERIFY</strong></div>
+              </article>
+            </div>
+          </section>
+
+          <aside class="decision-pane">
+            <div class="attention-line"></div>
+            <header class="section-heading">
+              <div><span class="eyebrow">人工控制点</span><h2>批准受控回滚</h2></div>
+              <span class="badge warning">PENDING</span>
+            </header>
+            <div class="approval-summary">
+              <span class="label">高风险动作</span>
+              <strong>risk-model:v42 → v18</strong>
+              <p>回滚只作用于绑定部署，不修改数据源，不扩大流量；失败时保持事件开放并停止后续执行。</p>
+              <div class="approval-facts">
+                <div><span class="label">审批 ID</span><strong>apr_728c14</strong></div>
+                <div><span class="label">有效窗口</span><strong>10 MIN</strong></div>
+                <div><span class="label">资源版本</span><strong>rv_42_7ac9</strong></div>
+                <div><span class="label">回滚目标</span><strong>deploy/risk</strong></div>
+              </div>
+            </div>
+            <div class="decision-actions">
+              <button class="button" id="reject-button" type="button"><i data-lucide="x"></i>拒绝</button>
+              <button class="button primary" id="approve-button" type="button"><i data-lucide="check"></i>批准处置</button>
+            </div>
+            <div class="governance-stack">
+              <div class="governance-item"><span class="governance-icon"><i data-lucide="rotate-ccw"></i></span><span class="governance-copy"><strong>回滚契约</strong><span>目标与资源版本已绑定</span></span><span class="badge success">READY</span></div>
+              <div class="governance-item"><span class="governance-icon"><i data-lucide="shield-check"></i></span><span class="governance-copy"><strong>独立验证</strong><span>Verifier 与执行 Agent 隔离</span></span><span class="badge info">QUEUED</span></div>
+              <div class="governance-item"><span class="governance-icon"><i data-lucide="scroll-text"></i></span><span class="governance-copy"><strong>审计回执</strong><span>审批与工具调用不可变记录</span></span><span class="badge">2 RECEIPTS</span></div>
+              <div class="governance-item"><span class="governance-icon"><i data-lucide="blocks"></i></span><span class="governance-copy"><strong>企业 Skill</strong><span>闭环完成后允许沉淀</span></span><button class="button" type="button" disabled>待验证</button></div>
+            </div>
+          </aside>
+        </section>
+
+        <section class="lower-grid" aria-label="证据和知识沉淀">
+          <section class="evidence-pane">
+            <header class="section-heading">
+              <div><span class="eyebrow">执行证据</span><h2>跨平台证据链</h2></div>
+              <div class="filter-group" role="group" aria-label="证据平台筛选">
+                <button class="filter-button is-active" type="button" data-filter="all">全部 14</button>
+                <button class="filter-button" type="button" data-filter="aiops">AIOps 5</button>
+                <button class="filter-button" type="button" data-filter="dataops">DataOps 4</button>
+                <button class="filter-button" type="button" data-filter="mlops">MLOps 5</button>
+              </div>
+            </header>
+            <table class="evidence-table">
+              <thead><tr><th>平台</th><th>证据类型</th><th>关键结论</th><th>可信度</th><th>时间</th></tr></thead>
+              <tbody>
+                <tr class="evidence-row" data-platform="dataops"><td><span class="badge success">DataOps</span></td><td>特征质量</td><td><code>device_fingerprint_frequency</code> PSI 0.32，超过阈值 0.25</td><td>0.98</td><td>14:03:18.241</td></tr>
+                <tr class="evidence-row" data-platform="dataops"><td><span class="badge success">DataOps</span></td><td>数据血缘</td><td>iOS SDK v6.8 将 IDFA 切换为 VendorID，Schema 契约未同步</td><td>0.96</td><td>14:03:22.917</td></tr>
+                <tr class="evidence-row" data-platform="mlops"><td><span class="badge warning">MLOps</span></td><td>模型漂移</td><td>高分客户占比从 25% 降至 15%，推理分布发生稳定偏移</td><td>0.94</td><td>14:03:28.502</td></tr>
+                <tr class="evidence-row" data-platform="aiops"><td><span class="badge info">AIOps</span></td><td>服务健康</td><td>P99、错误率和 GPU 水位正常，排除基础设施故障</td><td>0.99</td><td>14:03:31.106</td></tr>
+                <tr class="evidence-row" data-platform="mlops"><td><span class="badge warning">MLOps</span></td><td>部署修订</td><td>当前 v42 与输入契约不一致；v18 为已验证稳定修订</td><td>0.97</td><td>14:03:36.880</td></tr>
+                <tr class="evidence-row" data-platform="aiops"><td><span class="badge info">AIOps</span></td><td>K3S 状态</td><td>3/3 副本就绪，回滚窗口内可保持服务连续</td><td>0.99</td><td>14:03:40.224</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <aside class="knowledge-pane">
+            <header class="section-heading"><div><span class="eyebrow">可信决策</span><h2>神经符号与知识图谱</h2></div><span class="badge success">已对齐</span></header>
+            <div class="knowledge-list">
+              <article class="knowledge-item">
+                <header><h3>规则命中 · 特征漂移</h3><span class="badge danger">HIGH</span></header>
+                <code class="rule-expression">PSI(feature) &gt; 0.25 ∧ infra_healthy → FEATURE_DRIFT</code>
+                <p>模型分布异常与基础设施健康同时成立，决策从“服务故障”转向“输入契约漂移”。</p>
+              </article>
+              <article class="knowledge-item">
+                <header><h3>图谱路径 · 4 跳</h3><span class="badge info">361 TRIPLES</span></header>
+                <div class="platform-row"><span class="badge success">SDK v6.8</span><i data-lucide="arrow-right"></i><span class="badge success">特征表</span><i data-lucide="arrow-right"></i><span class="badge warning">risk-model:v42</span><i data-lucide="arrow-right"></i><span class="badge info">审批通过率</span></div>
+                <p>17 个事件事实已与比赛知识投影关联，可按 Incident、Trace、Agent 和证据反向追溯。</p>
+              </article>
+              <article class="knowledge-item">
+                <header><h3>经验沉淀 · 企业 Skill</h3><span class="badge">WAITING</span></header>
+                <code class="rule-expression">synapxnet-feature-drift-recovery@1.0.0</code>
+                <p>独立验证通过后写入触发条件、工具依赖、失败处理、安全边界与复用价值。</p>
+              </article>
+            </div>
+          </aside>
+        </section>
+
+        <footer class="footer-line">
+          <span>MCP 2026-07-28 · OpenXnet Control Plane</span>
+          <span id="interaction-status" role="status" aria-live="polite">最后同步 14:03:42 · Trace 完整</span>
+        </footer>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    /** 初始化 Lucide 图标，并在 CDN 不可用时保留按钮的可访问名称。 */
+    function initializeIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    /** 按已保存偏好或系统配色初始化主题，避免页面首次加载时主题不一致。 */
+    function initializeTheme() {
+      const storedTheme = window.localStorage.getItem('openxnet-prototype-theme');
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      const activeTheme = storedTheme === 'dark' || storedTheme === 'light' ? storedTheme : systemTheme;
+      const button = document.getElementById('theme-toggle');
+      document.documentElement.dataset.theme = activeTheme;
+      button.innerHTML = `<i data-lucide="${activeTheme === 'dark' ? 'sun' : 'moon'}"></i>`;
+      button.setAttribute('aria-label', activeTheme === 'dark' ? '切换浅色主题' : '切换深色主题');
+    }
+
+    /** 切换浅色与深色主题，并同步按钮的图标、偏好及可访问名称。 */
+    function toggleTheme() {
+      const root = document.documentElement;
+      const button = document.getElementById('theme-toggle');
+      const nextTheme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = nextTheme;
+      window.localStorage.setItem('openxnet-prototype-theme', nextTheme);
+      button.innerHTML = `<i data-lucide="${nextTheme === 'dark' ? 'sun' : 'moon'}"></i>`;
+      button.setAttribute('aria-label', nextTheme === 'dark' ? '切换浅色主题' : '切换深色主题');
+      initializeIcons();
+    }
+
+    /** 激活用户选择的闭环阶段，并保持主工作区尺寸不发生变化。 */
+    function selectStage(event) {
+      const button = event.currentTarget;
+      document.querySelectorAll('.stage-button').forEach((item) => item.classList.remove('is-active'));
+      button.classList.add('is-active');
+      document.getElementById('stage-title').textContent = button.dataset.stage;
+      document.getElementById('interaction-status').textContent = `已定位到“${button.dataset.stage}”阶段`;
+    }
+
+    /** 按平台筛选证据行，并使用固定表格高度避免页面布局跳动。 */
+    function filterEvidence(event) {
+      const filter = event.currentTarget.dataset.filter;
+      document.querySelectorAll('.filter-button').forEach((item) => item.classList.remove('is-active'));
+      event.currentTarget.classList.add('is-active');
+      document.querySelectorAll('.evidence-row').forEach((row) => {
+        row.hidden = filter !== 'all' && row.dataset.platform !== filter;
+      });
+      document.getElementById('interaction-status').textContent = filter === 'all' ? '显示全部平台证据' : `仅显示 ${filter.toUpperCase()} 证据`;
+    }
+
+    /** 处理人工审批结果，并锁定重复提交入口。 */
+    function decideApproval(decision) {
+      const approved = decision === 'approved';
+      const approveButton = document.getElementById('approve-button');
+      const rejectButton = document.getElementById('reject-button');
+      approveButton.disabled = true;
+      rejectButton.disabled = true;
+      approveButton.innerHTML = approved ? '<i data-lucide="check"></i>已批准' : '<i data-lucide="lock"></i>已关闭';
+      rejectButton.innerHTML = approved ? '<i data-lucide="lock"></i>已关闭' : '<i data-lucide="x"></i>已拒绝';
+      document.getElementById('interaction-status').textContent = approved ? '审批通过，受控处置已进入执行队列' : '审批已拒绝，事件保持开放且未执行处置';
+      initializeIcons();
+    }
+
+    /** 绑定原型交互事件，确保每个控件只注册一次。 */
+    function bindInteractions() {
+      document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+      document.querySelectorAll('.stage-button').forEach((button) => button.addEventListener('click', selectStage));
+      document.querySelectorAll('.filter-button').forEach((button) => button.addEventListener('click', filterEvidence));
+      document.getElementById('approve-button').addEventListener('click', () => decideApproval('approved'));
+      document.getElementById('reject-button').addEventListener('click', () => decideApproval('rejected'));
+    }
+
+    initializeTheme();
+    initializeIcons();
+    bindInteractions();
+  </script>
+</body>
+</html>

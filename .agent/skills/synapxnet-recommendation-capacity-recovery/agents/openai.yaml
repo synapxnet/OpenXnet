@@ -1,0 +1,4 @@
+interface:
+  display_name: "推荐服务 GPU 拥塞自治恢复"
+  short_description: "对 GPU 推理拥塞执行取证、审批、扩容、回滚和独立验证"
+  default_prompt: "Use $synapxnet-recommendation-capacity-recovery to recover a GPU inference congestion incident with governed execution and independent verification."

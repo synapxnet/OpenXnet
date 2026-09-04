@@ -13,6 +13,7 @@ function incident(): ApplicationCompetitionIncident {
   return {
     incidentId: "inc_goai_demo",
     workspaceId: "ws_goai_demo",
+    projectId: null,
     title: "Test",
     summary: "Test incident",
     severity: "P1",
@@ -99,6 +100,36 @@ function agentTeamBinding(sourceIncident: ApplicationCompetitionIncident): Appli
   };
 }
 
+/** 创建严格任务响应使用的 Matrix 事件；输入是否路由和任务身份，返回有序脱敏包络。 */
+function transportEvents(includeRoute: boolean, taskSender: string, taskEventId: string): readonly Record<string, unknown>[] {
+  const event = (
+    kind: string,
+    direction: "OUTBOUND" | "INBOUND",
+    eventId: string,
+    sender: string,
+    recipient: string,
+  ) => ({
+    kind,
+    direction,
+    roomId: "!goai-room:agentteams.test",
+    eventId,
+    sender,
+    recipient,
+    originServerTs: direction === "INBOUND" ? 1_786_000_000_000 : null,
+    observedAt: "2026-08-03T08:01:00.000Z",
+    redactedBody: `${kind} redacted body`,
+    bodyDigest: "c".repeat(64),
+  });
+  return [
+    ...(includeRoute ? [
+      event("ROUTE_REQUEST", "OUTBOUND", "$route-request", "@gateway:agentteams.test", "@leader:agentteams.test"),
+      event("ROUTE_RESPONSE", "INBOUND", "$route-response", "@leader:agentteams.test", "@gateway:agentteams.test"),
+    ] : []),
+    event("TASK_REQUEST", "OUTBOUND", "$task-request", "@gateway:agentteams.test", taskSender),
+    event("TASK_RESPONSE", "INBOUND", taskEventId, taskSender, "@gateway:agentteams.test"),
+  ];
+}
+
 test("HTTP AgentTeams adapter sends a scoped snapshot and accepts only matching READY results", async () => {
   let capturedAuthorization = "";
   let capturedBody: Record<string, unknown> = {};
@@ -128,6 +159,60 @@ test("HTTP AgentTeams adapter sends a scoped snapshot and accepts only matching 
   assert.equal(capturedBody.teamTemplateId, "team_goai_demo");
   assert.equal((capturedBody.members as readonly unknown[]).length, 3);
   assert.equal(JSON.stringify(capturedBody).includes("authToken"), false);
+});
+
+test("HTTP AgentTeams adapter retries only the bounded Team-not-ready response", async () => {
+  let attempts = 0;
+  let capturedBody: Record<string, unknown> = {};
+  const adapter = new HttpCompetitionAgentTeamsAdapter({
+    resolveEndpoint: async () => "https://goai.example.test/agentteams-adapter/",
+    resolveDelegationToken: async () => "delegation.jwt.token.with.at.least.sixty.four.characters.1234567890",
+    prepareRetryDelayMs: 1,
+    fetchResource: async (_input, init) => {
+      attempts += 1;
+      capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (attempts === 1) {
+        return new Response(JSON.stringify({
+          error: { code: "AGENTTEAMS_TEAM_NOT_READY", message: "AgentTeams Team is not ready yet." },
+        }), { status: 503 });
+      }
+      return new Response(JSON.stringify({
+        schema: "openxnet.agentteams.prepare-result.v1",
+        success: true,
+        requestId: capturedBody.requestId,
+        workspaceId: capturedBody.workspaceId,
+        incidentId: capturedBody.incidentId,
+        traceId: capturedBody.traceId,
+        teamTemplateId: capturedBody.teamTemplateId,
+        teamTemplateVersion: capturedBody.teamTemplateVersion,
+        teamName: "goai-1234567890abcdef",
+        status: "READY",
+      }), { status: 200 });
+    },
+  });
+  const result = await adapter.prepare(incident(), "trace_goai_demo", resolvedTemplate());
+  assert.equal(result.status, "READY");
+  assert.equal(attempts, 2);
+});
+
+test("HTTP AgentTeams adapter does not retry unrelated service failures", async () => {
+  let attempts = 0;
+  const adapter = new HttpCompetitionAgentTeamsAdapter({
+    resolveEndpoint: async () => "https://goai.example.test/agentteams-adapter/",
+    resolveDelegationToken: async () => "delegation.jwt.token.with.at.least.sixty.four.characters.1234567890",
+    prepareRetryDelayMs: 1,
+    fetchResource: async () => {
+      attempts += 1;
+      return new Response(JSON.stringify({
+        error: { code: "AGENTTEAMS_UPSTREAM_FAILURE", message: "AgentTeams upstream failed." },
+      }), { status: 503 });
+    },
+  });
+  await assert.rejects(
+    adapter.prepare(incident(), "trace_goai_demo", resolvedTemplate()),
+    /rejected the request with HTTP 503/u,
+  );
+  assert.equal(attempts, 1);
 });
 
 test("HTTP AgentTeams adapter dispatches a scoped Skill task and validates Matrix identity", async () => {
@@ -176,6 +261,7 @@ test("HTTP AgentTeams adapter dispatches a scoped Skill task and validates Matri
           skillVersion: "1.1.0",
           outputDigest: "b".repeat(64),
         },
+        transportEvents: transportEvents(true, "@worker:agentteams.test", "$worker-event"),
         completedAt: "2026-08-03T08:01:00.000Z",
       }), { status: 200 });
     },
@@ -247,6 +333,7 @@ test("HTTP AgentTeams adapter gives unversioned evidence an immutable content re
           skillVersion: "1.1.0",
           outputDigest: "d".repeat(64),
         },
+        transportEvents: transportEvents(false, "@leader:agentteams.test", "$leader-event"),
         completedAt: "2026-08-03T08:02:00.000Z",
       }), { status: 200 });
     },
@@ -273,6 +360,11 @@ test("HTTP AgentTeams adapter gives unversioned evidence an immutable content re
         status: "READY",
         passed: true,
         errorRate: 0.002,
+        algorithmId: "dcn_1",
+        productVersion: "recommendation-dcn-demo-v1",
+        candidateCount: 8,
+        contractStatus: "MATCHED",
+        modelDigestSha256: "e".repeat(64),
         internalToken: "must-not-project",
         nestedPayload: { secret: true },
       },
@@ -304,7 +396,16 @@ test("HTTP AgentTeams adapter gives unversioned evidence an immutable content re
   const context = capturedBody.context as Record<string, unknown>;
   const evidence = context.evidence as readonly Record<string, unknown>[];
   assert.equal(evidence[0]?.resourceVersion, `unversioned-sha256:${contentDigest}`);
-  assert.deepEqual(evidence[0]?.signals, { status: "READY", passed: true, errorRate: 0.002 });
+  assert.deepEqual(evidence[0]?.signals, {
+    status: "READY",
+    passed: true,
+    errorRate: 0.002,
+    algorithmId: "dcn_1",
+    productVersion: "recommendation-dcn-demo-v1",
+    candidateCount: 8,
+    contractStatus: "MATCHED",
+    modelDigestSha256: "e".repeat(64),
+  });
   assert.equal(JSON.stringify(evidence[0]?.signals).includes("internalToken"), false);
   assert.equal((context.proposedPlan as Record<string, unknown>).planDigest, "e".repeat(64));
 });

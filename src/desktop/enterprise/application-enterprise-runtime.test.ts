@@ -352,7 +352,7 @@ test("Enterprise Runtime persists project floors and keeps enterprise chat ident
   const root = mkdtempSync(path.join(os.tmpdir(), "openxnet-enterprise-collaboration-"));
   const identifiers = [
     "workspace-alpha", "project-alpha", "role-alpha", "message-leader", "message-agent",
-    "workspace-beta", "role-beta",
+    "message-regular", "workspace-beta", "role-beta",
   ];
   const runtime = new ApplicationEnterpriseRuntimeService({
     userDataDirectory: root,
@@ -439,6 +439,21 @@ test("Enterprise Runtime persists project floors and keeps enterprise chat ident
     assert.equal(messages.messages[1]?.operation?.riskClass, "RK-0");
     const persistedMessages = await reloaded.listMessages({ workspaceId: workspace.id, projectId: project.id, limit: 50 });
     assert.equal(persistedMessages.messages[1]?.operation?.evidenceGrade, "EV-1");
+    await runtime.postMessage({
+      workspaceId: workspace.id,
+      projectId: project.id,
+      recipientIds: [],
+      content: "这是需要保留的普通项目沟通。",
+      taskId: null,
+      traceId: null,
+    });
+    const purgedMessages = await runtime.purgeCompetitionMessages({
+      incidentIds: [],
+      traceIds: ["trace-capacity-001"],
+    });
+    assert.equal(purgedMessages, 2);
+    const remainingMessages = await runtime.listMessages({ workspaceId: workspace.id, projectId: project.id, limit: 50 });
+    assert.deepEqual(remainingMessages.messages.map((message) => message.content), ["这是需要保留的普通项目沟通。"]);
 
     const otherWorkspace = (await runtime.saveWorkspace({
       workspace: { name: "隔离空间", type: "local", config: createWorkspaceConfig() },

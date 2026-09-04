@@ -1,3 +1,8 @@
+import type {
+  ApplicationCompetitionReasoningDecision,
+  ApplicationCompetitionTaskGraph,
+} from "./application-competition-runtime";
+
 /** Competition 到神经符号和时序知识图谱的投影协议版本。 */
 export const APPLICATION_COMPETITION_KNOWLEDGE_SCHEMA = "openxnet.competition-knowledge.v1" as const;
 
@@ -196,6 +201,8 @@ export interface ApplicationCompetitionKnowledgeProjectionRequest {
   readonly approvals: readonly ApplicationCompetitionKnowledgeApproval[];
   readonly actions: readonly ApplicationCompetitionKnowledgeAction[];
   readonly receipts: readonly ApplicationCompetitionKnowledgeReceipt[];
+  readonly taskGraphs?: readonly ApplicationCompetitionTaskGraph[];
+  readonly reasoningDecisions?: readonly ApplicationCompetitionReasoningDecision[];
   readonly retrospective: ApplicationCompetitionKnowledgeRetrospective | null;
 }
 

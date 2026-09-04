@@ -12,9 +12,6 @@ const {
   FixtureCompetitionToolAdapter,
 } = require("../build-ts/desktop/competition/competition-tool-adapter")
 
-/** 特征漂移闭环固定验证业务恢复、数据集、推理探针、目标修订和发布状态五类证据。 */
-const EXPECTED_FEATURE_DRIFT_VERIFICATION_EVIDENCE_COUNT = 5
-
 /** 返回与 Live 冒烟测试一致的确定性 GOAI 模型契约漂移场景。 */
 function competitionScenario() {
   return {
@@ -64,14 +61,87 @@ function assertAllInvocationsSucceeded(invocations) {
   }
 }
 
+/** 按三平台汇总记录数；输入调用或证据数组，返回稳定的平台计数。 */
+function countByPlatform(records) {
+  const counts = { aiops: 0, dataops: 0, mlops: 0 }
+  for (const record of records) {
+    if (Object.hasOwn(counts, record.platform)) counts[record.platform] += 1
+  }
+  return counts
+}
+
+/** 把 Fixture 结晶结果写入指定 V3 HTTP Runtime；输入发布请求，返回版本记录。 */
+async function persistFixtureSkillMemory(origin, publication) {
+  const base = String(origin || "").replace(/\/$/u, "")
+  const ownerAgent = String(process.env.OPENXNET_SYNAPXNET_MEMORY_OWNER || "openxnet-model").trim() || "openxnet-model"
+  const taskId = `skill:${publication.skillId}`
+  const listResponse = await fetch(`${base}/v1/synapxnet-memory/list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ requesterAgent: ownerAgent, query: publication.skillId, ownerAgent, includeRetired: true, limit: 20 }),
+  })
+  if (!listResponse.ok) throw new Error(`V3 memory list failed (${listResponse.status}).`)
+  const listing = await listResponse.json()
+  const existing = (listing.items || []).find((item) => item.taskId === taskId)
+  const content = [
+    `Skill ID: ${publication.skillId}`,
+    `Description: ${publication.description}`,
+    `Trigger: ${publication.triggerContext}`,
+    `Workflow:\n${publication.workflow}`,
+    `Required capabilities: ${(publication.requiredCapabilities || []).join("; ")}`,
+    `Verification: ${(publication.verification || []).join("; ")}`,
+    `Rollback: ${publication.rollback}`,
+    `Source incident: ${publication.incidentId}`,
+    `Family: ${publication.familyId}`,
+    `Environment: ${publication.environmentScope}`,
+  ].join("\n\n")
+  const payload = existing
+    ? {
+      memoryId: existing.memoryId,
+      baseVersion: existing.version,
+      actorAgent: ownerAgent,
+      title: `Skill: ${publication.name}`,
+      content,
+      qualityScore: 0.98,
+      permissions: ["incident-commander", "evidence-agent", "verification-agent"],
+      tags: ["skill", "competition", publication.environmentScope, publication.familyId],
+      reason: `Fixture Skill re-crystallized from ${publication.incidentId}`,
+    }
+    : {
+      ownerAgent,
+      actorAgent: ownerAgent,
+      taskId,
+      title: `Skill: ${publication.name}`,
+      content,
+      qualityScore: 0.98,
+      permissions: ["incident-commander", "evidence-agent", "verification-agent"],
+      tags: ["skill", "competition", publication.environmentScope, publication.familyId],
+      source: "competition-fixture",
+    }
+  const operation = existing ? "edit" : "create"
+  const response = await fetch(`${base}/v1/synapxnet-memory/${operation}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new Error(`V3 memory ${operation} failed (${response.status}).`)
+  return response.json()
+}
+
 /** 执行无外部凭据的 Fixture 全链路并只输出可公开的验收摘要。 */
 async function main() {
   const userDataDirectory = await mkdtemp(path.join(os.tmpdir(), "openxnet-goai-fixture-"))
   const fixtureAdapter = new FixtureCompetitionToolAdapter()
+  const memoryOrigin = String(process.env.OPENXNET_SYNAPXNET_MEMORY_ORIGIN || "").trim()
+  let skillMemory = null
   const runtime = new ApplicationCompetitionRuntimeService({
     userDataDirectory,
     fixtureAdapter,
     liveAdapter: fixtureAdapter,
+    publishRetrospectiveSkill: async (publication) => {
+      if (memoryOrigin) skillMemory = await persistFixtureSkillMemory(memoryOrigin, publication)
+      return { skillId: publication.skillId }
+    },
   })
   try {
     await runtime.setAdapterMode({ mode: "fixture" })
@@ -121,16 +191,22 @@ async function main() {
     const action = requireAction(verified.snapshot, executed.actionId)
     assert.equal(incident.status, "RESOLVED")
     assert.equal(action.status, "SUCCEEDED")
-    assert.equal(
-      action.verificationEvidenceIds.length,
-      EXPECTED_FEATURE_DRIFT_VERIFICATION_EVIDENCE_COUNT,
-    )
+    assert.equal(action.verificationEvidenceIds.length, 5)
     const traceResource = await runtime.readResource({
       uri: `openxnet://workspaces/ws_goai_demo/incidents/${created.incidentId}/traces/${incident.activeTraceId}`,
     })
     assert.equal(JSON.parse(traceResource.text).status, "SUCCEEDED")
     const retrospective = await runtime.exportRetrospective({ incidentId: created.incidentId })
     assert.equal(typeof retrospective.retrospectivePath, "string")
+    const evaluation = await runtime.exportEvaluation({ incidentId: created.incidentId })
+    assert.equal(evaluation.outcome, "RESOLVED")
+    assert.equal(evaluation.skillUsageStatus, "BASELINE")
+    const platformInvocationCounts = countByPlatform(verified.snapshot.invocations)
+    const platformEvidenceCounts = countByPlatform(verified.snapshot.evidence)
+    for (const platform of ["aiops", "dataops", "mlops"]) {
+      assert.ok(platformInvocationCounts[platform] > 0, `${platform} invocation was not exercised.`)
+      assert.ok(platformEvidenceCounts[platform] > 0, `${platform} evidence was not collected.`)
+    }
 
     console.log(JSON.stringify({
       schema: "openxnet.goai.smoke-result.v1",
@@ -138,11 +214,17 @@ async function main() {
       success: true,
       evidenceCount: verified.snapshot.evidence.length,
       verificationEvidenceCount: action.verificationEvidenceIds.length,
+      platformInvocationCounts,
+      platformEvidenceCounts,
       auditReceiptCount: verified.snapshot.auditReceipts.length,
       incidentStatus: incident.status,
       actionStatus: action.status,
       idempotencyReplayVerified: true,
       retrospectiveCreated: true,
+      evaluationCreated: true,
+      skillMemoryPersisted: skillMemory !== null,
+      skillMemoryId: skillMemory?.memoryId || null,
+      skillMemoryVersion: skillMemory?.version || null,
     }))
   } finally {
     await rm(userDataDirectory, { recursive: true, force: true })

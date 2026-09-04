@@ -14,6 +14,9 @@ const {
   HttpCompetitionToolAdapter,
 } = require("../build-ts/desktop/competition/competition-tool-adapter")
 const {
+  getCompetitionScenarioProfile,
+} = require("../build-ts/desktop/competition/competition-scenario-registry")
+const {
   HttpCompetitionApprovalPublisher,
 } = require("../build-ts/desktop/competition/competition-approval-publisher")
 const {
@@ -38,6 +41,28 @@ function environmentFlag(name) {
   return String(process.env[name] || "").trim() === "1"
 }
 
+/** 强制确认本轮只连接比赛 staging；无输入和返回，未显式确认时拒绝执行。 */
+function requireStagingConfirmation() {
+  if (!environmentFlag("OPENXNET_GOAI_SMOKE_CONFIRM_STAGING")) {
+    throw new Error("OPENXNET_GOAI_SMOKE_CONFIRM_STAGING must be 1.")
+  }
+}
+
+/** 读取并校验 staging HTTPS 入口；输入变量名，返回不含内嵌凭据的规范 URL。 */
+function requireStagingEndpoint(name) {
+  const value = requireEnvironment(name)
+  let endpoint
+  try {
+    endpoint = new URL(value)
+  } catch {
+    throw new Error(`${name} must be a valid HTTPS URL.`)
+  }
+  if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password) {
+    throw new Error(`${name} must use HTTPS without embedded credentials.`)
+  }
+  return endpoint.toString().replace(/\/$/, "")
+}
+
 /** 校验自动清理目录确实属于本轮临时 smoke；输入目录，无返回，越界时拒绝删除。 */
 function assertDisposableSmokeDirectory(directory) {
   const resolved = path.resolve(directory)
@@ -53,6 +78,50 @@ class SmokeSkillStateBoundary {
   /** 返回空的旧版状态快照；无输入，不访问真实 Renderer 配置。 */
   getSnapshot() {
     return {}
+  }
+}
+
+/** 为 Live Smoke 保存 Workspace 范围的脱敏知识投影，不保存平台原始证据或凭据。 */
+class SmokeCompetitionKnowledgeBoundary {
+  constructor() {
+    this.projections = new Map()
+  }
+
+  /** 幂等保存一个 Incident 投影；输入 Runtime 脱敏请求，返回固定成功计数。 */
+  async synchronize(request) {
+    this.projections.set(request.incident.incidentId, structuredClone(request))
+    return {
+      schema: "openxnet.competition-knowledge.v1",
+      success: true,
+      symbols: request.decisions.length + (request.reasoningDecisions || []).length,
+      activeFacts: request.evidence.length + request.actions.length,
+      invalidatedFacts: 0,
+    }
+  }
+
+  /** 按 Workspace 查询历史场景与 Skill 事实；输入 Workspace 和任务文本，返回图谱兼容引用。 */
+  async retrieve(workspaceId, query) {
+    const normalizedQuery = String(query || "").toLocaleLowerCase()
+    const facts = []
+    for (const projection of this.projections.values()) {
+      if (projection.incident.workspaceId !== workspaceId) continue
+      const subject = `Incident:${projection.incident.incidentId}`
+      const scenarioObject = `Scenario:${projection.incident.scenarioType}`
+      const relevance = normalizedQuery.includes(projection.incident.scenarioType.toLocaleLowerCase()) ? 1 : 0.8
+      facts.push(
+        { subject, predicate: "belongs_to_workspace", object: `Workspace:${workspaceId}`, confidence: 1 },
+        { subject, predicate: "has_scenario", object: scenarioObject, confidence: relevance },
+      )
+      if (projection.retrospective?.name) {
+        facts.push({
+          subject,
+          predicate: "crystallized_skill",
+          object: `Skill:${projection.retrospective.name}`,
+          confidence: relevance,
+        })
+      }
+    }
+    return facts.slice(0, 100)
   }
 }
 
@@ -73,8 +142,13 @@ function createRetrospectiveSkillPublisher(skillRuntime, enterpriseRuntime) {
       examples: [],
       counterExamples: [],
       sourceEventIds: request.sourceEventIds,
-      status: "active",
-      source: "work",
+      status: "candidate",
+      source: "rehearsal",
+      familyId: request.familyId,
+      problemFingerprint: request.problemFingerprint,
+      evidenceOrigin: request.evidenceOrigin,
+      derivationMethod: request.derivationMethod,
+      environmentScope: request.environmentScope,
       syncToProject: false,
       overwrite: true,
     })
@@ -144,7 +218,7 @@ function createAgentTeamsDelegationResolver(secret) {
 
 /** 解析 Live Smoke 的团队模式；无输入，返回 builtin 或 agentteams，非法值立即拒绝。 */
 function resolveTeamRuntime() {
-  const value = String(process.env.OPENXNET_GOAI_SMOKE_TEAM_RUNTIME || "builtin").trim().toLowerCase()
+  const value = String(process.env.OPENXNET_GOAI_SMOKE_TEAM_RUNTIME || "agentteams").trim().toLowerCase()
   if (value !== "builtin" && value !== "agentteams") {
     throw new Error("OPENXNET_GOAI_SMOKE_TEAM_RUNTIME must be builtin or agentteams.")
   }
@@ -179,19 +253,19 @@ function competitionScenarios(expectVerificationFailure) {
           targetRevision: 20,
           rollbackRevision: 6,
           expectedResourceVersion: "42",
-          testDatasetRef: "fixture://goai/recommendation-capacity-v1",
+          testDatasetRef: "staging://goai/recommendation-dcn-v1/probe",
         },
       },
       planId: "recommendation-capacity-recovery-v2",
       investigationEvidenceCount: 6,
       executionStepCount: 7,
-      verificationEvidenceCount: 4,
+      verificationEvidenceCount: 5,
     },
     {
       request: {
         ...common,
         title: "量化模型归因与受控迭代",
-        summary: "价值因子退化，盘后自动完成数据、训练、评估和模拟盘发布。",
+        summary: "低波动与量能基线退化，盘后受控完成真实数据、训练、评估和模拟盘发布。",
         scenario: {
           scenarioType: "quantitative-iteration",
           alertUid: "alert_quant_ic_degradation",
@@ -199,18 +273,18 @@ function competitionScenarios(expectVerificationFailure) {
           clusterId: "3",
           namespace: "quant-prod",
           workloadName: "quant-signal-inference",
-          reportUid: "report_quant_attribution_close",
-          assetUid: "asset_market_features_eod",
-          workflowInstanceUid: "task_quant_eod_ready",
-          deploymentUid: "deploy_quant_value_prod",
-          failingRevision: 18,
-          targetRevision: 19,
-          rollbackRevision: 18,
+          reportUid: "report_quant_a_share_v1",
+          assetUid: "asset_quant_market_daily",
+          workflowInstanceUid: "task_quant_a_share_eod_ready",
+          deploymentUid: "deploy_quant_ashare_research",
+          failingRevision: 1,
+          targetRevision: 2,
+          rollbackRevision: 1,
           expectedResourceVersion: "42",
-          testDatasetRef: "fixture://goai/quant-eod-v1",
+          testDatasetRef: "quant://a-share-factor-demo-v1/test",
         },
       },
-      planId: "quantitative-model-iteration-v2",
+      planId: "quantitative-ashare-model-iteration-v3",
       investigationEvidenceCount: 6,
       executionStepCount: 7,
       verificationEvidenceCount: 6,
@@ -236,8 +310,8 @@ function competitionScenarios(expectVerificationFailure) {
           rollbackRevision: 17,
           expectedResourceVersion: "42",
           testDatasetRef: expectVerificationFailure
-            ? "fixture://goai/verification-failure-v1"
-            : "fixture://goai/risk-repaired-v19",
+            ? "staging://goai/verification-failure-v1"
+            : "staging://goai/dataops/assets/asset_risk_features_prod/versions/risk-repaired-v19",
         },
       },
       planId: "feature-drift-full-recovery-v2",
@@ -297,14 +371,17 @@ function attachSmokeDiagnostics(error, snapshot) {
 
 /** 执行真实跨平台竞赛流程并只输出不含凭据的验收摘要。 */
 async function main() {
+  requireStagingConfirmation()
   const teamRuntime = resolveTeamRuntime()
   const preserveCompetitionData = environmentFlag("OPENXNET_GOAI_SMOKE_PRESERVE_DATA")
   const publishEnterpriseSkill = environmentFlag("OPENXNET_GOAI_SMOKE_PUBLISH_ENTERPRISE_SKILL")
+  const expectSkillReuse = environmentFlag("OPENXNET_GOAI_SMOKE_EXPECT_SKILL_REUSE")
   const expectVerificationFailure = environmentFlag("OPENXNET_GOAI_SMOKE_EXPECT_VERIFICATION_FAILURE")
+  const prepareAgentTeamsOnly = environmentFlag("OPENXNET_GOAI_SMOKE_PREPARE_AGENTTEAMS_ONLY")
   const endpoints = {
-    aiops: requireEnvironment("OPENXNET_AIOPS_BASE_URL"),
-    dataops: requireEnvironment("OPENXNET_DATAOPS_BASE_URL"),
-    mlops: requireEnvironment("OPENXNET_MLOPS_BASE_URL"),
+    aiops: requireStagingEndpoint("OPENXNET_AIOPS_BASE_URL"),
+    dataops: requireStagingEndpoint("OPENXNET_DATAOPS_BASE_URL"),
+    mlops: requireStagingEndpoint("OPENXNET_MLOPS_BASE_URL"),
   }
   const resolveDelegationToken = createDelegationResolver(
     requireEnvironment("OPENXNET_AGENT_DELEGATION_SECRET"),
@@ -314,11 +391,12 @@ async function main() {
     resolveDelegationToken,
   })
   const publisher = new HttpCompetitionApprovalPublisher({
-    resolveEndpoint: async () => requireEnvironment("OPENXNET_COMPETITION_APPROVAL_BASE_URL"),
+    resolveEndpoint: async () => requireStagingEndpoint("OPENXNET_COMPETITION_APPROVAL_BASE_URL"),
     resolveIssuerToken: async () => requireEnvironment("OPENXNET_APPROVAL_ISSUER_TOKEN"),
   })
   const fixtureAdapter = new FixtureCompetitionToolAdapter()
   const userDataDirectory = requireEnvironment("OPENXNET_GOAI_SMOKE_DATA_DIR")
+  assertDisposableSmokeDirectory(userDataDirectory)
   const enterpriseRuntime = teamRuntime === "agentteams"
     ? new ApplicationEnterpriseRuntimeService({
       userDataDirectory: requireEnvironment("OPENXNET_GOAI_ENTERPRISE_DATA_DIR"),
@@ -335,17 +413,18 @@ async function main() {
   if (publishEnterpriseSkill && enterpriseRuntime === null) {
     throw new Error("Enterprise Skill publication requires the AgentTeams enterprise runtime.")
   }
-  const skillRuntime = publishEnterpriseSkill
-    ? new ApplicationSkillRuntimeService({
+  const skillRuntime = enterpriseRuntime === null
+    ? null
+    : new ApplicationSkillRuntimeService({
       globalSkillsRoot: path.join(os.homedir(), ".agents", "skills"),
       bundledSkillsRoot: path.join(__dirname, "..", "skills"),
       state: new SmokeSkillStateBoundary(),
       logger: console,
     })
-    : null
+  const knowledgeBoundary = new SmokeCompetitionKnowledgeBoundary()
   const agentTeamsAdapter = teamRuntime === "agentteams"
     ? new HttpCompetitionAgentTeamsAdapter({
-      resolveEndpoint: async () => requireEnvironment("OPENXNET_COMPETITION_AGENTTEAMS_BASE_URL"),
+      resolveEndpoint: async () => requireStagingEndpoint("OPENXNET_COMPETITION_AGENTTEAMS_BASE_URL"),
       resolveDelegationToken: createAgentTeamsDelegationResolver(
         requireEnvironment("OPENXNET_AGENTTEAMS_DELEGATION_SECRET"),
       ),
@@ -359,6 +438,26 @@ async function main() {
     resolveTeamTemplate: enterpriseRuntime === null
       ? undefined
       : (teamTemplateId) => enterpriseRuntime.resolveTeamTemplate(teamTemplateId),
+    resolveEnabledEnterpriseSkill: enterpriseRuntime === null || skillRuntime === null
+      ? undefined
+      : async (workspaceId, skillId) => {
+        const bindings = await enterpriseRuntime.listSkillBindings()
+        const binding = bindings.bindings.find((item) => (
+          item.workspaceId === workspaceId && item.skillId === skillId && item.enabled
+        ))
+        if (!binding) return null
+        const catalog = await skillRuntime.listSkills()
+        const skill = catalog.skills.find((item) => item.id === skillId)
+        if (!skill) return null
+        return {
+          sourceIncidentId: binding.sourceIncidentId,
+          lifecycleStatus: skill.lifecycleStatus,
+          environmentScope: skill.environmentScope,
+          productionEligible: skill.productionEligible,
+        }
+      },
+    retrieveCompetitionKnowledge: (workspaceId, query) => knowledgeBoundary.retrieve(workspaceId, query),
+    synchronizeKnowledge: (request) => knowledgeBoundary.synchronize(request),
     agentTeamsIsolatedServiceEnabled: teamRuntime === "agentteams",
     prepareAgentTeam: agentTeamsAdapter === null
       ? undefined
@@ -371,10 +470,45 @@ async function main() {
       : createRetrospectiveSkillPublisher(skillRuntime, enterpriseRuntime),
   })
   try {
+    if (prepareAgentTeamsOnly) {
+      if (agentTeamsAdapter === null || enterpriseRuntime === null || teamTemplate === null) {
+        throw new Error("AgentTeams prepare-only smoke requires the isolated runtime and enterprise template.")
+      }
+      const scenario = competitionScenarios(false).find((item) => (
+        item.request.scenario.scenarioType === "feature-drift"
+      )).request
+      const timestamp = new Date().toISOString()
+      const preflightIncident = {
+        incidentId: `inc_preflight_${Date.now()}`,
+        workspaceId: scenario.workspaceId,
+        projectId: null,
+        title: scenario.title,
+        summary: scenario.summary,
+        severity: scenario.severity,
+        status: "OPEN",
+        scenario: scenario.scenario,
+        createdBy: scenario.actorId,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        resolvedAt: null,
+        activeTraceId: null,
+        activeApprovalId: null,
+        activeActionId: null,
+      }
+      const resolvedTemplate = await enterpriseRuntime.resolveTeamTemplate(teamTemplate.id)
+      const prepared = await agentTeamsAdapter.prepare(
+        preflightIncident,
+        `trace_preflight_${Date.now()}`,
+        resolvedTemplate,
+      )
+      console.log(JSON.stringify({ success: true, prepareOnly: true, status: prepared.status, teamName: prepared.teamName }))
+      return
+    }
     await runtime.setAdapterMode({ mode: "live" })
+    await runtime.getSnapshot()
     const scenarioResults = []
     const selectedScenarios = selectCompetitionScenarios(competitionScenarios(expectVerificationFailure))
-    for (const [index, scenario] of selectedScenarios.entries()) {
+    for (const scenario of selectedScenarios) {
       const created = await runtime.createIncident(scenario.request)
       const beforeInvestigationEvidenceCount = (await runtime.getSnapshot()).evidence.length
       const investigated = await runtime.runInvestigation({
@@ -389,6 +523,31 @@ async function main() {
       assert.equal(investigated.snapshot.invocations
         .filter((item) => item.incidentId === created.incidentId)
         .every((item) => item.status === "SUCCEEDED"), true)
+      const investigatedIncident = investigated.snapshot.incidents.find((item) => item.incidentId === created.incidentId)
+      const investigatedTraceId = investigatedIncident?.activeTraceId
+      assert.equal(typeof investigatedTraceId, "string")
+      const skillUsage = investigated.snapshot.skillUsages.find((item) => (
+        item.incidentId === created.incidentId && item.traceId === investigatedTraceId
+      ))
+      const skillSelection = investigated.snapshot.reasoningDecisions.find((item) => (
+        item.incidentId === created.incidentId
+        && item.traceId === investigatedTraceId
+        && item.decisionType === "SKILL_SELECTION"
+      ))
+      assert.equal(skillSelection?.retrievalMode, "ONLINE_HYBRID_RAG_KG")
+      assert.ok((skillSelection?.knowledgeRefs.length ?? 0) > 0)
+      if (expectSkillReuse) {
+        const skillId = getCompetitionScenarioProfile(scenario.request.scenario).skill.skillId
+        const enterpriseBindings = await enterpriseRuntime.listSkillBindings()
+        const activeBinding = enterpriseBindings.bindings.find((item) => (
+          item.workspaceId === scenario.request.workspaceId
+          && item.skillId === skillId
+          && item.enabled
+        ))
+        assert.ok(activeBinding?.sourceIncidentId, "Skill reuse requires an enabled certified enterprise binding.")
+        assert.equal(skillUsage?.status, "REUSED")
+        assert.equal(skillUsage?.sourceIncidentId, activeBinding.sourceIncidentId)
+      }
       const teamBinding = investigated.snapshot.teamBindings.find((item) => item.incidentId === created.incidentId)
       assert.equal(teamBinding?.runtime, teamRuntime)
       assert.equal(teamBinding?.status, "READY")
@@ -411,13 +570,13 @@ async function main() {
       await runtime.executeRollback({
         approvalId,
         actorId: "enterprise-goai:operator",
-        idempotencyKey: `idem_openxnet_live_${index}_dryrun`,
+        idempotencyKey: `idem_openxnet_live_${scenario.request.scenario.scenarioType}_${created.incidentId}_dryrun`,
         dryRun: true,
       })
       const executed = await runtime.executeRollback({
         approvalId,
         actorId: "enterprise-goai:operator",
-        idempotencyKey: `idem_openxnet_live_${index}_execute`,
+        idempotencyKey: `idem_openxnet_live_${scenario.request.scenario.scenarioType}_${created.incidentId}_execute`,
         dryRun: false,
       })
       assert.notEqual(executed.actionId, null)
@@ -428,7 +587,7 @@ async function main() {
       const replayed = await runtime.executeRollback({
         approvalId,
         actorId: "enterprise-goai:operator",
-        idempotencyKey: `idem_openxnet_live_${index}_execute`,
+        idempotencyKey: `idem_openxnet_live_${scenario.request.scenario.scenarioType}_${created.incidentId}_execute`,
         dryRun: false,
       })
       assert.equal(replayed.actionId, executed.actionId)
@@ -491,6 +650,10 @@ async function main() {
           actionStatus: failedAction.status,
           compensationStatus: failedAction.compensationStatus,
           expectedVerificationFailure: true,
+          skillReuseStatus: skillUsage?.status ?? "BASELINE",
+          skillSourceIncidentId: skillUsage?.sourceIncidentId ?? null,
+          retrievalMode: skillSelection?.retrievalMode ?? null,
+          knowledgeReferenceCount: skillSelection?.knowledgeRefs.length ?? 0,
           retrospectiveSkillId: null,
         })
         continue
@@ -540,6 +703,10 @@ async function main() {
         agentDecisionCount: agentDecisions.length,
         incidentStatus: incident.status,
         actionStatus: action.status,
+        skillReuseStatus: skillUsage?.status ?? "BASELINE",
+        skillSourceIncidentId: skillUsage?.sourceIncidentId ?? null,
+        retrievalMode: skillSelection?.retrievalMode ?? null,
+        knowledgeReferenceCount: skillSelection?.knowledgeRefs.length ?? 0,
         retrospectiveSkillId: retrospective.retrospectiveSkillId,
       })
     }

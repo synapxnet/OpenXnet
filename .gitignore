@@ -188,6 +188,7 @@ test*
 tests/*
 !tests/test_*.py
 !tests/renderer_startup_bootstrap.test.cjs
+!tests/packaged_runtime_dependencies.test.cjs
 !tests/desktop_chat_transport.test.cjs
 !tests/desktop_cold_start_report.test.cjs
 !tests/application_agent_runtime_renderer.test.cjs
@@ -217,7 +218,23 @@ runtime/
 data/generated_scenes/
 
 # Local development and verification output
-/.agent/
+/.agent/*
+!/.agent/skills/
+/.agent/skills/*
+!/.agent/skills/goai-evidence-collect/
+!/.agent/skills/goai-evidence-collect/**
+!/.agent/skills/goai-change-execute/
+!/.agent/skills/goai-change-execute/**
+!/.agent/skills/goai-service-verify/
+!/.agent/skills/goai-service-verify/**
+!/.agent/skills/synapxnet-recommendation-capacity-recovery/
+!/.agent/skills/synapxnet-recommendation-capacity-recovery/**
+!/.agent/skills/synapxnet-quantitative-model-iteration/
+!/.agent/skills/synapxnet-quantitative-model-iteration/**
+!/.agent/skills/synapxnet-feature-drift-recovery/
+!/.agent/skills/synapxnet-feature-drift-recovery/**
+!/.agent/skills/alibabacloud-pai-eas-service-diagnose/
+!/.agent/skills/alibabacloud-pai-eas-service-diagnose/**
 /.codex-build/
 /.tmp/
 /logs/

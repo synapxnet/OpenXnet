@@ -12,8 +12,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
 
-import extractZip from "extract-zip";
 import yauzl, { type Entry, type ZipFile } from "yauzl";
 
 /** 安全 ZIP 检查使用的资源预算。 */
@@ -244,7 +244,7 @@ export async function extractValidatedZip(
   await rm(destination, { recursive: true, force: true });
   await mkdir(destination, { recursive: true, mode: 0o700 });
   try {
-    await extractZip(zipPath, { dir: path.resolve(destination) });
+    await extractInspectedZipArchive(zipPath, destination, budget);
     await assertDirectoryTreeHasNoLinks(destination, budget.maximumEntries);
   } catch (error) {
     await rm(destination, { recursive: true, force: true });
@@ -363,6 +363,112 @@ function openZipFile(zipPath: string): Promise<ZipFile> {
       if (error || !zipFile) reject(error ?? new Error("ZIP archive could not be opened."));
       else resolve(zipFile);
     });
+  });
+}
+
+/** 打开单个 ZIP 文件条目流；输入 ZIP 句柄和条目，返回可异步迭代的只读流，打开失败时拒绝。 */
+function openZipEntryReadStream(zipFile: ZipFile, entry: Entry): Promise<Readable> {
+  return new Promise<Readable>((resolve, reject) => {
+    zipFile.openReadStream(entry, (error, stream) => {
+      if (error || !stream) reject(error ?? new Error("ZIP entry could not be opened."));
+      else resolve(stream);
+    });
+  });
+}
+
+/**
+ * 解压已经通过预检的 ZIP，并在写入时再次执行路径、类型与字节预算校验。
+ *
+ * @param zipPath ZIP 文件路径。
+ * @param destination 私有解压根目录。
+ * @param budget 条目和字节资源预算。
+ * @returns 全部普通文件安全写入后完成。
+ */
+async function extractInspectedZipArchive(
+  zipPath: string,
+  destination: string,
+  budget: SafeZipArchiveBudget,
+): Promise<void> {
+  const canonicalDestination = path.resolve(destination);
+  const zipFile = await openZipFile(zipPath);
+  await new Promise<void>((resolve, reject) => {
+    const names = new Set<string>();
+    let entryCount = 0;
+    let declaredExtractedBytes = 0;
+    let actualExtractedBytes = 0;
+    let settled = false;
+
+    /** 关闭 ZIP 并只结算一次解压 Promise；输入可选错误，无返回。 */
+    function settle(error?: Error): void {
+      if (settled) return;
+      settled = true;
+      zipFile.close();
+      if (error) reject(error);
+      else resolve();
+    }
+
+    /** 再次校验并写入单个 ZIP 条目；输入条目，无返回，失败时拒绝整个解压。 */
+    async function extractEntry(entry: Entry): Promise<void> {
+      entryCount += 1;
+      if (entryCount > budget.maximumEntries) throw new Error("ZIP archive contains too many entries.");
+      validateZipEntry(entry, names);
+      if (entry.uncompressedSize > budget.maximumEntryBytes) throw new Error("ZIP entry exceeds its byte budget.");
+      declaredExtractedBytes += entry.uncompressedSize;
+      if (!Number.isSafeInteger(declaredExtractedBytes) || declaredExtractedBytes > budget.maximumExtractedBytes) {
+        throw new Error("ZIP archive exceeds its extracted byte budget.");
+      }
+
+      const isDirectory = entry.fileName.endsWith("/");
+      const relativeName = isDirectory ? entry.fileName.slice(0, -1) : entry.fileName;
+      const targetPath = path.resolve(canonicalDestination, ...relativeName.split("/"));
+      if (!isPathInside(canonicalDestination, targetPath)) throw new Error("ZIP entry path is invalid.");
+      if (isDirectory) {
+        await mkdir(targetPath, { recursive: true, mode: 0o700 });
+        zipFile.readEntry();
+        return;
+      }
+
+      await mkdir(path.dirname(targetPath), { recursive: true, mode: 0o700 });
+      const stream = await openZipEntryReadStream(zipFile, entry);
+      const handle = await open(targetPath, "wx", 0o600);
+      let actualEntryBytes = 0;
+      let completed = false;
+      try {
+        for await (const chunk of stream) {
+          if (!(chunk instanceof Uint8Array)) throw new Error("ZIP entry stream is invalid.");
+          actualEntryBytes += chunk.byteLength;
+          actualExtractedBytes += chunk.byteLength;
+          if (
+            !Number.isSafeInteger(actualEntryBytes)
+            || actualEntryBytes > entry.uncompressedSize
+            || actualEntryBytes > budget.maximumEntryBytes
+            || !Number.isSafeInteger(actualExtractedBytes)
+            || actualExtractedBytes > budget.maximumExtractedBytes
+          ) {
+            throw new Error("ZIP entry exceeds its byte budget.");
+          }
+          await handle.write(chunk);
+        }
+        if (actualEntryBytes !== entry.uncompressedSize) throw new Error("ZIP entry size is invalid.");
+        completed = true;
+      } finally {
+        await handle.close();
+        if (!completed) await rm(targetPath, { force: true });
+      }
+      zipFile.readEntry();
+    }
+
+    /** 按 lazyEntries 约束串行处理条目；输入条目，无返回。 */
+    function handleEntry(entry: Entry): void {
+      void extractEntry(entry).catch((error) => {
+        settle(error instanceof Error ? error : new Error(String(error)));
+      });
+    }
+
+    zipFile.on("entry", handleEntry);
+    zipFile.once("end", () => settle(entryCount === 0 ? new Error("ZIP archive is empty.") : undefined));
+    zipFile.once("error", (error) => settle(error));
+    zipFile.readEntry();
   });
 }
 

@@ -742,6 +742,7 @@ export class ApplicationSkillRuntimeService {
         }
       }
     }
+    metadata = { ...metadata, ...await this.readOpenXnetSkillManifest(skillDirectory) };
     const entries = await readdir(skillDirectory, { withFileTypes: true });
     const files = entries
       .filter((entry) => entry.isFile() && !entry.isSymbolicLink() && !entry.name.startsWith(".") && !entry.name.startsWith("~"))
@@ -781,6 +782,20 @@ export class ApplicationSkillRuntimeService {
       familyId: readString(metadata.family_id, skillId, 192) || skillId,
       productionEligible: environmentScope === "production" && (lifecycleStatus === "verified" || lifecycleStatus === "active"),
     };
+  }
+
+  /** 读取 OpenXnet v2 扩展清单；输入技能目录，返回普通元数据，缺失时返回空对象。 */
+  private async readOpenXnetSkillManifest(skillDirectory: string): Promise<Record<string, unknown>> {
+    const manifestPath = path.join(skillDirectory, "openxnet.skill.json");
+    try {
+      const info = await lstat(manifestPath);
+      if (!info.isFile() || info.isSymbolicLink()) return {};
+      const content = await readBoundedUtf8File(manifestPath, MAX_SKILL_MARKDOWN_BYTES, "OpenXnet skill manifest");
+      const parsed = JSON.parse(content) as unknown;
+      return isPlainRecord(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
   }
 
   /** 读取技能作者；输入字符串、数组或未知值，返回有界作者文本，无副作用。 */

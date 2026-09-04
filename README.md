@@ -1,11 +1,14 @@
-<!-- GOAI-RELEASE-LINKS -->
-> GOAI competition release: [`goai-v1.1.0`](./GOAI-RELEASE.md) · [Security](./SECURITY.md) · [Notice](./NOTICE) · [CycloneDX SBOM](./sbom.cdx.json)
-
 ![image](static/source/cover.png)
+
+# OpenXnet
+
+OpenXnet is the SynapXnet enterprise AI workspace for organizing AI employees, AgentTeams collaboration, governed Skill/MCP execution, independent verification, audit evidence, and reusable organizational experience.
+
+GOAI Agent Infra semifinal implementation and reproducible Demo: [docs/GOAI-SEMIFINAL-RUNBOOK.md](docs/GOAI-SEMIFINAL-RUNBOOK.md).
 
 ## Current Source Baseline
 
-- Version: `v0.5.9`
+- Version: `v1.2.0`
 - Repository role: authoritative desktop integration and release source
 - Final desktop package: build from `openxnet-desktop` only, after all upgrades and validations are complete
 - Standalone backend package: build from the sibling `openxnet-server` repository with `pyinstaller server.spec --clean --noconfirm`

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { APPLICATION_COMPETITION_RUNTIME_CHANNELS } from "../contracts/application-competition-runtime";
+import {
+  APPLICATION_COMPETITION_RUNTIME_CHANNELS,
+  resolveApplicationCompetitionUiProfile,
+} from "../contracts/application-competition-runtime";
 import { registerApplicationCompetitionRuntimeIpc } from "./register-application-competition-runtime-ipc";
 
 /** 构建可观测 IPC 替身；无输入，返回 handler Map 和注册接口。 */
@@ -25,9 +28,11 @@ test("competition Runtime IPC authorizes and forwards every bounded operation", 
   const calls: string[] = [];
   const forwardedActors: string[] = [];
   let authorizations = 0;
+  let profileReads = 0;
   const runtime = {
     getSnapshot: async () => ({ operation: "getSnapshot" }),
     resetDemoData: async () => ({ operation: "resetDemoData" }),
+    startEnterpriseTask: async () => ({ operation: "startEnterpriseTask" }),
     createIncident: async () => ({ operation: "createIncident" }),
     runInvestigation: async () => ({ operation: "runInvestigation" }),
     decideApproval: async () => ({ operation: "decideApproval" }),
@@ -35,6 +40,7 @@ test("competition Runtime IPC authorizes and forwards every bounded operation", 
     verifyRemediation: async () => ({ operation: "verifyRemediation" }),
     readResource: async () => ({ operation: "readResource" }),
     exportRetrospective: async () => ({ operation: "exportRetrospective" }),
+    exportEvaluation: async () => ({ operation: "exportEvaluation" }),
     setAdapterMode: async () => ({ operation: "setAdapterMode" }),
   };
   const proxy = new Proxy(runtime, {
@@ -47,6 +53,7 @@ test("competition Runtime IPC authorizes and forwards every bounded operation", 
         if (typeof request === "object" && request !== null && "actorId" in request) {
           forwardedActors.push(String((request as { actorId: unknown }).actorId));
         }
+        if (property === "startEnterpriseTask") forwardedActors.push(String(args[1]));
         return original(...args);
       };
     },
@@ -56,6 +63,10 @@ test("competition Runtime IPC authorizes and forwards every bounded operation", 
     runtime: proxy as never,
     authorizeEvent: () => {
       authorizations += 1;
+    },
+    readUiProfile: () => {
+      profileReads += 1;
+      return { releaseProfile: "goai-staging", rehearsalEnabled: true };
     },
     resolveActorId: (role) => `trusted:${role}`,
   });
@@ -67,9 +78,11 @@ test("competition Runtime IPC authorizes and forwards every bounded operation", 
     await handler?.({}, {});
   }
   assert.equal(authorizations, channels.length);
-  assert.equal(calls.length, channels.length);
+  assert.equal(profileReads, 1);
+  assert.equal(calls.length, channels.length - 1);
   assert.deepEqual(forwardedActors.sort(), [
     "trusted:approver",
+    "trusted:investigator",
     "trusted:investigator",
     "trusted:investigator",
     "trusted:operator",
@@ -77,4 +90,23 @@ test("competition Runtime IPC authorizes and forwards every bounded operation", 
   ]);
   cleanup();
   assert.equal(harness.handlers.size, 0);
+});
+
+test("competition UI profile defaults closed and permits only explicit staging rehearsal", () => {
+  assert.deepEqual(resolveApplicationCompetitionUiProfile(undefined, undefined), {
+    releaseProfile: "production",
+    rehearsalEnabled: false,
+  });
+  assert.deepEqual(resolveApplicationCompetitionUiProfile("goai-staging", undefined), {
+    releaseProfile: "goai-staging",
+    rehearsalEnabled: true,
+  });
+  assert.deepEqual(resolveApplicationCompetitionUiProfile("goai-staging", "0"), {
+    releaseProfile: "goai-staging",
+    rehearsalEnabled: false,
+  });
+  assert.deepEqual(resolveApplicationCompetitionUiProfile("unexpected", "1"), {
+    releaseProfile: "production",
+    rehearsalEnabled: true,
+  });
 });

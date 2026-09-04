@@ -1,0 +1,83 @@
+{
+  "schema": "openxnet.official-skill-provenance.v1",
+  "skillId": "alibabacloud-pai-eas-service-diagnose",
+  "publisher": "Alibaba Cloud PAI EAS Team",
+  "license": "Apache-2.0",
+  "sourcePortal": "https://skills.aliyun.com/",
+  "distribution": {
+    "fileName": "alibabacloud-pai-eas-service-diagnose-v0.0.1.zip",
+    "packageVersion": "0.0.1",
+    "contentVersion": "1.0.0",
+    "sha256": "6f6c02051f8b1581bbf0509da093c28a2c2a0086d4414ddd04337f98b5da889b"
+  },
+  "securityBoundary": {
+    "mode": "read-only-diagnosis",
+    "credentialStorage": "aliyun-cli-profile",
+    "allowCredentialReadback": false,
+    "allowMutation": false,
+    "requiredPermissions": [
+      "eas:DescribeService",
+      "eas:DescribeServiceLog",
+      "eas:DescribeServiceEvent",
+      "eas:DescribeServiceDiagnosis",
+      "eas:DescribeServiceInstanceDiagnosis",
+      "eas:ListServiceInstances",
+      "eas:ListServiceContainers",
+      "eas:ListServices",
+      "eas:DescribeResource",
+      "eas:DescribeGateway"
+    ]
+  },
+  "upstreamFiles": [
+    {
+      "path": "SKILL.md",
+      "bytes": 24331,
+      "sha256": "06d73932b1614a15da30b3377b7b4dd48cf108576b0516c94ab80cab614dd89e"
+    },
+    {
+      "path": "references/acceptance-criteria.md",
+      "bytes": 7291,
+      "sha256": "9d45354128bbf5287ba4dad27b1e0cce68cc5b4d5aa981d2ecc79e124b5c8720"
+    },
+    {
+      "path": "references/api-reference.md",
+      "bytes": 9552,
+      "sha256": "2265625d2c18d7a803cbc0d554e92409245400dbf4ddfeda8100b9eea025f7cd"
+    },
+    {
+      "path": "references/cli-installation-guide.md",
+      "bytes": 12305,
+      "sha256": "60e0dfa47cbad5f857f69a3a911ad8074738e2c36caebfc6adcc8d9becc9328a"
+    },
+    {
+      "path": "references/diagnosis-flow.md",
+      "bytes": 11852,
+      "sha256": "380a2fb5a76fe81f12ec30edda0e3cbd757d2dcc7e811a2ba0d119e829d99e23"
+    },
+    {
+      "path": "references/error-codes.md",
+      "bytes": 7605,
+      "sha256": "687f26f1fcb37e8943e6592f1ece1b6ebc4542238c2da5a531bf90a0b3ec9b9a"
+    },
+    {
+      "path": "references/health-check.md",
+      "bytes": 6750,
+      "sha256": "6deeadcc016da1f6586596a037012b9ce2d90ea8c5132042e39cf967009c92e3"
+    },
+    {
+      "path": "references/ram-policies.md",
+      "bytes": 2809,
+      "sha256": "0be5fccf50e125c3c049d9e2cf2e05925f49953eed9909872c17d94e7c996e43"
+    },
+    {
+      "path": "references/related-apis.md",
+      "bytes": 6420,
+      "sha256": "9c095552bbaed2ccda80d74497e8307fdef2a732607608fc160e1184ca5b8678"
+    },
+    {
+      "path": "references/verification-method.md",
+      "bytes": 4561,
+      "sha256": "90ea221050a3ae9059a2cfb7bd26a9a8184fba1ad7bd39278710ea191fb5d7a7"
+    }
+  ]
+}

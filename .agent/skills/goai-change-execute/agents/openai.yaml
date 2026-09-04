@@ -1,0 +1,4 @@
+interface:
+  display_name: "受控变更决策"
+  short_description: "基于证据决定审批、执行或停止并固化幂等与回滚边界"
+  default_prompt: "Use $goai-change-execute to decide whether a governed OpenXnet remediation plan may proceed."

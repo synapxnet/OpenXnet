@@ -1,11 +1,17 @@
 OpenXnet
-OpenXnet GOAI Competition Suite goai-v1.1.0
+Copyright (c) 2025-2026 SynapXnet
 
-Copyright (C) 2025 heshengtao <hst97@qq.com>
-Competition integration and subsequent modifications Copyright (C) 2026 SynapXnet Team
+OpenXnet is distributed under the GNU Affero General Public License v3.0.
 
-Repository license: AGPL-3.0-only. See LICENSE for the complete terms.
+This distribution contains third-party software and assets. Machine-readable
+dependency and license inventories are provided in LICENSE-third-party/ and
+SBOM/. Copyright notices and license texts shipped with individual components
+remain the property of their respective owners.
 
-This repository includes third-party software. Its dependency inventory is recorded in sbom.cdx.json; each dependency remains subject to its own license.
+The bundled alibabacloud-pai-eas-service-diagnose Skill is attributed to the
+Alibaba Cloud PAI EAS Team and declares the Apache License 2.0. OpenXnet pins
+the upstream artifact digest and does not extend its read-only cloud
+permissions.
 
-OpenXnet, XnetAIOps, XnetDataOps and XnetMLOps are products of the SynapXnet team. Their separation into repositories is an engineering boundary, not a separation of product ownership.
+This NOTICE is informational and does not replace or modify any applicable
+license terms.

@@ -612,9 +612,9 @@
   content: "";
 }
 
-.competition-agent-flow__list li,
-.competition-agent-flow__list li:first-child,
-.competition-agent-flow__list li:last-child {
+.competition-agent-flow__list > li,
+.competition-agent-flow__list > li:first-child,
+.competition-agent-flow__list > li:last-child {
   position: relative;
   display: grid;
   min-width: 0;
@@ -625,7 +625,7 @@
   border-bottom: 1px solid var(--competition-grid-border);
 }
 
-.competition-agent-flow__list li:last-child {
+.competition-agent-flow__list > li:last-child {
   border-bottom: 0;
 }
 
@@ -636,6 +636,10 @@
   border-radius: 50%;
   background: var(--ox-bg-surface);
   z-index: 1;
+}
+
+.competition-agent-flow__content {
+  min-width: 0;
 }
 
 .competition-agent-flow__heading strong {
@@ -669,14 +673,721 @@
   overflow-wrap: anywhere;
   text-overflow: clip;
   white-space: normal;
-  word-break: break-all;
+  word-break: normal;
+}
+
+.competition-agent-events {
+  min-width: 0;
+  margin-top: 10px;
+  border: 1px solid var(--competition-grid-border);
+  background: var(--ox-bg-elevated);
+}
+
+.competition-agent-events > summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--ox-text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.competition-agent-events > summary::-webkit-details-marker {
+  display: none;
+}
+
+.competition-agent-events > summary span {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.competition-agent-events > summary b {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--ox-text-primary);
+}
+
+.competition-agent-events > ol {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 0 10px 10px;
+  list-style: none;
+}
+
+.competition-agent-events > ol > li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  padding: 9px 10px;
+  border: 1px solid var(--competition-grid-border);
+  background: var(--ox-bg-surface);
+}
+
+.competition-agent-events > ol > li > div:first-child {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(110px, auto) minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.competition-agent-events > ol > li > div:first-child strong,
+.competition-agent-events > ol > li > div:first-child span,
+.competition-agent-events > ol > li > div:first-child time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.competition-agent-events > ol > li > code,
+.competition-agent-events > ol > li > small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.competition-agent-events > ol > li > pre {
+  overflow: auto;
+  max-width: 100%;
+  max-height: 240px;
+  margin: 2px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--competition-grid-border);
+  background: var(--ox-bg-base);
+  color: var(--ox-text-primary);
+  font: 11px/1.55 var(--ox-font-mono, Consolas, monospace);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: normal;
+}
+
+/* 复赛任务图占据独立全宽网格行，避免与三栏主控区和证据区发生自动布局冲突。 */
+.competition-task-graph {
+  min-width: 0;
+  grid-column: 1 / -1;
+  grid-row: 6;
+  padding: 16px 18px 18px;
+  border-bottom: 1px solid var(--competition-grid-border);
+  background: var(--ox-bg-base);
+}
+
+.competition-task-graph__policies {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.competition-task-graph__policies > span {
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid var(--competition-grid-border);
+  border-radius: 3px;
+  color: var(--ox-text-muted);
+  background: var(--ox-bg-surface);
+  font: 10px/15px var(--ox-font-mono, Consolas, monospace);
+  overflow-wrap: anywhere;
+}
+
+.competition-task-graph__lanes {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: start;
+  gap: 10px;
+}
+
+.competition-task-lane {
+  min-width: 0;
+  border: 1px solid var(--competition-grid-border);
+  background: var(--ox-bg-surface);
+}
+
+.competition-task-lane > header {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--competition-grid-border);
+  color: var(--ox-text-secondary);
+  background: var(--ox-bg-surface-hover);
+  font: var(--ox-text-caption);
+}
+
+.competition-task-lane > header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.competition-task-lane > header span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ox-text-muted);
+  background: var(--ox-bg-input);
+  font: 10px/1 var(--ox-font-mono, Consolas, monospace);
+}
+
+.competition-task-node {
+  min-width: 0;
+  padding: 9px;
+  border-bottom: 1px solid var(--competition-grid-border);
+}
+
+.competition-task-node:last-child {
+  border-bottom: 0;
+}
+
+.competition-task-node > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.competition-task-node > div:first-child > i {
+  width: 14px;
+  flex: 0 0 14px;
+  color: var(--ox-text-muted);
+  text-align: center;
+}
+
+.competition-task-node.is-succeeded > div:first-child > i { color: var(--ox-success); }
+.competition-task-node.is-running > div:first-child > i,
+.competition-task-node.is-ready > div:first-child > i { color: var(--ox-accent); }
+.competition-task-node.is-failed > div:first-child > i,
+.competition-task-node.is-blocked > div:first-child > i { color: var(--ox-error); }
+
+.competition-task-node > div:first-child > strong {
+  min-width: 0;
+  color: var(--ox-text-primary);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.competition-task-node > small,
+.competition-task-node > span {
+  display: block;
+  min-width: 0;
+  margin-top: 4px;
+  color: var(--ox-text-muted);
+  font-size: 9px;
+  line-height: 14px;
+  overflow-wrap: anywhere;
+}
+
+.competition-task-node__result {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+  margin-top: 7px;
+  padding: 7px 8px;
+  border-left: 2px solid var(--ox-border-strong);
+  color: var(--ox-text-secondary);
+  background: var(--ox-bg-base);
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.competition-task-node__result.is-success { border-left-color: var(--ox-success); }
+.competition-task-node__result.is-danger { border-left-color: var(--ox-error); }
+
+.competition-task-node__result > span,
+.competition-task-node__result > code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.competition-task-node__result > code {
+  grid-column: 1 / -1;
+  color: var(--ox-text-muted);
+  font-family: var(--ox-font-mono, Consolas, monospace);
+}
+
+.competition-task-events {
+  display: block;
+  min-width: 0;
+  margin-top: 12px;
+  border-top: 1px solid var(--competition-grid-border);
+}
+
+.competition-task-events > summary {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  color: var(--ox-text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.competition-task-events > summary::-webkit-details-marker { display: none; }
+.competition-task-events > summary b { margin-left: auto; color: var(--ox-text-primary); }
+
+.competition-task-events > ol {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.competition-task-events > ol > li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--competition-grid-border);
+  background: var(--ox-bg-surface);
+}
+
+.competition-task-events > ol > li > i {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ox-success);
+  background: var(--ox-success-soft);
+  font-size: 9px;
+}
+
+.competition-task-events > ol > li.is-exception > i { color: var(--ox-error); background: var(--ox-error-soft); }
+.competition-task-events > ol > li.is-recovery > i { color: var(--ox-info); background: var(--ox-info-soft); }
+
+.competition-task-events > ol > li > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.competition-task-events strong,
+.competition-task-events span,
+.competition-task-events small,
+.competition-task-events code,
+.competition-task-events time {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.competition-task-events strong { color: var(--ox-text-primary); font-size: 10px; }
+.competition-task-events span,
+.competition-task-events small,
+.competition-task-events time { color: var(--ox-text-muted); font-size: 9px; }
+.competition-task-events code { color: var(--ox-text-secondary); font: 9px/14px var(--ox-font-mono, Consolas, monospace); }
+
+/* 上下文交接采用单列事件链，长工具名和摘要分别占行，防止在中心栏横向挤压。 */
+.competition-context-flow {
+  min-width: 0;
+  margin: 4px 0 12px;
+  border: 1px solid var(--competition-grid-border);
+  background: var(--ox-bg-base);
+}
+
+.competition-context-flow__heading {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--competition-grid-border);
+  color: var(--ox-text-secondary);
+  font: var(--ox-text-caption);
+}
+
+.competition-context-flow__heading > span { font-family: var(--ox-font-mono, Consolas, monospace); }
+
+.competition-context-flow > ol {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.competition-context-flow > ol > li {
+  min-width: 0;
+  padding: 10px;
+  border-bottom: 1px solid var(--competition-grid-border);
+}
+
+.competition-context-flow > ol > li:last-child { border-bottom: 0; }
+
+.competition-context-flow__route {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 22px minmax(90px, 1fr) 14px minmax(90px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.competition-context-flow__route > b {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ox-accent);
+  background: var(--ox-accent-soft);
+  font-size: 10px;
+}
+
+.competition-context-flow__route > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ox-text-primary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.competition-context-flow__route > i { color: var(--ox-text-muted); font-size: 9px; }
+
+.competition-context-flow__route > span {
+  padding: 2px 5px;
+  border: 1px solid var(--competition-grid-border);
+  color: var(--ox-text-muted);
+  background: var(--ox-bg-surface);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.competition-context-flow > ol > li > p {
+  margin: 7px 0;
+  color: var(--ox-text-secondary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.competition-context-flow__tools {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.competition-context-flow__tools > code,
+.competition-context-flow__tools > span {
+  max-width: 100%;
+  padding: 2px 5px;
+  border-radius: 3px;
+  color: var(--ox-text-muted);
+  background: var(--ox-bg-surface-hover);
+  font-size: 9px;
+  line-height: 14px;
+  overflow-wrap: anywhere;
+}
+
+.competition-context-flow__tools > code { color: var(--ox-text-secondary); font-family: var(--ox-font-mono, Consolas, monospace); }
+
+.competition-context-flow__digests {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  color: var(--ox-text-muted);
+  font-size: 9px;
+}
+
+.competition-context-flow__digests > span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.competition-context-flow__digests code {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--ox-text-secondary);
+  font-family: var(--ox-font-mono, Consolas, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 完成门禁和 Memory V3 独占一行，左侧解释关闭条件，右侧展示长期记忆与 Skill 生命周期。 */
+.competition-assurance-grid {
+  display: grid;
+  min-width: 0;
+  grid-column: 1 / -1;
+  grid-row: 7;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  border-bottom: 1px solid var(--competition-grid-border);
+  background: var(--ox-bg-surface);
+}
+
+.competition-completion-gates,
+.competition-memory-skill {
+  min-width: 0;
+  padding: 16px 18px 18px;
+}
+
+.competition-memory-skill {
+  border-left: 1px solid var(--competition-grid-border);
+  background: var(--ox-bg-base);
+}
+
+.competition-completion-gates > ol,
+.competition-skill-rounds {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.competition-completion-gates > ol > li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 9px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--competition-grid-border);
+}
+
+.competition-completion-gates > ol > li > i {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ox-text-muted);
+  background: var(--ox-bg-surface-hover);
+  font-size: 9px;
+}
+
+.competition-completion-gates > ol > li.is-passed > i { color: var(--ox-success); background: var(--ox-success-soft); }
+.competition-completion-gates > ol > li.is-failed > i { color: var(--ox-error); background: var(--ox-error-soft); }
+
+.competition-completion-gates > ol > li > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.competition-completion-gates strong,
+.competition-completion-gates span,
+.competition-completion-gates code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.competition-completion-gates strong { color: var(--ox-text-primary); font-size: 11px; }
+.competition-completion-gates span { color: var(--ox-text-secondary); font-size: 10px; line-height: 15px; }
+.competition-completion-gates code { color: var(--ox-text-muted); font: 9px/14px var(--ox-font-mono, Consolas, monospace); }
+
+.competition-completion-gates > ol > li > b {
+  padding: 2px 5px;
+  border: 1px solid var(--competition-grid-border);
+  border-radius: 3px;
+  color: var(--ox-text-muted);
+  font: 9px/14px var(--ox-font-mono, Consolas, monospace);
+}
+
+.competition-completion-verdict {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--competition-grid-border);
+  border-left: 3px solid var(--ox-warning);
+  background: var(--ox-bg-base);
+}
+
+.competition-completion-verdict.is-complete { border-left-color: var(--ox-success); }
+
+.competition-completion-verdict > i {
+  flex: 0 0 auto;
+  color: var(--ox-warning);
+  font-size: 18px;
+}
+
+.competition-completion-verdict.is-complete > i { color: var(--ox-success); }
+
+.competition-completion-verdict > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.competition-completion-verdict strong,
+.competition-completion-verdict span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.competition-completion-verdict strong { color: var(--ox-text-primary); font-size: 11px; }
+.competition-completion-verdict span { color: var(--ox-text-muted); font: 9px/14px var(--ox-font-mono, Consolas, monospace); }
+
+.competition-memory-skill__summary {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0 0 12px;
+}
+
+.competition-memory-skill__summary > div,
+.competition-memory-record dl > div { min-width: 0; }
+
+.competition-memory-skill__summary dt,
+.competition-memory-record dt { color: var(--ox-text-muted); font-size: 9px; }
+
+.competition-memory-skill__summary dd,
+.competition-memory-record dd {
+  min-width: 0;
+  margin: 2px 0 0;
+  color: var(--ox-text-primary);
+  font: 10px/15px var(--ox-font-mono, Consolas, monospace);
+  overflow-wrap: anywhere;
+}
+
+.competition-skill-rounds { border-top: 1px solid var(--competition-grid-border); }
+
+.competition-skill-rounds > li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--competition-grid-border);
+}
+
+.competition-skill-rounds > li > b {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ox-accent);
+  background: var(--ox-accent-soft);
+  font-size: 9px;
+}
+
+.competition-skill-rounds > li > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.competition-skill-rounds strong,
+.competition-skill-rounds span,
+.competition-skill-rounds code { min-width: 0; overflow-wrap: anywhere; }
+.competition-skill-rounds strong { color: var(--ox-text-primary); font-size: 10px; }
+.competition-skill-rounds span,
+.competition-skill-rounds code,
+.competition-skill-rounds em { color: var(--ox-text-muted); font-size: 9px; line-height: 14px; }
+.competition-skill-rounds code { font-family: var(--ox-font-mono, Consolas, monospace); }
+
+.competition-skill-rounds em {
+  padding: 2px 4px;
+  border: 1px solid var(--competition-grid-border);
+  border-radius: 3px;
+  font-style: normal;
+}
+
+.competition-memory-skill__error,
+.competition-memory-skill__pending {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--competition-grid-border);
+  color: var(--ox-text-secondary);
+  background: var(--ox-bg-surface);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.competition-memory-skill__error {
+  border-color: color-mix(in srgb, var(--ox-error) 35%, var(--competition-grid-border));
+  color: var(--ox-error);
+}
+
+.competition-memory-record {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--competition-grid-border);
+  border-left: 3px solid var(--ox-success);
+  background: var(--ox-bg-surface);
+}
+
+.competition-memory-record > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.competition-memory-record > div:first-child > strong {
+  min-width: 0;
+  overflow: hidden;
+  margin-right: auto;
+  color: var(--ox-text-primary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.competition-memory-record > p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 8px 0 10px;
+  color: var(--ox-text-secondary);
+  font-size: 10px;
+  line-height: 16px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.competition-memory-record dl {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 10px;
+  margin: 0;
 }
 
 .competition-evidence-grid {
   display: grid;
   min-width: 0;
   grid-column: 1 / -1;
-  grid-row: 6;
+  grid-row: 8;
   grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.65fr);
   border-bottom: 1px solid var(--competition-grid-border);
   background: var(--ox-bg-surface);
@@ -806,7 +1517,7 @@
   display: grid;
   min-width: 0;
   grid-column: 1 / -1;
-  grid-row: 7;
+  grid-row: 9;
   grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
   border: 0;
   background: var(--ox-bg-surface);
@@ -864,9 +1575,9 @@
     margin-top: 4px;
   }
 
-  .competition-agent-flow__list li,
-  .competition-agent-flow__list li:first-child,
-  .competition-agent-flow__list li:last-child {
+  .competition-agent-flow__list > li,
+  .competition-agent-flow__list > li:first-child,
+  .competition-agent-flow__list > li:last-child {
     padding-top: 6px;
     padding-bottom: 6px;
   }
@@ -874,6 +1585,18 @@
   .competition-agent-flow__content p {
     margin-top: 3px;
     margin-bottom: 4px;
+  }
+
+  .competition-agent-events > ol > li > div:first-child {
+    grid-template-columns: minmax(90px, auto) minmax(100px, 1fr);
+  }
+
+  .competition-agent-events > ol > li > div:first-child time {
+    grid-column: 1 / -1;
+  }
+
+  .competition-task-events > ol {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .competition-evidence-grid {
@@ -917,9 +1640,25 @@
     border-left: 0;
   }
 
-  .competition-evidence-grid {
+  .competition-task-graph {
     grid-column: 1 / -1;
     grid-row: 7;
+  }
+
+  .competition-assurance-grid {
+    grid-column: 1 / -1;
+    grid-row: 8;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .competition-memory-skill {
+    border-top: 1px solid var(--competition-grid-border);
+    border-left: 0;
+  }
+
+  .competition-evidence-grid {
+    grid-column: 1 / -1;
+    grid-row: 9;
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -929,7 +1668,7 @@
   }
 
   .competition-secondary-grid {
-    grid-row: 8;
+    grid-row: 10;
     grid-template-columns: minmax(0, 1fr);
   }
 

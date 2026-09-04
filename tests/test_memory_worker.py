@@ -229,6 +229,64 @@ class MemoryWorkerHandlerTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(ValueError, "fields"):
                 await handlers.list_collection({"memoryId": "memory-one", "path": "outside"})
 
+    async def test_synapxnet_v3_management_round_trip(self) -> None:
+        """Expose V3 creation, sharing, version history and integrity via exact Worker RPC."""
+
+        with tempfile.TemporaryDirectory(prefix="openxnet-memory-v3-worker-") as directory:
+            handlers = MemoryWorkerHandlers(
+                Path(directory),
+                memory_factory=RecordingMemoryFactory(),
+            )
+            created = await handlers.synapxnet_create(
+                {
+                    "ownerAgent": "agent-owner",
+                    "actorAgent": "agent-owner",
+                    "taskId": "task-worker",
+                    "title": "Worker memory",
+                    "content": "A versioned memory managed through the worker.",
+                    "qualityScore": 0.9,
+                    "permissions": [],
+                    "tags": ["worker"],
+                    "source": "test",
+                }
+            )
+            edited = await handlers.synapxnet_edit(
+                {
+                    "memoryId": created["memoryId"],
+                    "baseVersion": 1,
+                    "actorAgent": "agent-owner",
+                    "title": "Worker memory",
+                    "content": "A versioned memory shared through the worker.",
+                    "qualityScore": 0.9,
+                    "permissions": ["agent-reviewer"],
+                    "tags": ["worker"],
+                    "reason": "Reviewer access required.",
+                }
+            )
+            history = await handlers.synapxnet_history(
+                {"memoryId": created["memoryId"], "requesterAgent": "agent-reviewer"}
+            )
+            verified = await handlers.synapxnet_verify(
+                {"requesterAgent": "agent-owner", "memoryId": created["memoryId"]}
+            )
+            recalled = await handlers.synapxnet_recall(
+                {
+                    "requesterAgent": "agent-reviewer",
+                    "query": "shared worker",
+                    "taskId": "task-worker",
+                    "requiredTags": ["worker"],
+                    "limit": 4,
+                    "maximumCharacters": 2000,
+                }
+            )
+
+            self.assertEqual(edited["version"], 2)
+            self.assertEqual(len(history["versions"]), 2)
+            self.assertTrue(verified["healthy"])
+            self.assertEqual(recalled["count"], 1)
+            with self.assertRaisesRegex(ValueError, "fields"):
+                await handlers.synapxnet_status({"path": "outside"})
+
 
 class FakeRecallRuntime:
     """记录 Recall Worker 委托，并返回稳定结果的异步测试替身。"""
@@ -346,6 +404,10 @@ class RecordingMemoryWorkerClient(MemoryWorkerClient):
         self.requests.append((method, payload))
         if method == "memory.search":
             return {"results": [{"memory": "worker result"}]}
+        if method == "memory.v3.recall":
+            return {"schema": "openxnet.synapxnet-memory-runtime.v1", "items": []}
+        if method == "memory.v3.short-term.append":
+            return {"schema": "openxnet.synapxnet-memory-runtime.v1", "eventId": "event"}
         return {"result": {"status": "added"}}
 
 
@@ -368,6 +430,30 @@ class MemoryWorkerClientTests(unittest.TestCase):
         self.assertEqual(added, {"status": "added"})
         self.assertEqual(client.requests[0][1]["limit"], 7)
         self.assertFalse(client.requests[1][1]["infer"])
+
+    def test_v3_recall_and_short_term_evidence_use_dedicated_methods(self) -> None:
+        """Keep V3 chat recall independent from legacy Mem0 configuration payloads."""
+
+        client = RecordingMemoryWorkerClient()
+        recalled = client.recall_v3(
+            "release procedure",
+            requester_agent="agent-owner",
+            task_id="conversation-one",
+            limit=3,
+            maximum_characters=2000,
+        )
+        appended = client.append_v3_short_term(
+            session_id="conversation-one",
+            requester_agent="agent-owner",
+            input_text="question",
+            output_text="answer",
+            token_count=4,
+        )
+
+        self.assertEqual(recalled["items"], [])
+        self.assertEqual(appended["eventId"], "event")
+        self.assertEqual(client.requests[0][0], "memory.v3.recall")
+        self.assertEqual(client.requests[1][0], "memory.v3.short-term.append")
 
 
 if __name__ == "__main__":

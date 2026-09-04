@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Pinned third-party Chevrotain parser bundle; the reported 8-byte token is minified parser data."
+paths = [
+  '''(?:^|[/\\])static[/\\]libs[/\\]three[/\\]examples[/\\]jsm[/\\]libs[/\\]chevrotain\.module\.min\.js$'''
+]

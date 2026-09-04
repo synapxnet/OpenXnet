@@ -396,6 +396,117 @@ class EnterpriseInsightsEngineApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(remaining_graph["stats"]["competition_triples"], 0)
         self.assertEqual(remaining_graph["stats"]["triples"], 1)
 
+    async def test_dynamic_task_graph_and_candidate_reasoning_are_projected(self) -> None:
+        """验证动态任务图和多候选裁决同时形成神经符号与可查询图谱关系。"""
+
+        payload = self._competition_projection().model_dump(by_alias=True)
+        payload["taskGraphs"] = [{
+            "graphId": "graph-demo",
+            "workspaceId": "ws-demo",
+            "incidentId": "inc-demo",
+            "traceId": "trace-demo",
+            "revision": 1,
+            "status": "AWAITING_APPROVAL",
+            "replanReason": None,
+            "conflictPolicies": ["RESOURCE_VERSION_WINS", "HUMAN_APPROVAL_ON_CONFLICT"],
+            "nodes": [{
+                "nodeId": "evidence:aiops.alert.get",
+                "lane": "EVIDENCE",
+                "title": "读取告警证据",
+                "nodeType": "TOOL_CALL",
+                "toolName": "aiops.alert.get",
+                "dependsOn": ["route-agent-team"],
+                "parallelGroup": "parallel-evidence",
+                "timeoutMs": 30000,
+                "maximumAttempts": 2,
+                "status": "SUCCEEDED",
+                "evidenceIds": ["ev-aiops"],
+            }],
+            "createdAt": "2026-08-05T10:01:00.000Z",
+            "updatedAt": "2026-08-05T10:05:00.000Z",
+            "completedAt": None,
+            "crystallizedAt": None,
+        }]
+        payload["reasoningDecisions"] = [{
+            "reasoningId": "reasoning-plan",
+            "workspaceId": "ws-demo",
+            "incidentId": "inc-demo",
+            "traceId": "trace-demo",
+            "decisionType": "PLAN_SELECTION",
+            "retrievalMode": "ONLINE_HYBRID_RAG_KG",
+            "query": "推荐模型异常受控恢复",
+            "knowledgeRefs": [{
+                "subject": "Incident:inc-old",
+                "predicate": "crystallized_as_skill",
+                "object": "Skill:synapxnet-recommendation-capacity-recovery",
+                "confidence": 0.98,
+            }],
+            "candidates": [
+                {
+                    "candidateId": "plan:governed",
+                    "candidateType": "PLAN",
+                    "title": "完整受治理计划",
+                    "skillId": "synapxnet-recommendation-capacity-recovery",
+                    "strategyId": "governed-full-closure",
+                    "semanticScore": 1.0,
+                    "graphScore": 0.8,
+                    "evidenceScore": 1.0,
+                    "safetyScore": 1.0,
+                    "totalScore": 1.0,
+                    "eligible": True,
+                    "authorityLevel": "NSX-4",
+                    "riskClass": "RK-2",
+                    "evidenceGrade": "EV-2",
+                    "policyDecision": "APPROVAL_REQUIRED",
+                    "ruleCodes": ["HUMAN_APPROVAL_REQUIRED", "END_TO_END_CLOSURE_REQUIRED"],
+                    "ruleReasons": ["完整闭环必须审批。"],
+                },
+                {
+                    "candidateId": "plan:direct-write",
+                    "candidateType": "PLAN",
+                    "title": "直接写入",
+                    "skillId": None,
+                    "strategyId": "direct-write",
+                    "semanticScore": 0.8,
+                    "graphScore": 0.0,
+                    "evidenceScore": 1.0,
+                    "safetyScore": 0.0,
+                    "totalScore": 0.47,
+                    "eligible": False,
+                    "authorityLevel": "NSX-4",
+                    "riskClass": "RK-2",
+                    "evidenceGrade": "EV-2",
+                    "policyDecision": "DENY",
+                    "ruleCodes": ["PRODUCTION_GUARD_MISSING"],
+                    "ruleReasons": ["缺少回滚和幂等边界。"],
+                },
+            ],
+            "selectedCandidateId": "plan:governed",
+            "explanation": "完整计划通过符号硬门。",
+            "createdAt": "2026-08-05T10:05:00.000Z",
+        }]
+        result = await self._api.competition_knowledge_sync(
+            CompetitionKnowledgeProjectionRequest.model_validate(payload),
+        )
+        self.assertEqual(result["symbols"], 8)
+        dashboard = await self._api.neuro_dashboard(NeuroDashboardRequest(limit=20))
+        record_types = {
+            item["metadata"]["recordType"]
+            for item in dashboard["symbols"]
+            if item["metadata"]["sourceType"] == "competition"
+        }
+        self.assertIn("task_graph", record_types)
+        self.assertIn("reasoning_decision", record_types)
+        graph = await self._api.knowledge_graph_dashboard(KnowledgeGraphDashboardRequest(limit=500))
+        labels = {
+            edge["label"] for edge in graph["graph"]["edges"]
+            if edge["source_type"] == "competition" and edge["current"]
+        }
+        self.assertIn("has_task_graph", labels)
+        self.assertIn("depends_on_task_node", labels)
+        self.assertIn("selected_candidate", labels)
+        self.assertIn("evaluated_by_rule", labels)
+
 
 if __name__ == "__main__":
     unittest.main()

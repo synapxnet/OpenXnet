@@ -328,6 +328,26 @@ import type {
   ApplicationMemoryRecordRequest,
   UpdateApplicationMemoryRecordRequest,
 } from "./application-memory-management-runtime";
+import type {
+  CreateSynapxnetMemoryRequest,
+  EditSynapxnetMemoryRequest,
+  ExportSynapxnetMemoriesRequest,
+  ImportSynapxnetMemoriesRequest,
+  ListSynapxnetMemoriesRequest,
+  RecoverSynapxnetMemoriesRequest,
+  RollbackSynapxnetMemoryRequest,
+  RetireSynapxnetMemoryRequest,
+  SynapxnetMemoryHistoryResult,
+  SynapxnetMemoryIdentityRequest,
+  SynapxnetMemoryImportResult,
+  SynapxnetMemoryIntegrityResult,
+  SynapxnetMemoryListResult,
+  SynapxnetMemoryRecord,
+  SynapxnetMemoryRecoveryResult,
+  SynapxnetMemoryStatusResult,
+  SynapxnetMemoryTransferDocument,
+  VerifySynapxnetMemoryRequest,
+} from "./application-synapxnet-memory-runtime";
 
 /** Stable protocol version exposed by Desktop Core to Renderer clients. */
 export const DESKTOP_CORE_PROTOCOL_VERSION = "1.0";
@@ -792,6 +812,17 @@ export interface OpenXnetDesktopApi {
   removeApplicationMemoryCollection(
     request: ApplicationMemoryCollectionRequest,
   ): Promise<ApplicationMemoryMutationResult>;
+  recoverSynapxnetMemories(request: RecoverSynapxnetMemoriesRequest): Promise<SynapxnetMemoryRecoveryResult>;
+  getSynapxnetMemoryStatus(): Promise<SynapxnetMemoryStatusResult>;
+  listSynapxnetMemories(request: ListSynapxnetMemoriesRequest): Promise<SynapxnetMemoryListResult>;
+  getSynapxnetMemoryHistory(request: SynapxnetMemoryIdentityRequest): Promise<SynapxnetMemoryHistoryResult>;
+  createSynapxnetMemory(request: CreateSynapxnetMemoryRequest): Promise<SynapxnetMemoryRecord>;
+  editSynapxnetMemory(request: EditSynapxnetMemoryRequest): Promise<SynapxnetMemoryRecord>;
+  rollbackSynapxnetMemory(request: RollbackSynapxnetMemoryRequest): Promise<SynapxnetMemoryRecord>;
+  retireSynapxnetMemory(request: RetireSynapxnetMemoryRequest): Promise<SynapxnetMemoryRecord>;
+  exportSynapxnetMemories(request: ExportSynapxnetMemoriesRequest): Promise<SynapxnetMemoryTransferDocument>;
+  importSynapxnetMemories(request: ImportSynapxnetMemoriesRequest): Promise<SynapxnetMemoryImportResult>;
+  verifySynapxnetMemory(request: VerifySynapxnetMemoryRequest): Promise<SynapxnetMemoryIntegrityResult>;
   getLegacyRendererState(): Promise<LegacyRendererStateSnapshot>;
   saveLegacyRendererSettings(
     request: SaveLegacyRendererSettingsRequest,

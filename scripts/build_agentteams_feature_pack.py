@@ -7,6 +7,7 @@ import argparse
 import hashlib
 from importlib.metadata import PackageNotFoundError, version
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
@@ -62,6 +63,8 @@ def run_pyinstaller() -> None:
     """运行 PyInstaller；无输入和返回，构建失败时抛出 CalledProcessError。"""
 
     verify_build_environment()
+    environment = dict(os.environ)
+    environment["PYINSTALLER_CONFIG_DIR"] = str(PROJECT_ROOT / ".codex-build" / "pyinstaller-cache")
     subprocess.run(
         [
             sys.executable,
@@ -72,6 +75,7 @@ def run_pyinstaller() -> None:
             "--noconfirm",
         ],
         cwd=PROJECT_ROOT,
+        env=environment,
         check=True,
     )
 

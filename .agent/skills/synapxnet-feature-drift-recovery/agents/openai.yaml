@@ -1,0 +1,4 @@
+interface:
+  display_name: "跨域特征漂移恢复"
+  short_description: "联动 DataOps、MLOps 与 AIOps 闭环恢复特征漂移事件"
+  default_prompt: "Use $synapxnet-feature-drift-recovery to diagnose and recover a cross-platform feature drift incident with evidence and rollback controls."

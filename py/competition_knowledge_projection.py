@@ -212,6 +212,91 @@ class ProjectionReceipt(ProjectionModel):
     recordedAt: str = Field(min_length=1, max_length=64)
 
 
+class ProjectionTaskGraphNode(ProjectionModel):
+    """描述动态 Task Graph 的单个节点。"""
+
+    nodeId: str = Field(min_length=1, max_length=256)
+    lane: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=512)
+    nodeType: str = Field(min_length=1, max_length=64)
+    toolName: Optional[str] = Field(default=None, max_length=256)
+    dependsOn: List[str] = Field(default_factory=list, max_length=50)
+    parallelGroup: Optional[str] = Field(default=None, max_length=128)
+    timeoutMs: int = Field(ge=1, le=86_400_000)
+    maximumAttempts: int = Field(ge=1, le=10)
+    assignedRoleCardId: Optional[str] = Field(default=None, max_length=128)
+    assignedAgentName: str = Field(default="", max_length=256)
+    assignmentMode: Optional[Literal["CAPABILITY_MATCH", "ROLE_FALLBACK", "CONTROL_PLANE", "HUMAN"]] = None
+    status: str = Field(min_length=1, max_length=64)
+    evidenceIds: List[str] = Field(default_factory=list, max_length=100)
+
+
+class ProjectionTaskGraph(ProjectionModel):
+    """描述一次 Trace 的动态任务图和重规划状态。"""
+
+    graphId: str = Field(min_length=1, max_length=128)
+    workspaceId: str = Field(min_length=1, max_length=128)
+    incidentId: str = Field(min_length=1, max_length=128)
+    traceId: str = Field(min_length=1, max_length=128)
+    revision: int = Field(ge=1)
+    status: str = Field(min_length=1, max_length=64)
+    replanReason: Optional[str] = Field(default=None, max_length=4096)
+    conflictPolicies: List[str] = Field(default_factory=list, max_length=20)
+    nodes: List[ProjectionTaskGraphNode] = Field(default_factory=list, max_length=200)
+    createdAt: str = Field(min_length=1, max_length=64)
+    updatedAt: str = Field(min_length=1, max_length=64)
+    completedAt: Optional[str] = Field(default=None, max_length=64)
+    crystallizedAt: Optional[str] = Field(default=None, max_length=64)
+
+
+class ProjectionReasoningKnowledgeRef(ProjectionModel):
+    """描述在线图谱检索返回的有界事实引用。"""
+
+    subject: str = Field(min_length=1, max_length=256)
+    predicate: str = Field(min_length=1, max_length=256)
+    object: str = Field(min_length=1, max_length=256)
+    confidence: float = Field(ge=0, le=1)
+
+
+class ProjectionReasoningCandidate(ProjectionModel):
+    """描述进入神经符号硬门的 Skill 或计划候选。"""
+
+    candidateId: str = Field(min_length=1, max_length=256)
+    candidateType: Literal["SKILL", "PLAN"]
+    title: str = Field(min_length=1, max_length=512)
+    skillId: Optional[str] = Field(default=None, max_length=128)
+    strategyId: Optional[str] = Field(default=None, max_length=128)
+    semanticScore: float = Field(ge=0, le=1)
+    graphScore: float = Field(ge=0, le=1)
+    evidenceScore: float = Field(ge=0, le=1)
+    safetyScore: float = Field(ge=0, le=1)
+    totalScore: float = Field(ge=0, le=1)
+    eligible: bool
+    authorityLevel: str = Field(min_length=1, max_length=32)
+    riskClass: str = Field(min_length=1, max_length=32)
+    evidenceGrade: str = Field(min_length=1, max_length=32)
+    policyDecision: str = Field(min_length=1, max_length=64)
+    ruleCodes: List[str] = Field(default_factory=list, max_length=50)
+    ruleReasons: List[str] = Field(default_factory=list, max_length=50)
+
+
+class ProjectionReasoningDecision(ProjectionModel):
+    """描述在线 RAG、图谱检索和符号规则形成的最终裁决。"""
+
+    reasoningId: str = Field(min_length=1, max_length=128)
+    workspaceId: str = Field(min_length=1, max_length=128)
+    incidentId: str = Field(min_length=1, max_length=128)
+    traceId: str = Field(min_length=1, max_length=128)
+    decisionType: Literal["SKILL_SELECTION", "PLAN_SELECTION"]
+    retrievalMode: Literal["ONLINE_HYBRID_RAG_KG", "CATALOG_FALLBACK"]
+    query: str = Field(min_length=1, max_length=2048)
+    knowledgeRefs: List[ProjectionReasoningKnowledgeRef] = Field(default_factory=list, max_length=100)
+    candidates: List[ProjectionReasoningCandidate] = Field(default_factory=list, max_length=20)
+    selectedCandidateId: str = Field(min_length=1, max_length=256)
+    explanation: str = Field(min_length=1, max_length=4096)
+    createdAt: str = Field(min_length=1, max_length=64)
+
+
 class ProjectionRetrospective(ProjectionModel):
     """描述已导出的复盘 Skill。"""
 
@@ -233,6 +318,8 @@ class CompetitionKnowledgeProjectionRequest(ProjectionModel):
     approvals: List[ProjectionApproval] = Field(default_factory=list, max_length=500)
     actions: List[ProjectionAction] = Field(default_factory=list, max_length=500)
     receipts: List[ProjectionReceipt] = Field(default_factory=list, max_length=1000)
+    taskGraphs: List[ProjectionTaskGraph] = Field(default_factory=list, max_length=20)
+    reasoningDecisions: List[ProjectionReasoningDecision] = Field(default_factory=list, max_length=100)
     retrospective: Optional[ProjectionRetrospective] = None
 
 
@@ -432,6 +519,86 @@ class CompetitionKnowledgeProjector:
                     "action",
                     trace_id=action.traceId,
                     decision=action.status,
+                ),
+            ))
+
+        for task_graph in request.taskGraphs:
+            child_symbols.append(NeuroSymbol(
+                id=f"{prefix}task-graph-{stable_suffix(task_graph.graphId)}",
+                operator="PlanDecompose",
+                label=(
+                    f"动态 Task Graph {task_graph.graphId} 修订 {task_graph.revision}，"
+                    f"包含 {len(task_graph.nodes)} 个节点，当前状态 {task_graph.status}"
+                ),
+                Q=SymbolQ(
+                    ruleIds=["rule-temporal-knowledge-v1"],
+                    constraints=unique_text([
+                        "DEPENDENCY_ORDER_REQUIRED",
+                        "PARALLEL_GROUP_BOUNDED",
+                        *task_graph.conflictPolicies,
+                    ], 100),
+                ),
+                K=SymbolK(entities=[
+                    entity_name("Incident", incident.incidentId),
+                    entity_name("Trace", task_graph.traceId),
+                    entity_name("TaskGraph", task_graph.graphId),
+                    *[entity_name("TaskNode", f"{task_graph.graphId}:{node.nodeId}") for node in task_graph.nodes],
+                    *[entity_name("Agent", node.assignedRoleCardId) for node in task_graph.nodes if node.assignedRoleCardId],
+                ]),
+                createdAt=parse_timestamp(task_graph.createdAt),
+                successRate=1.0 if task_graph.status == "SUCCEEDED" else (0.0 if task_graph.status == "FAILED" else 0.75),
+                parentSymbol=incident_symbol_id,
+                metadata=competition_metadata(
+                    incident,
+                    "task_graph",
+                    trace_id=task_graph.traceId,
+                    stage=f"REVISION_{task_graph.revision}",
+                    decision=task_graph.status,
+                ),
+            ))
+
+        for reasoning in request.reasoningDecisions:
+            selected = next(
+                (candidate for candidate in reasoning.candidates if candidate.candidateId == reasoning.selectedCandidateId),
+                None,
+            )
+            child_symbols.append(NeuroSymbol(
+                id=f"{prefix}reasoning-{stable_suffix(reasoning.reasoningId)}",
+                operator="RetrieveKnowledge" if reasoning.decisionType == "SKILL_SELECTION" else "ApplyLogicRules",
+                label=(
+                    f"{reasoning.decisionType} 从 {len(reasoning.candidates)} 个候选中选择 "
+                    f"{reasoning.selectedCandidateId}：{reasoning.explanation}"
+                )[:2000],
+                Q=SymbolQ(
+                    ruleIds=["rule-temporal-knowledge-v1"],
+                    constraints=unique_text([
+                        "MULTI_CANDIDATE_REQUIRED",
+                        "SYMBOLIC_HARD_GATE_REQUIRED",
+                        *(selected.ruleCodes if selected is not None else []),
+                    ], 100),
+                ),
+                K=SymbolK(entities=[
+                    entity_name("Incident", incident.incidentId),
+                    entity_name("Trace", reasoning.traceId),
+                    entity_name("Reasoning", reasoning.reasoningId),
+                    *[entity_name("Candidate", candidate.candidateId) for candidate in reasoning.candidates],
+                    *[entity_name("Skill", candidate.skillId) for candidate in reasoning.candidates if candidate.skillId],
+                ]),
+                z=[
+                    SymbolVector(type="weight", key="selected_score", value=selected.totalScore if selected is not None else 0.0),
+                    SymbolVector(type="weight", key="knowledge_coverage", value=min(1.0, len(reasoning.knowledgeRefs) / 10.0)),
+                ],
+                createdAt=parse_timestamp(reasoning.createdAt),
+                successRate=selected.totalScore if selected is not None else 0.0,
+                parentSymbol=incident_symbol_id,
+                metadata=competition_metadata(
+                    incident,
+                    "reasoning_decision",
+                    trace_id=reasoning.traceId,
+                    stage=reasoning.decisionType,
+                    decision=selected.policyDecision if selected is not None else "ABSTAIN",
+                    skill_name=selected.skillId if selected is not None and selected.skillId else "",
+                    confidence=selected.totalScore if selected is not None else 0.0,
                 ),
             ))
 
@@ -642,6 +809,53 @@ class CompetitionKnowledgeProjector:
                     add_relation(step_node, "execution_step", "produced_evidence", entity_name("Evidence", step.evidenceId), "evidence", source_symbol)
             for evidence_id in action.verificationEvidenceIds:
                 add_relation(action_node, "action", "verified_by_evidence", entity_name("Evidence", evidence_id), "evidence", source_symbol)
+
+        for task_graph in request.taskGraphs:
+            source_symbol = f"{prefix}task-graph-{stable_suffix(task_graph.graphId)}"
+            graph_node = entity_name("TaskGraph", task_graph.graphId)
+            add_relation(incident_node, "incident", "has_task_graph", graph_node, "task_graph", source_symbol)
+            add_relation(entity_name("Trace", task_graph.traceId), "trace", "uses_task_graph", graph_node, "task_graph", source_symbol)
+            add_relation(graph_node, "task_graph", "has_status", entity_name("Status", task_graph.status), "status", source_symbol)
+            add_relation(graph_node, "task_graph", "has_revision", entity_name("Revision", str(task_graph.revision)), "revision", source_symbol)
+            for node in task_graph.nodes:
+                node_entity = entity_name("TaskNode", f"{task_graph.graphId}:{node.nodeId}")
+                add_relation(graph_node, "task_graph", "contains_task_node", node_entity, "task_node", source_symbol)
+                add_relation(node_entity, "task_node", "has_status", entity_name("Status", node.status), "status", source_symbol)
+                add_relation(node_entity, "task_node", "has_lane", entity_name("TaskLane", node.lane), "task_lane", source_symbol)
+                if node.toolName:
+                    add_relation(node_entity, "task_node", "invokes_tool", entity_name("Tool", node.toolName), "tool", source_symbol)
+                if node.parallelGroup:
+                    add_relation(node_entity, "task_node", "belongs_to_parallel_group", entity_name("ParallelGroup", node.parallelGroup), "parallel_group", source_symbol)
+                if node.assignedRoleCardId:
+                    add_relation(node_entity, "task_node", "assigned_to_agent", entity_name("Agent", node.assignedRoleCardId), "agent", source_symbol)
+                elif node.assignedAgentName:
+                    owner_type = "human" if node.assignmentMode == "HUMAN" else "control_plane"
+                    add_relation(node_entity, "task_node", "assigned_to_owner", entity_name("Owner", node.assignedAgentName), owner_type, source_symbol)
+                for dependency in node.dependsOn:
+                    add_relation(
+                        node_entity,
+                        "task_node",
+                        "depends_on_task_node",
+                        entity_name("TaskNode", f"{task_graph.graphId}:{dependency}"),
+                        "task_node",
+                        source_symbol,
+                    )
+
+        for reasoning in request.reasoningDecisions:
+            source_symbol = f"{prefix}reasoning-{stable_suffix(reasoning.reasoningId)}"
+            reasoning_node = entity_name("Reasoning", reasoning.reasoningId)
+            add_relation(incident_node, "incident", "has_reasoning_decision", reasoning_node, "reasoning_decision", source_symbol)
+            add_relation(entity_name("Trace", reasoning.traceId), "trace", "has_reasoning_decision", reasoning_node, "reasoning_decision", source_symbol)
+            add_relation(reasoning_node, "reasoning_decision", "uses_retrieval_mode", entity_name("RetrievalMode", reasoning.retrievalMode), "retrieval_mode", source_symbol)
+            for candidate in reasoning.candidates:
+                candidate_node = entity_name("Candidate", candidate.candidateId)
+                predicate = "selected_candidate" if candidate.candidateId == reasoning.selectedCandidateId else "considered_candidate"
+                add_relation(reasoning_node, "reasoning_decision", predicate, candidate_node, "reasoning_candidate", source_symbol, candidate.totalScore)
+                add_relation(candidate_node, "reasoning_candidate", "policy_decision", entity_name("PolicyDecision", candidate.policyDecision), "policy_decision", source_symbol)
+                if candidate.skillId:
+                    add_relation(candidate_node, "reasoning_candidate", "uses_skill", entity_name("Skill", candidate.skillId), "skill", source_symbol)
+                for rule_code in candidate.ruleCodes:
+                    add_relation(candidate_node, "reasoning_candidate", "evaluated_by_rule", entity_name("Rule", rule_code), "symbolic_rule", source_symbol)
 
         for receipt in request.receipts:
             receipt_node = entity_name("AuditReceipt", receipt.receiptId)

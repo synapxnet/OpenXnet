@@ -559,8 +559,8 @@ export const COMPETITION_TOOL_REGISTRY: readonly CompetitionToolDescriptor[] = O
   },
   {
     name: "mlops.training.search.start",
-    title: "启动并行训练搜索",
-    description: "在固定数据集上启动受限并行训练或再训练搜索。",
+    title: "启动受限训练搜索",
+    description: "在固定数据集和参数边界内启动可审计训练或再训练搜索。",
     platform: "mlops",
     service: "mlops-mep-service",
     riskLevel: "HIGH_RISK_WRITE",

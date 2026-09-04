@@ -1376,7 +1376,8 @@ let vue_data = {
       { id: 'text', icon: 'fa-solid fa-file-lines', title: 'storageText' },
       { id: 'image', icon: 'fa-solid fa-image', title: 'storageImage' },
       { id: 'video', icon: 'fa-solid fa-video', title: 'storageVideo' },
-      { id: 'recall', icon: 'fa-solid fa-clock-rotate-left', title: 'storageRecall' }
+      { id: 'recall', icon: 'fa-solid fa-clock-rotate-left', title: 'storageRecall' },
+      { id: 'memory-v3', icon: 'fa-solid fa-brain', title: 'Memory V3' }
     ],
     defaultSeparators: [
       // 转义字符
@@ -1716,6 +1717,10 @@ let vue_data = {
       is_memory: false,
       memoryLimit: 10,
       workspaceProvider: 'session_store',
+      synapxnetV3Enabled: true,
+      synapxnetV3RecallLimit: 4,
+      synapxnetV3MaximumCharacters: 4000,
+      synapxnetV3ShortTermTtlSeconds: 86400,
       userName:'user',
       genericSystemPrompt: '{{char}}必须使用{{user}}使用的语言与之交流，例如：当{{user}}使用中文时，你也必须尽可能地使用中文！当{{user}}使用英文时，你也必须尽可能地使用英文！包括交代旁白等文字也是同理！',
     },
@@ -1826,7 +1831,11 @@ let vue_data = {
     enterpriseChatRecipientIds: [],
     enterpriseChatLoading: false,
     enterpriseChatSending: false,
+    enterpriseChatTaskStarting: false,
     enterpriseChatRefreshTimer: null,
+    enterpriseSandboxWorkView: 'chat',
+    enterpriseAuditIncidentId: '',
+    enterpriseCompetitionScenarioType: 'feature-drift',
     agentIconX: 0,
     agentIconY: 0,
     showAgentIcon: false,
@@ -2502,12 +2511,26 @@ let vue_data = {
       auditReceipts: [],
       teamBindings: [],
       agentDecisions: [],
+      skillUsages: [],
+      taskGraphs: [],
+      reasoningDecisions: [],
+      skillEvolutionRuns: [],
       updatedAt: ''
     },
     competitionLoading: false,
     competitionBusyAction: '',
+    competitionProgressPollTimer: null,
+    competitionProgressPollGeneration: 0,
+    competitionMemoryLoading: false,
+    competitionMemoryStatus: null,
+    competitionMemoryRecords: [],
+    competitionMemoryError: '',
+    competitionReleaseProfile: 'production',
+    competitionRehearsalAvailable: false,
+    competitionRehearsalVisible: false,
     competitionTeamRuntime: 'builtin',
     competitionTeamTemplateId: '',
+    competitionExecutionMode: 'automatic',
     competitionApprovalReason: '跨域证据链完整，批准执行备用特征止损、数据修复、模型重训练、灰度发布及失败补偿计划。',
     competitionAdapterMode: 'fixture',
     competitionRollbackIdempotencyKey: '',
@@ -2811,7 +2834,7 @@ async function main() {
 main();`,
     curl: `curl ${backendURL}/v1/chat/completions \\
 -H "Content-Type: application/json" \\
--H "Authorization: Bearer your-openxnet-api-key" \\
+-H "Authorization: Bearer \${OPENXNET_API_KEY}" \\
 -d '{
   "model": "openxnet-model",
   "messages": [

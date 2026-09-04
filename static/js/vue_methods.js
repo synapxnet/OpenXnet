@@ -8783,8 +8783,10 @@ let vue_methods = {
         this.$nextTick(() => { this.scrollToBottom(true); });
       }
     }, 
+    /** 切换存储子页面；输入页面 ID 和可选观察目标，Memory V3 由独立 typed bridge 加载。 */
     async switchStorageTile(tileId, options = {}) {
       this.subMenu = tileId;
+      if (tileId === 'memory-v3') return;
       if (tileId === 'recall') {
         await this.loadRecallCenter(options?.preferredObservationTarget || null);
         return;
@@ -37923,26 +37925,46 @@ async handleRefreshSkills() {
   getApplicationCompetitionRuntime() {
     const runtime = window.openxnetDesktop;
     const available = runtime
+      && typeof runtime.getApplicationCompetitionUiProfile === 'function'
       && typeof runtime.getApplicationCompetitionSnapshot === 'function'
       && typeof runtime.resetApplicationCompetitionDemoData === 'function'
+      && typeof runtime.startApplicationCompetitionEnterpriseTask === 'function'
       && typeof runtime.createApplicationCompetitionIncident === 'function'
       && typeof runtime.runApplicationCompetitionInvestigation === 'function'
       && typeof runtime.decideApplicationCompetitionApproval === 'function'
       && typeof runtime.executeApplicationCompetitionRollback === 'function'
       && typeof runtime.verifyApplicationCompetitionRemediation === 'function'
       && typeof runtime.exportApplicationCompetitionRetrospective === 'function'
+      && typeof runtime.exportApplicationCompetitionEvaluation === 'function'
       && typeof runtime.setApplicationCompetitionAdapterMode === 'function';
     if (available) return runtime;
     throw new Error('Desktop Competition Runtime is unavailable.');
+  },
+
+  /** 读取事件治理中心发布配置；无输入，更新生产/比赛演练边界并返回公开能力。 */
+  async loadCompetitionUiProfile() {
+    const profile = await this.getApplicationCompetitionRuntime().getApplicationCompetitionUiProfile();
+    this.competitionReleaseProfile = profile?.releaseProfile === 'goai-staging' ? 'goai-staging' : 'production';
+    this.competitionRehearsalAvailable = profile?.rehearsalEnabled === true;
+    if (!this.competitionRehearsalAvailable) this.competitionRehearsalVisible = false;
+    return profile;
   },
 
   /** 读取持久化竞赛快照；无输入，更新工作台状态，失败时显示安全通知。 */
   async loadCompetitionSnapshot() {
     this.competitionLoading = true;
     try {
-      const snapshot = await this.getApplicationCompetitionRuntime().getApplicationCompetitionSnapshot();
+      const runtime = this.getApplicationCompetitionRuntime();
+      const [snapshot, profile] = await Promise.all([
+        runtime.getApplicationCompetitionSnapshot(),
+        runtime.getApplicationCompetitionUiProfile()
+      ]);
       this.competitionSnapshot = snapshot;
       this.competitionAdapterMode = snapshot.adapterMode;
+      this.competitionReleaseProfile = profile?.releaseProfile === 'goai-staging' ? 'goai-staging' : 'production';
+      this.competitionRehearsalAvailable = profile?.rehearsalEnabled === true;
+      if (!this.competitionRehearsalAvailable) this.competitionRehearsalVisible = false;
+      await this.loadCompetitionMemoryArtifacts(false);
     } catch (error) {
       console.error('[Competition] Snapshot load failed:', error);
       showNotification(error?.message || '竞赛控制面暂时不可用', 'error');
@@ -38053,9 +38075,15 @@ async handleRefreshSkills() {
     return [...bindings].sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))[0] || null;
   },
 
-  /** 返回当前 Incident Workspace 可使用的团队模板；无输入，返回启用模板列表。 */
-  getCompetitionAvailableTeamTemplates() {
-    const workspaceId = String(this.getCompetitionActiveIncident()?.workspaceId || this.competitionDemoForm?.workspaceId || '').trim();
+  /** 返回指定或当前 Workspace 可使用的团队模板；输入可选 Workspace ID，返回启用模板列表。 */
+  getCompetitionAvailableTeamTemplates(workspaceIdOverride = '') {
+    const workspaceId = String(
+      workspaceIdOverride
+      || (this.showSandboxChatPanel ? this.getEnterpriseChatWorkspaceId() : '')
+      || this.getCompetitionActiveIncident()?.workspaceId
+      || this.competitionDemoForm?.workspaceId
+      || ''
+    ).trim();
     return (Array.isArray(this.enterpriseTeamTemplates) ? this.enterpriseTeamTemplates : [])
       .filter(template => template?.enabled !== false && String(template?.workspaceId || '').trim() === workspaceId);
   },
@@ -38176,6 +38204,293 @@ async handleRefreshSkills() {
     if (!value) return '-';
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
+  },
+
+  /** 打开比赛 Staging 演练面板；无输入，仅在发布配置明确允许时展示演练控制。 */
+  async openCompetitionRehearsal() {
+    try {
+      await this.loadCompetitionUiProfile();
+      if (!this.competitionRehearsalAvailable) {
+        showNotification(
+          this.isCurrentLanguageZh() ? '当前生产版本未启用比赛演练入口' : 'Competition rehearsal is disabled in this production build',
+          'warning'
+        );
+        return;
+      }
+      this.competitionRehearsalVisible = true;
+    } catch (error) {
+      showNotification(error?.message || '比赛演练配置读取失败', 'error');
+    }
+  },
+
+  /** 关闭比赛 Staging 演练面板；无输入，不修改已保存事件和 Adapter 状态。 */
+  closeCompetitionRehearsal() {
+    this.competitionRehearsalVisible = false;
+  },
+
+  /** 导出当前终态事件的复赛评测证据；无输入，生成报告、遥测与 AgentTeams 原始事件。 */
+  async exportCompetitionEvaluation() {
+    const incident = this.getCompetitionActiveIncident();
+    if (!incident) return;
+    this.competitionBusyAction = 'evaluation';
+    try {
+      const result = await this.getApplicationCompetitionRuntime().exportApplicationCompetitionEvaluation({
+        incidentId: incident.incidentId
+      });
+      showNotification(
+        this.isCurrentLanguageZh()
+          ? `复赛证据已导出：${result.reportPath}`
+          : `Evaluation evidence exported: ${result.reportPath}`,
+        'success'
+      );
+    } catch (error) {
+      showNotification(error?.message || (this.isCurrentLanguageZh() ? '复赛证据导出失败' : 'Evaluation export failed'), 'error');
+    } finally {
+      this.competitionBusyAction = '';
+    }
+  },
+
+  /** 读取当前闭环事件对应的 Memory V3 记录；输入是否显示错误，按 Incident 幂等任务键查询真实 SQLite。 */
+  async loadCompetitionMemoryArtifacts(notifyOnError = false) {
+    const incident = this.getCompetitionActiveIncident();
+    this.competitionMemoryLoading = true;
+    this.competitionMemoryError = '';
+    try {
+      const runtime = window.openxnetDesktop;
+      if (
+        !runtime
+        || typeof runtime.getSynapxnetMemoryStatus !== 'function'
+        || typeof runtime.listSynapxnetMemories !== 'function'
+      ) {
+        throw new Error('SynapXnet Memory runtime is unavailable.');
+      }
+      const requesterAgent = String(this.mainAgent || 'openxnet-model').trim() || 'openxnet-model';
+      const [status, listing] = await Promise.all([
+        runtime.getSynapxnetMemoryStatus(),
+        runtime.listSynapxnetMemories({
+          requesterAgent,
+          query: incident?.incidentId || '',
+          ownerAgent: '',
+          includeRetired: false,
+          limit: 100
+        })
+      ]);
+      const taskId = incident ? `incident:${incident.incidentId}` : '';
+      this.competitionMemoryStatus = status;
+      this.competitionMemoryRecords = (Array.isArray(listing?.items) ? listing.items : [])
+        .filter(item => !taskId || item.taskId === taskId)
+        .sort((left, right) => String(right.committedAtUtc).localeCompare(String(left.committedAtUtc)));
+      return this.competitionMemoryRecords;
+    } catch (error) {
+      this.competitionMemoryStatus = null;
+      this.competitionMemoryRecords = [];
+      this.competitionMemoryError = String(error?.message || 'SynapXnet Memory runtime is unavailable.');
+      if (notifyOnError) showNotification(this.competitionMemoryError, 'error');
+      return [];
+    } finally {
+      this.competitionMemoryLoading = false;
+    }
+  },
+
+  /** 返回当前事件最新任务图；无输入，按修订号和更新时间降序选择。 */
+  getCompetitionActiveTaskGraph() {
+    const incident = this.getCompetitionActiveIncident();
+    if (!incident) return null;
+    const graphs = Array.isArray(this.competitionSnapshot?.taskGraphs)
+      ? this.competitionSnapshot.taskGraphs.filter(item => item.incidentId === incident.incidentId)
+      : [];
+    return [...graphs].sort((left, right) => (
+      Number(right.revision || 0) - Number(left.revision || 0)
+      || String(right.updatedAt).localeCompare(String(left.updatedAt))
+    ))[0] || null;
+  },
+
+  /** 按固定泳道组织任务节点；输入可选任务图，返回包含本地化标签的非空泳道。 */
+  getCompetitionTaskGraphLanes(taskGraph = null) {
+    const graph = taskGraph || this.getCompetitionActiveTaskGraph();
+    if (!graph || !Array.isArray(graph.nodes)) return [];
+    const definitions = this.isCurrentLanguageZh()
+      ? [
+          ['ROUTING', '任务路由'], ['RETRIEVAL', 'Skill 检索'], ['EVIDENCE', '跨域取证'],
+          ['REASONING', '可信决策'], ['APPROVAL', '人工审批'], ['EXECUTION', '受控执行'],
+          ['VERIFICATION', '独立验证'], ['CRYSTALLIZATION', '经验沉淀']
+        ]
+      : [
+          ['ROUTING', 'Routing'], ['RETRIEVAL', 'Skill Retrieval'], ['EVIDENCE', 'Evidence'],
+          ['REASONING', 'Reasoning'], ['APPROVAL', 'Approval'], ['EXECUTION', 'Execution'],
+          ['VERIFICATION', 'Verification'], ['CRYSTALLIZATION', 'Crystallization']
+        ];
+    return definitions
+      .map(([lane, label]) => ({ lane, label, nodes: graph.nodes.filter(node => node.lane === lane) }))
+      .filter(item => item.nodes.length > 0);
+  },
+
+  /** 返回当前任务图协同事件；输入可选任务图，按发生时间和事件 ID 稳定排序。 */
+  getCompetitionTaskGraphEvents(taskGraph = null) {
+    const graph = taskGraph || this.getCompetitionActiveTaskGraph();
+    return (Array.isArray(graph?.events) ? graph.events : [])
+      .slice()
+      .sort((left, right) => (
+        String(left.createdAt).localeCompare(String(right.createdAt))
+        || String(left.eventId).localeCompare(String(right.eventId))
+      ));
+  },
+
+  /** 返回任务图事件标签；输入稳定事件类型，输出中英文可读名称。 */
+  getCompetitionTaskGraphEventLabel(eventType) {
+    const labels = this.isCurrentLanguageZh()
+      ? {
+          TASK_ASSIGNED: '任务已分配', CHECKPOINT_SAVED: '检查点已保存', WORKER_TIMEOUT: '员工执行超时',
+          TASK_FAILED: '任务执行失败', TASK_REASSIGNED: '任务已重新分配', RESOURCE_CONFLICT_DETECTED: '资源版本冲突',
+          TRACE_RESUMED: '从检查点恢复'
+        }
+      : {
+          TASK_ASSIGNED: 'Task Assigned', CHECKPOINT_SAVED: 'Checkpoint Saved', WORKER_TIMEOUT: 'Worker Timeout',
+          TASK_FAILED: 'Task Failed', TASK_REASSIGNED: 'Task Reassigned', RESOURCE_CONFLICT_DETECTED: 'Resource Conflict',
+          TRACE_RESUMED: 'Trace Resumed'
+        };
+    return labels[eventType] || String(eventType || '-');
+  },
+
+  /** 汇总任务节点的真实执行结果；输入节点，优先返回 Evidence，随后返回 Tool Invocation 状态。 */
+  getCompetitionTaskNodeResult(node) {
+    if (!node) return null;
+    const evidenceIds = new Set(Array.isArray(node.evidenceIds) ? node.evidenceIds : []);
+    const evidence = this.getCompetitionActiveEvidence().find(item => evidenceIds.has(item.evidenceId));
+    if (evidence) {
+      return {
+        status: node.status,
+        summary: evidence.summary,
+        evidenceId: evidence.evidenceId,
+        errorCode: null
+      };
+    }
+    if (!node.toolName) return null;
+    const invocation = [...this.getCompetitionActiveInvocations()]
+      .reverse()
+      .find(item => item.toolName === node.toolName);
+    if (!invocation) return null;
+    return {
+      status: invocation.status,
+      summary: invocation.status === 'SUCCEEDED'
+        ? (this.isCurrentLanguageZh() ? '工具调用已完成' : 'Tool invocation completed')
+        : (invocation.errorMessage || (this.isCurrentLanguageZh() ? '工具调用未完成' : 'Tool invocation incomplete')),
+      evidenceId: invocation.evidenceId,
+      errorCode: invocation.errorCode
+    };
+  },
+
+  /** 返回当前事件最新 Skill 使用记录；无输入，按记录时间降序选择。 */
+  getCompetitionActiveSkillUsage() {
+    const incident = this.getCompetitionActiveIncident();
+    if (!incident) return null;
+    const items = Array.isArray(this.competitionSnapshot?.skillUsages)
+      ? this.competitionSnapshot.skillUsages.filter(item => item.incidentId === incident.incidentId)
+      : [];
+    return [...items].sort((left, right) => String(right.recordedAt).localeCompare(String(left.recordedAt)))[0] || null;
+  },
+
+  /** 返回当前事件最新 Skill 进化记录；无输入，按更新时间降序选择。 */
+  getCompetitionActiveSkillEvolution() {
+    const incident = this.getCompetitionActiveIncident();
+    if (!incident) return null;
+    const items = Array.isArray(this.competitionSnapshot?.skillEvolutionRuns)
+      ? this.competitionSnapshot.skillEvolutionRuns.filter(item => item.incidentId === incident.incidentId)
+      : [];
+    return [...items].sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0] || null;
+  },
+
+  /** 返回当前事件主神经符号裁决；无输入，优先选择计划裁决并回退到最新 Skill 裁决。 */
+  getCompetitionPrimaryReasoningDecision() {
+    const incident = this.getCompetitionActiveIncident();
+    if (!incident) return null;
+    const items = (Array.isArray(this.competitionSnapshot?.reasoningDecisions)
+      ? this.competitionSnapshot.reasoningDecisions
+      : [])
+      .filter(item => item.incidentId === incident.incidentId)
+      .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+    return items.find(item => item.decisionType === 'PLAN_SELECTION') || items[0] || null;
+  },
+
+  /** 格式化神经符号候选分数；输入 0 到 1 的数值，返回百分制文本。 */
+  formatCompetitionReasoningScore(value) {
+    const score = Number(value);
+    return Number.isFinite(score) ? `${Math.round(Math.max(0, Math.min(1, score)) * 100)}%` : '-';
+  },
+
+  /** 构建 AgentTeams 上下文交接链；无输入，从身份决策、摘要与 Matrix 摘要生成可追溯传递记录。 */
+  getCompetitionContextTransfers() {
+    const decisions = this.getCompetitionActiveAgentDecisions();
+    return decisions.map((decision, index) => {
+      const previous = decisions[index - 1] || null;
+      return {
+        id: decision.decisionId,
+        sequence: index + 1,
+        from: decision.routedByName || previous?.agentName || (this.isCurrentLanguageZh() ? '企业领导' : 'Enterprise Leader'),
+        to: decision.agentName,
+        stage: this.getCompetitionAgentStageLabel(decision.stage),
+        summary: decision.summary,
+        status: ['HALT', 'ROLLBACK_REQUIRED'].includes(decision.decision) ? 'FAILED' : 'SUCCEEDED',
+        requestedToolNames: Array.isArray(decision.requestedToolNames) ? decision.requestedToolNames : [],
+        evidenceIds: Array.isArray(decision.evidenceIds) ? decision.evidenceIds : [],
+        matrixEventCount: Array.isArray(decision.transportEvents) ? decision.transportEvents.length : 0,
+        inputDigest: decision.taskBriefDigest || previous?.outputDigest || '-',
+        outputDigest: decision.outputDigest || '-'
+      };
+    });
+  },
+
+  /** 构建任务关闭门禁；无输入，以协作、证据、裁决、审批、执行、回执和独立验证七类事实判定。 */
+  getCompetitionCompletionGates() {
+    const incident = this.getCompetitionActiveIncident();
+    if (!incident) return [];
+    const binding = this.getCompetitionActiveTeamBinding();
+    const graph = this.getCompetitionActiveTaskGraph();
+    const invocations = this.getCompetitionActiveInvocations();
+    const evidence = this.getCompetitionActiveEvidence();
+    const reasoning = this.getCompetitionPrimaryReasoningDecision();
+    const selected = reasoning?.candidates?.find(item => item.candidateId === reasoning.selectedCandidateId) || null;
+    const approval = this.getCompetitionActiveApproval();
+    const action = this.getCompetitionActiveAction();
+    const receipts = (Array.isArray(this.competitionSnapshot?.auditReceipts) ? this.competitionSnapshot.auditReceipts : [])
+      .filter(item => item.incidentId === incident.incidentId);
+    const verifier = [...this.getCompetitionActiveAgentDecisions()].reverse()
+      .find(item => item.stage === 'VERIFICATION_CONCLUSION') || null;
+    const graphFailed = graph?.status === 'FAILED' || graph?.nodes?.some(node => ['FAILED', 'BLOCKED'].includes(node.status));
+    const invocationFailed = invocations.some(item => item.status === 'FAILED');
+    const actionFailed = action?.status === 'FAILED';
+    const makeGate = (id, label, expectation, passed, failed, observed) => ({
+      id,
+      label,
+      expectation,
+      status: passed ? 'PASSED' : (failed ? 'FAILED' : 'PENDING'),
+      observed
+    });
+    const zh = this.isCurrentLanguageZh();
+    return [
+      makeGate('team', zh ? '协作身份已固化' : 'Team identity captured', zh ? 'Team Binding READY，职责与角色卡可审计' : 'READY binding with auditable roles', binding?.status === 'READY', binding?.status === 'DEGRADED', binding ? `${binding.runtime} · ${binding.status} · ${binding.memberSnapshots?.length || 0} Agents` : 'PENDING'),
+      makeGate('graph', zh ? '任务图无阻塞' : 'Task graph clear', zh ? '全部必需节点成功或可安全跳过' : 'Required nodes succeeded or were safely skipped', graph?.status === 'SUCCEEDED' && !graphFailed, Boolean(graphFailed), graph ? `R${graph.revision} · ${graph.status}` : 'PENDING'),
+      makeGate('evidence', zh ? '跨平台证据充分' : 'Evidence sufficient', zh ? '工具调用成功且 Evidence 可追溯' : 'Successful invocations with traceable evidence', evidence.length > 0 && invocations.length > 0 && !invocationFailed, invocationFailed, `${evidence.length} Evidence · ${invocations.length} Invocations`),
+      makeGate('reasoning', zh ? '神经符号裁决通过' : 'Policy decision passed', zh ? '选中候选满足权限、风险和证据硬门' : 'Selected candidate passes authority, risk, and evidence gates', Boolean(selected?.eligible && !['DENY', 'ABSTAIN'].includes(selected.policyDecision)), Boolean(selected && (!selected.eligible || ['DENY', 'ABSTAIN'].includes(selected.policyDecision))), selected ? `${selected.policyDecision} · ${selected.authorityLevel}/${selected.riskClass}/${selected.evidenceGrade}` : 'PENDING'),
+      makeGate('approval', zh ? '人工审批已完成' : 'Human approval completed', zh ? '高风险计划必须明确批准' : 'High-risk plan requires explicit approval', approval?.status === 'APPROVED', approval?.status === 'REJECTED', approval?.status || 'PENDING'),
+      makeGate('execution', zh ? '受控执行与回执完整' : 'Execution receipts complete', zh ? 'Action 成功且写操作留下 AuditReceipt' : 'Successful action with write receipts', action?.status === 'SUCCEEDED' && receipts.length > 0 && !actionFailed, Boolean(actionFailed), `${action?.status || 'PENDING'} · ${receipts.length} Receipts`),
+      makeGate('verification', zh ? '独立验证允许关闭' : 'Independent verification allows closure', zh ? 'Verifier=CLOSE、验证证据存在且 Incident=RESOLVED' : 'Verifier=CLOSE with evidence and RESOLVED incident', verifier?.decision === 'CLOSE' && (action?.verificationEvidenceIds?.length || 0) > 0 && incident.status === 'RESOLVED', incident.status === 'FAILED' || verifier?.decision === 'ROLLBACK_REQUIRED', `${verifier?.decision || 'PENDING'} · ${action?.verificationEvidenceIds?.length || 0} Evidence · ${incident.status}`)
+    ];
+  },
+
+  /** 返回任务关闭门禁汇总；无输入，仅当事件已解决且全部门禁通过时允许关闭。 */
+  getCompetitionCompletionSummary() {
+    const incident = this.getCompetitionActiveIncident();
+    const gates = this.getCompetitionCompletionGates();
+    const passed = gates.filter(item => item.status === 'PASSED').length;
+    const failed = gates.filter(item => item.status === 'FAILED').length;
+    return {
+      passed,
+      failed,
+      pending: gates.length - passed - failed,
+      total: gates.length,
+      complete: Boolean(incident && incident.status === 'RESOLVED' && gates.length > 0 && passed === gates.length)
+    };
   },
 
   /** 返回三个可执行演示场景模板；无输入，返回与 Main 场景注册表对应的独立对象。 */
@@ -38316,6 +38631,7 @@ async handleRefreshSkills() {
       });
       this.competitionSnapshot = result.snapshot;
       this.competitionRollbackIdempotencyKey = '';
+      await this.loadCompetitionMemoryArtifacts(false);
       showNotification('演示事件已创建', 'success');
     } catch (error) {
       showNotification(error?.message || '创建事件失败', 'error');
@@ -38403,6 +38719,7 @@ async handleRefreshSkills() {
         actionId: action.actionId
       });
       this.competitionSnapshot = result.snapshot;
+      await this.loadCompetitionMemoryArtifacts(false);
       showNotification('独立验证通过，事件已解决', 'success');
     } catch (error) {
       await this.loadCompetitionSnapshot();
@@ -38553,7 +38870,12 @@ async handleRefreshSkills() {
     }
 
     if (tab === 'team-templates') {
-      await this.loadEnterpriseTeamTemplates();
+      await Promise.all([
+        this.loadWorkspaceEnvs(),
+        this.loadEnterpriseProjects(),
+        this.loadEnterpriseTeamTemplates()
+      ]);
+      await this.reconcileEnterpriseTeamScopes();
       return;
     }
 
@@ -38608,8 +38930,10 @@ async handleRefreshSkills() {
         this.loadWorkspaceEnvs(),
         this.loadEnterpriseProjects(),
         this.loadEnterpriseRoleCards(),
+        this.loadEnterpriseTeamTemplates(),
         this.refreshSandboxState()
       ]);
+      await this.reconcileEnterpriseTeamScopes();
       await this.$nextTick();
       if (typeof this.init3DView === 'function') {
         await this.init3DView();
@@ -39224,10 +39548,18 @@ async handleRefreshSkills() {
 
   /** 创建空团队模板草稿；无输入，使用当前竞赛 Workspace 并返回可编辑结构。 */
   createEmptyEnterpriseTeamTemplateDraft() {
+    const singleWorkspaceId = Array.isArray(this.enterpriseWorkspaces) && this.enterpriseWorkspaces.length === 1
+      ? String(this.enterpriseWorkspaces[0]?.id || '').trim()
+      : '';
     return {
       name: '',
       description: '',
-      workspaceId: String(this.getCompetitionActiveIncident()?.workspaceId || this.competitionDemoForm?.workspaceId || 'ws_goai_demo').trim(),
+      workspaceId: String(
+        this.getCompetitionActiveIncident()?.workspaceId
+        || this.sandboxCurrentWs
+        || singleWorkspaceId
+        || ''
+      ).trim(),
       enabled: true,
       members: []
     };
@@ -39255,6 +39587,84 @@ async handleRefreshSkills() {
     } finally {
       this.enterpriseTeamTemplatesLoading = false;
     }
+  },
+
+  /** 修复旧团队的固定 Workspace 引用并把成员绑定到唯一项目；无输入，返回是否写入迁移。 */
+  async reconcileEnterpriseTeamScopes() {
+    const runtime = this.getApplicationEnterpriseRuntime();
+    const workspaces = Array.isArray(this.enterpriseWorkspaces) ? this.enterpriseWorkspaces : [];
+    const projects = Array.isArray(this.enterpriseProjects) ? this.enterpriseProjects : [];
+    const templates = Array.isArray(this.enterpriseTeamTemplates) ? [...this.enterpriseTeamTemplates] : [];
+    const cardsById = new Map((Array.isArray(this.enterpriseRoleCards) ? this.enterpriseRoleCards : [])
+      .map(card => [String(card?.id || '').trim(), card]));
+    if (!runtime || !workspaces.length || !templates.length || !cardsById.size) return false;
+
+    let changed = false;
+    for (const template of templates) {
+      const storedWorkspaceId = String(template?.workspaceId || '').trim();
+      let workspace = workspaces.find(item => String(item?.id || '').trim() === storedWorkspaceId) || null;
+      if (!workspace && storedWorkspaceId === 'ws_goai_demo') {
+        workspace = workspaces.find(item => String(item?.name || '').trim() === 'GOAI Competition Demo')
+          || (workspaces.length === 1 ? workspaces[0] : null);
+      }
+      if (!workspace) continue;
+
+      const workspaceId = String(workspace.id || '').trim();
+      if (workspaceId !== storedWorkspaceId) {
+        const result = await runtime.saveApplicationEnterpriseTeamTemplate({
+          mode: 'update',
+          teamTemplate: {
+            id: template.id,
+            name: template.name,
+            description: template.description || '',
+            workspaceId,
+            enabled: template.enabled !== false,
+            members: template.members.map(member => ({
+              roleCardId: member.roleCardId,
+              teamRole: member.teamRole
+            }))
+          }
+        });
+        const index = this.enterpriseTeamTemplates.findIndex(item => item.id === template.id);
+        if (index >= 0) this.enterpriseTeamTemplates.splice(index, 1, result.teamTemplate);
+        changed = true;
+      }
+
+      const workspaceProjects = projects.filter(project => String(project?.workspaceId || '').trim() === workspaceId);
+      const project = workspaceProjects.find(item => String(item?.name || '').trim() === '企业 AI 全链路治理')
+        || (workspaceProjects.length === 1 ? workspaceProjects[0] : null);
+      const projectId = String(project?.id || '').trim();
+      for (const member of template.members) {
+        const role = cardsById.get(String(member?.roleCardId || '').trim());
+        if (!role) continue;
+        const assignedWorkspace = String(role.assignedWorkspace || '').trim();
+        const assignedProject = String(role.projectId || '').trim();
+        const assignedProjectExists = projects.some(item => (
+          String(item?.id || '').trim() === assignedProject
+          && String(item?.workspaceId || '').trim() === workspaceId
+        ));
+        const needsWorkspace = assignedWorkspace !== workspaceId;
+        const needsProject = Boolean(projectId) && !assignedProjectExists;
+        if (!needsWorkspace && !needsProject) continue;
+        const saved = await this.persistStaffRoleToEnterprise({
+          ...role,
+          assignedWorkspace: workspaceId,
+          projectId: projectId || assignedProject
+        }, { createAgent: false });
+        cardsById.set(saved.id, saved);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await Promise.all([
+        this.loadEnterpriseRoleCards(),
+        this.loadWorkspaceEnvs(),
+        this.refreshSandboxState()
+      ]);
+      this._refreshSandbox();
+    }
+    return changed;
   },
 
   /** 打开新建团队模板表单；无输入，重置编辑状态和草稿。 */
@@ -40779,6 +41189,280 @@ async handleRefreshSkills() {
     }
   },
 
+  /** 从当前企业项目群发起受控协同任务；无输入，持久化领导消息并等待 AgentTeams 完成调查阶段。 */
+  async startEnterpriseCompetitionTask() {
+    const content = String(this.enterpriseChatInput || '').trim();
+    const workspaceId = this.getEnterpriseChatWorkspaceId();
+    const teamTemplateId = String(this.competitionTeamTemplateId || '').trim();
+    if (!content || !workspaceId || this.enterpriseChatTaskStarting) return;
+    if (this.competitionTeamRuntime === 'agentteams' && !teamTemplateId) {
+      showNotification(this.isCurrentLanguageZh() ? '请选择可用的 AgentTeams 协作团队' : 'Select an AgentTeams team', 'warning');
+      return;
+    }
+    this.enterpriseChatTaskStarting = true;
+    try {
+      const result = await this.getApplicationCompetitionRuntime().startApplicationCompetitionEnterpriseTask({
+        workspaceId,
+        projectId: this.getEnterpriseChatProjectId(),
+        recipientIds: [...this.enterpriseChatRecipientIds],
+        content,
+        scenarioType: this.enterpriseCompetitionScenarioType,
+        teamRuntime: this.competitionTeamRuntime,
+        teamTemplateId: this.competitionTeamRuntime === 'agentteams' ? teamTemplateId : null,
+      });
+      this.competitionSnapshot = result.snapshot;
+      this.enterpriseAuditIncidentId = result.incidentId;
+      this.enterpriseChatInput = '';
+      this.enterpriseChatRecipientIds = [];
+      await this.loadEnterpriseMessages({ scrollToBottom: true });
+      showNotification(
+        this.isCurrentLanguageZh() ? '协同调查已完成，等待人工审批' : 'Investigation completed; awaiting approval',
+        'success'
+      );
+    } catch (error) {
+      console.error('[Enterprise] Failed to start governed competition task:', error);
+      await this.loadEnterpriseMessages({ scrollToBottom: true });
+      showNotification(error?.message || (this.isCurrentLanguageZh() ? '协同任务发起失败' : 'Failed to start task'), 'error');
+    } finally {
+      this.enterpriseChatTaskStarting = false;
+    }
+  },
+
+  /** 同步企业群审计事件选择；无输入，保证选中 Incident 始终属于当前 Workspace/Project。 */
+  syncEnterpriseAuditIncidentSelection() {
+    const incidents = this.getEnterpriseSandboxIncidents();
+    if (!incidents.some(item => item.incidentId === this.enterpriseAuditIncidentId)) {
+      this.enterpriseAuditIncidentId = incidents[0]?.incidentId || '';
+    }
+    return this.enterpriseAuditIncidentId;
+  },
+
+  /** 切换企业项目群的协作、工作安排或审计视图；输入固定视图键，必要时刷新竞赛快照。 */
+  setEnterpriseSandboxWorkView(view) {
+    const normalized = ['chat', 'work', 'audit'].includes(view) ? view : 'chat';
+    this.enterpriseSandboxWorkView = normalized;
+    if (normalized === 'chat') return;
+    this.syncEnterpriseAuditIncidentSelection();
+    void this.loadCompetitionSnapshot().then(() => {
+      this.syncEnterpriseAuditIncidentSelection();
+    }).catch(() => null);
+  },
+
+  /** 选择企业项目群审计事件；输入 Incident ID，仅保留当前 Workspace/Project 范围内的事件。 */
+  selectEnterpriseAuditIncident(incidentId) {
+    const normalized = String(incidentId || '').trim();
+    this.enterpriseAuditIncidentId = this.getEnterpriseSandboxIncidents()
+      .some(item => item.incidentId === normalized)
+      ? normalized
+      : '';
+  },
+
+  /** 返回当前企业群范围内的事件；无输入，按更新时间降序过滤 Workspace 和 Project。 */
+  getEnterpriseSandboxIncidents() {
+    const workspaceId = this.getEnterpriseChatWorkspaceId();
+    const projectId = this.getEnterpriseChatProjectId();
+    const incidents = Array.isArray(this.competitionSnapshot?.incidents) ? this.competitionSnapshot.incidents : [];
+    return incidents
+      .filter(item => (
+        String(item.workspaceId || '') === workspaceId
+        && (!projectId || String(item.projectId || '') === projectId)
+      ))
+      .slice()
+      .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
+  },
+
+  /** 返回企业群当前选中的事件；无输入，选中项失效时回退到当前范围最新事件。 */
+  getEnterpriseAuditIncident() {
+    const incidents = this.getEnterpriseSandboxIncidents();
+    return incidents.find(item => item.incidentId === this.enterpriseAuditIncidentId) || incidents[0] || null;
+  },
+
+  /** 返回企业群审计事件的活动 Trace；无输入，严格按 Incident 的 activeTraceId 查询。 */
+  getEnterpriseAuditTrace() {
+    const incident = this.getEnterpriseAuditIncident();
+    if (!incident?.activeTraceId) return null;
+    const traces = Array.isArray(this.competitionSnapshot?.traces) ? this.competitionSnapshot.traces : [];
+    return traces.find(item => item.traceId === incident.activeTraceId && item.incidentId === incident.incidentId) || null;
+  },
+
+  /** 返回企业群审计事件最新任务图；无输入，按修订号和更新时间降序选择。 */
+  getEnterpriseAuditTaskGraph() {
+    const incident = this.getEnterpriseAuditIncident();
+    if (!incident) return null;
+    const graphs = (Array.isArray(this.competitionSnapshot?.taskGraphs) ? this.competitionSnapshot.taskGraphs : [])
+      .filter(item => item.incidentId === incident.incidentId);
+    return [...graphs].sort((left, right) => (
+      Number(right.revision || 0) - Number(left.revision || 0)
+      || String(right.updatedAt).localeCompare(String(left.updatedAt))
+    ))[0] || null;
+  },
+
+  /** 返回企业群任务图泳道；无输入，复用事件治理中心的固定泳道定义。 */
+  getEnterpriseAuditTaskGraphLanes() {
+    const graph = this.getEnterpriseAuditTaskGraph();
+    return graph ? this.getCompetitionTaskGraphLanes(graph) : [];
+  },
+
+  /** 返回企业群审计事件的 Evidence；无输入，按观测时间稳定排序。 */
+  getEnterpriseAuditEvidence() {
+    const incident = this.getEnterpriseAuditIncident();
+    if (!incident) return [];
+    return (Array.isArray(this.competitionSnapshot?.evidence) ? this.competitionSnapshot.evidence : [])
+      .filter(item => item.incidentId === incident.incidentId)
+      .slice()
+      .sort((left, right) => String(left.observedAt).localeCompare(String(right.observedAt)));
+  },
+
+  /** 返回企业群审计事件的工具调用；无输入，按开始时间稳定排序。 */
+  getEnterpriseAuditInvocations() {
+    const incident = this.getEnterpriseAuditIncident();
+    if (!incident) return [];
+    return (Array.isArray(this.competitionSnapshot?.invocations) ? this.competitionSnapshot.invocations : [])
+      .filter(item => item.incidentId === incident.incidentId)
+      .slice()
+      .sort((left, right) => String(left.startedAt).localeCompare(String(right.startedAt)));
+  },
+
+  /** 返回企业群审计事件的人工审批；无输入，按申请时间稳定排序。 */
+  getEnterpriseAuditApprovals() {
+    const incident = this.getEnterpriseAuditIncident();
+    if (!incident) return [];
+    return (Array.isArray(this.competitionSnapshot?.approvals) ? this.competitionSnapshot.approvals : [])
+      .filter(item => item.incidentId === incident.incidentId)
+      .slice()
+      .sort((left, right) => String(left.requestedAt).localeCompare(String(right.requestedAt)));
+  },
+
+  /** 返回企业群审计事件的写操作回执；无输入，按记录时间稳定排序。 */
+  getEnterpriseAuditReceipts() {
+    const incident = this.getEnterpriseAuditIncident();
+    if (!incident) return [];
+    return (Array.isArray(this.competitionSnapshot?.auditReceipts) ? this.competitionSnapshot.auditReceipts : [])
+      .filter(item => item.incidentId === incident.incidentId)
+      .slice()
+      .sort((left, right) => String(left.recordedAt).localeCompare(String(right.recordedAt)));
+  },
+
+  /** 返回企业群审计事件的 AgentTeams 原始事件；无输入，保留决策身份并按账本时间排序。 */
+  getEnterpriseAuditTransportEvents() {
+    const incident = this.getEnterpriseAuditIncident();
+    if (!incident) return [];
+    const decisions = (Array.isArray(this.competitionSnapshot?.agentDecisions) ? this.competitionSnapshot.agentDecisions : [])
+      .filter(item => item.incidentId === incident.incidentId);
+    return decisions
+      .flatMap(decision => (Array.isArray(decision.transportEvents) ? decision.transportEvents : []).map(event => ({
+        ...event,
+        decisionId: decision.decisionId,
+        agentName: decision.agentName,
+        stage: decision.stage
+      })))
+      .sort((left, right) => (
+        Number(left.originServerTs || 0) - Number(right.originServerTs || 0)
+        || String(left.observedAt).localeCompare(String(right.observedAt))
+        || Number(left.sequence || 0) - Number(right.sequence || 0)
+      ));
+  },
+
+  /** 返回一条群聊操作关联的工具调用；输入消息，仅解析 operation 中受信任的 Invocation ID。 */
+  getEnterpriseMessageInvocations(message) {
+    const invocationIds = new Set(Array.isArray(message?.operation?.invocationIds) ? message.operation.invocationIds : []);
+    if (invocationIds.size === 0) return [];
+    return (Array.isArray(this.competitionSnapshot?.invocations) ? this.competitionSnapshot.invocations : [])
+      .filter(item => (
+        invocationIds.has(item.invocationId)
+        && (!message.traceId || item.traceId === message.traceId)
+      ))
+      .slice()
+      .sort((left, right) => String(left.startedAt).localeCompare(String(right.startedAt)));
+  },
+
+  /** 返回工具调用执行者名称；输入调用记录，优先匹配固化角色卡并回退到职责标签。 */
+  getEnterpriseInvocationActorLabel(invocation) {
+    const actorId = String(invocation?.actorId || '').trim();
+    const bindings = Array.isArray(this.competitionSnapshot?.teamBindings) ? this.competitionSnapshot.teamBindings : [];
+    for (const binding of bindings) {
+      const member = (Array.isArray(binding?.memberSnapshots) ? binding.memberSnapshots : [])
+        .find(item => item.roleCardId === actorId || item.transportSender === actorId);
+      if (member) return member.name;
+    }
+    const role = actorId.split(':').pop();
+    const labels = this.isCurrentLanguageZh()
+      ? { investigator: '调查执行者', approver: '人工审批人', operator: '受控执行者', verifier: '独立验证者' }
+      : { investigator: 'Investigator', approver: 'Approver', operator: 'Operator', verifier: 'Verifier' };
+    return labels[role] || actorId || '-';
+  },
+
+  /** 返回企业工具调用平台名称；输入平台键，复用三平台正式产品名。 */
+  getEnterprisePlatformLabel(platform) {
+    return this.getCompetitionPlatformLabel(platform);
+  },
+
+  /** 返回工具调用耗时；输入调用记录，根据开始和结束时间输出毫秒或秒。 */
+  getEnterpriseInvocationDuration(invocation) {
+    const started = new Date(invocation?.startedAt || '').getTime();
+    const completed = new Date(invocation?.completedAt || '').getTime();
+    if (!Number.isFinite(started) || !Number.isFinite(completed) || completed < started) return '-';
+    const duration = completed - started;
+    return duration < 1000 ? `${duration} ms` : `${(duration / 1000).toFixed(2)} s`;
+  },
+
+  /** 返回工具调用结果摘要；输入调用记录，优先展示错误，成功时引用 Evidence 摘要。 */
+  getEnterpriseInvocationResult(invocation) {
+    if (!invocation) return '-';
+    if (invocation.status === 'FAILED') return invocation.errorMessage || invocation.errorCode || 'FAILED';
+    const evidence = this.getEnterpriseInvocationEvidence(invocation);
+    if (evidence) return evidence.summary;
+    return this.getCompetitionStatusLabel(invocation.status);
+  },
+
+  /** 返回工具调用关联 Evidence；输入调用记录，严格按 Evidence ID 和 Incident 查询。 */
+  getEnterpriseInvocationEvidence(invocation) {
+    if (!invocation?.evidenceId) return null;
+    const evidence = Array.isArray(this.competitionSnapshot?.evidence) ? this.competitionSnapshot.evidence : [];
+    return evidence.find(item => (
+      item.evidenceId === invocation.evidenceId
+      && item.incidentId === invocation.incidentId
+    )) || null;
+  },
+
+  /** 返回工具调用关联审计回执；输入调用记录，优先按 requestId 并限制同一 Incident。 */
+  getEnterpriseInvocationReceipt(invocation) {
+    if (!invocation) return null;
+    const receipts = Array.isArray(this.competitionSnapshot?.auditReceipts) ? this.competitionSnapshot.auditReceipts : [];
+    return receipts.find(item => (
+      item.incidentId === invocation.incidentId
+      && (item.requestId === invocation.requestId || item.toolName === invocation.toolName)
+    )) || null;
+  },
+
+  /** 返回人工审批状态标签；输入状态，输出当前语言下的固定名称。 */
+  getEnterpriseApprovalStatusLabel(status) {
+    const labels = this.isCurrentLanguageZh()
+      ? { PENDING: '待审批', APPROVED: '已批准', REJECTED: '已拒绝' }
+      : { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected' };
+    return labels[status] || String(status || '-');
+  },
+
+  /** 返回业务场景标签；输入场景类型，输出三个 Demo 的正式名称。 */
+  getEnterpriseScenarioLabel(scenarioType) {
+    const template = this.getCompetitionDemoScenarioTemplates().find(item => item.id === scenarioType);
+    return template ? (this.isCurrentLanguageZh() ? template.nameZh : template.nameEn) : String(scenarioType || '-');
+  },
+
+  /** 返回任务节点状态标签；输入状态，输出工作安排视图使用的本地化名称。 */
+  getEnterpriseTaskNodeStatusLabel(status) {
+    const labels = this.isCurrentLanguageZh()
+      ? {
+          PENDING: '待处理', READY: '已就绪', RUNNING: '执行中', AWAITING_APPROVAL: '等待审批',
+          SUCCEEDED: '已完成', FAILED: '执行失败', BLOCKED: '已阻塞', SKIPPED: '已跳过'
+        }
+      : {
+          PENDING: 'Pending', READY: 'Ready', RUNNING: 'Running', AWAITING_APPROVAL: 'Awaiting approval',
+          SUCCEEDED: 'Completed', FAILED: 'Failed', BLOCKED: 'Blocked', SKIPPED: 'Skipped'
+        };
+    return labels[status] || String(status || '-');
+  },
+
   /** 格式化企业消息时间；输入 ISO 时间，返回本地短时间，非法值返回短横线。 */
   formatEnterpriseMessageTime(value) {
     const date = new Date(value);
@@ -41010,6 +41694,22 @@ async handleRefreshSkills() {
       });
       const proj = result.project;
       await this.loadEnterpriseProjects();
+      if (projectIndex < 0) {
+        const workspaceProjects = this.enterpriseProjects.filter(item => String(item?.workspaceId || '').trim() === workspaceId);
+        if (workspaceProjects.length === 1) {
+          const unscopedRoles = (Array.isArray(this.enterpriseRoleCards) ? this.enterpriseRoleCards : [])
+            .filter(role => (
+              String(role?.assignedWorkspace || '').trim() === workspaceId
+              && !String(role?.projectId || '').trim()
+            ));
+          for (const role of unscopedRoles) {
+            await this.persistStaffRoleToEnterprise({ ...role, projectId: proj.id }, { createAgent: false });
+          }
+          if (unscopedRoles.length) {
+            await Promise.all([this.loadEnterpriseRoleCards(), this.refreshSandboxState()]);
+          }
+        }
+      }
       this.showProjectFloatPanel = false;
       this.newProject = this.createEmptyProjectDraft();
       this._refreshSandbox();
@@ -41165,6 +41865,9 @@ async handleRefreshSkills() {
       ? this.enterpriseWorkspaces.findIndex((item) => item.id === existingWorkspaceId)
       : -1;
     const existingWorkspace = workspaceIndex >= 0 ? this.enterpriseWorkspaces[workspaceIndex] : null;
+    const selectedRoleIds = new Set((Array.isArray(this.newWorkspace.assignedRoles) ? this.newWorkspace.assignedRoles : [])
+      .map(roleId => String(roleId || '').trim())
+      .filter(Boolean));
     let ws = {
       id: existingWorkspaceId,
       name: String(this.newWorkspace.name || '').trim(),
@@ -41186,6 +41889,25 @@ async handleRefreshSkills() {
         workspace: this.buildApplicationEnterpriseWorkspaceDraft(ws),
       });
       ws = this.mapApplicationEnterpriseWorkspaceToUi(result.workspace);
+      const workspaceId = String(ws.id || '').trim();
+      const roles = Array.isArray(this.enterpriseRoleCards) ? [...this.enterpriseRoleCards] : [];
+      for (const role of roles) {
+        const roleId = String(role?.id || '').trim();
+        const currentWorkspaceId = String(role?.assignedWorkspace || '').trim();
+        const currentProjectId = String(role?.projectId || '').trim();
+        const currentProjectMatchesWorkspace = this.enterpriseProjects.some(project => (
+          String(project?.id || '').trim() === currentProjectId
+          && String(project?.workspaceId || '').trim() === workspaceId
+        ));
+        const shouldAssign = selectedRoleIds.has(roleId);
+        const shouldUnassign = !shouldAssign && currentWorkspaceId === workspaceId;
+        if (!shouldAssign && !shouldUnassign) continue;
+        await this.persistStaffRoleToEnterprise({
+          ...role,
+          assignedWorkspace: shouldAssign ? workspaceId : '',
+          projectId: shouldAssign && currentProjectMatchesWorkspace ? currentProjectId : ''
+        }, { createAgent: false });
+      }
       await this.loadWorkspaceEnvs();
     } else if (workspaceIndex >= 0) {
       this.enterpriseWorkspaces.splice(workspaceIndex, 1, ws);

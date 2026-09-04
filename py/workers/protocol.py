@@ -218,7 +218,7 @@ class WorkerEnvelope:
 
         return json.dumps(
             self.to_mapping(),
-            ensure_ascii=False,
+            ensure_ascii=True,
             separators=(",", ":"),
         ) + "\n"
 

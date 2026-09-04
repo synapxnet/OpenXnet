@@ -12,6 +12,7 @@ export interface RegisterFeaturePackWorkerOptions {
   readonly supervisor: WorkerSupervisor;
   readonly capability: CapabilityId;
   readonly createDefinition: (pack: InstalledFeaturePack) => WorkerDefinition;
+  readonly bundledDirectory?: string;
 }
 
 /**
@@ -23,7 +24,18 @@ export interface RegisterFeaturePackWorkerOptions {
 export async function registerFeaturePackWorker(
   options: RegisterFeaturePackWorkerOptions,
 ): Promise<(() => void) | null> {
-  const discovered = await options.manager.discoverCurrent(options.capability);
+  let discovered = await options.manager.discoverCurrent(options.capability);
+  let usesBundledPack = false;
+  if (discovered === null && options.bundledDirectory !== undefined) {
+    discovered = await options.manager.discoverDirectory(options.bundledDirectory);
+    usesBundledPack = true;
+    if (discovered.manifest.id !== options.capability) {
+      throw new FeaturePackError(
+        "INVALID_MANIFEST",
+        "Bundled feature-pack capability does not match the requested worker.",
+      );
+    }
+  }
   if (discovered === null) {
     return null;
   }
@@ -38,7 +50,9 @@ export async function registerFeaturePackWorker(
 
   /** Verify the immutable discovered version immediately before process execution. */
   async function verifyBeforeStart(): Promise<void> {
-    const active = await options.manager.resolveCurrent(options.capability);
+    const active = usesBundledPack
+      ? await options.manager.inspectDirectory(installedPack.rootDirectory)
+      : await options.manager.resolveCurrent(options.capability);
     if (active === null) {
       throw new FeaturePackError(
         "PACK_NOT_INSTALLED",

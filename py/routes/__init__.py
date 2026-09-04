@@ -112,6 +112,7 @@ def register_all_routes(
     from .mcp_control import router as mcp_control_router
     from .memory import router as memory_router
     from .storage import router as storage_router
+    from .synapxnet_memory import router as synapxnet_memory_router
     from .system import router as system_router
     from .tts import router as tts_router
     from .usage import router as usage_router
@@ -123,6 +124,7 @@ def register_all_routes(
     app.include_router(desktop_control_router)
     app.include_router(enterprise_router)
     app.include_router(memory_router)
+    app.include_router(synapxnet_memory_router)
     app.include_router(chat_router)
     app.include_router(tts_router)
     app.include_router(mcp_control_router)

@@ -1,0 +1,15 @@
+{
+  "schema": "synapxnet.skill.recommendation-capacity.input.v1",
+  "workspaceId": "ws_goai_demo",
+  "incidentId": "inc_recommendation_capacity",
+  "traceId": "trace_recommendation_capacity",
+  "scenarioType": "recommendation-capacity",
+  "environmentScope": "simulation",
+  "evidenceIds": ["ev_alert", "ev_health", "ev_workload", "ev_metrics", "ev_workflow", "ev_deployment"],
+  "expectedResourceVersion": "42",
+  "approvalId": "apr_recommendation_capacity",
+  "planDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approvedStepIds": ["gpu-capacity-ensure", "runtime-emergency-tune", "replica-scale-out", "progressive-traffic", "queue-aware-autoscaling", "capacity-convergence", "runtime-normalize"],
+  "compensationStepIds": ["capacity-rollback", "gpu-capacity-rollback"],
+  "allowedTools": ["aiops.gpu.capacity.ensure", "aiops.inference.runtime.tune", "aiops.inference.capacity.apply", "aiops.inference.traffic.shift", "aiops.inference.autoscaling.policy.update", "aiops.inference.capacity.converge"]
+}

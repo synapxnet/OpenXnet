@@ -19,6 +19,48 @@ const REQUIRED_ROLE_SKILLS = Object.freeze({
   "goai-evidence-agent": "goai-evidence-collect",
   "goai-verification-agent": "goai-service-verify",
 })
+const ROLE_DEFINITIONS = Object.freeze([
+  {
+    id: "role_goai_incident_commander",
+    templateId: "goai-incident-commander",
+    name: "Incident Commander",
+    department: "事件治理",
+    icon: "fa-solid fa-tower-broadcast",
+    description: "负责任务拆解、上下文汇总、审批申请与闭环结论。",
+    system_prompt: "你是 Incident Commander。负责拆解企业任务、向取证与验证角色分派边界清晰的工作，并基于真实证据申请审批。不得伪造 Worker 回执或代替独立验证。",
+    permissions: ["delegate", "request_approval", "summarize"],
+    tools: [],
+    skills: ["goai-change-execute"],
+    teamRole: "leader",
+  },
+  {
+    id: "role_goai_evidence_agent",
+    templateId: "goai-evidence-agent",
+    name: "Evidence Agent",
+    department: "跨域取证",
+    icon: "fa-solid fa-magnifying-glass-chart",
+    description: "负责调用三平台只读工具并形成可追溯证据集。",
+    system_prompt: "你是 Evidence Agent。只能按 Leader 委派调用只读取证工具，返回来源、资源版本和观察时间。不得执行审批、生产写操作或最终验证。",
+    permissions: ["collect_evidence", "use_read_tools"],
+    tools: ["aiops", "dataops", "mlops"],
+    skills: ["goai-evidence-collect"],
+    teamRole: "worker",
+  },
+  {
+    id: "role_goai_verification_agent",
+    templateId: "goai-verification-agent",
+    name: "Verification Agent",
+    department: "独立验证",
+    icon: "fa-solid fa-vial-circle-check",
+    description: "负责在处置后独立核验业务、数据、模型与服务状态。",
+    system_prompt: "你是 Verification Agent。必须独立读取验证证据并决定 CLOSE 或 ROLLBACK_REQUIRED；不得修改历史证据，也不得与执行者共用职责。",
+    permissions: ["verify", "read_evidence"],
+    tools: ["aiops", "dataops", "mlops"],
+    skills: ["goai-service-verify"],
+    teamRole: "verifier",
+  },
+])
+const TEAM_TEMPLATE_ID = "team_goai_semifinal"
 const PLATFORM_URLS = Object.freeze({
   aiops: "https://goai.xnetaiops.synapxnet.online",
   dataops: "https://goai.xnetdataops.synapxnet.online",
@@ -44,7 +86,7 @@ function createWorkspaceDraft(existingId = "") {
     config: {
       local: { path: "", permission_mode: "default" },
       docker: { image: "ubuntu:22.04", daemon_url: "", container_id: "" },
-      cloud: { host: "150.109.120.15", port: 22, user: "ubuntu", key_path: "" },
+      cloud: { host: "101.32.9.231", port: 22, user: "ubuntu", key_path: "" },
       sandbox: { image: "openxnet/sandbox:latest", ttl_hours: 24 },
     },
     role_card_id: null,
@@ -81,21 +123,33 @@ async function ensureProject(runtime) {
   return result.project
 }
 
-/** 将三张比赛角色卡归属固定 Workspace 和项目楼层；输入 Runtime，返回更新后的角色卡。 */
-async function alignRoleCards(runtime) {
+/** 幂等创建并对齐三张比赛角色卡；输入 Runtime，返回当前可运行角色卡。 */
+async function ensureRoleCards(runtime) {
   const snapshot = await runtime.listRoleCards()
-  const roles = REQUIRED_ROLE_TEMPLATES.map((templateId) => {
-    const role = snapshot.cards.find((card) => card.templateId === templateId)
-    assert.ok(role, `Required enterprise role card '${templateId}' was not found.`)
-    assert.equal(role.enabled, true, `Required enterprise role card '${templateId}' is disabled.`)
-    return role
-  })
-  for (const role of roles) {
-    const requiredSkill = REQUIRED_ROLE_SKILLS[role.templateId]
-    const skills = [...new Set([...(Array.isArray(role.skills) ? role.skills : []), requiredSkill].filter(Boolean))]
+  for (const definition of ROLE_DEFINITIONS) {
+    const { teamRole: _teamRole, ...roleDefinition } = definition
+    const existing = snapshot.cards.find((card) => card.templateId === definition.templateId)
+    const requiredSkill = REQUIRED_ROLE_SKILLS[definition.templateId]
+    const skills = [...new Set([...(Array.isArray(existing?.skills) ? existing.skills : []), requiredSkill].filter(Boolean))]
     await runtime.saveRoleCard({
-      mode: "update",
-      roleCard: { ...role, assignedWorkspace: WORKSPACE_ID, projectId: PROJECT_ID, skills },
+      mode: existing ? "update" : "create",
+      roleCard: {
+        ...(existing || roleDefinition),
+        id: existing?.id || definition.id,
+        name: definition.name,
+        description: definition.description,
+        system_prompt: definition.system_prompt,
+        permissions: definition.permissions,
+        tools: definition.tools,
+        enabled: true,
+        department: definition.department,
+        icon: definition.icon,
+        skills,
+        assignedWorkspace: WORKSPACE_ID,
+        projectId: PROJECT_ID,
+        templateId: definition.templateId,
+        role_scope: "enterprise-governance",
+      },
     })
   }
   return (await runtime.listRoleCards()).cards.filter((card) => (
@@ -103,19 +157,32 @@ async function alignRoleCards(runtime) {
   ))
 }
 
-/** 校验已启用的三角色团队模板；输入 Runtime 和角色卡，返回唯一比赛模板。 */
-async function requireTeamTemplate(runtime, roles) {
-  const roleIds = new Set(roles.map((role) => role.id))
-  const templates = (await runtime.listTeamTemplates()).teamTemplates.filter((template) => (
-    template.workspaceId === WORKSPACE_ID
-      && template.enabled
-      && template.members.length >= 3
-      && template.members.every((member) => roleIds.has(member.roleCardId))
-  ))
-  assert.equal(templates.length, 1, "Exactly one enabled GOAI team template is required.")
-  assert.equal(templates[0].members.filter((member) => member.teamRole === "leader").length, 1)
-  assert.equal(templates[0].members.some((member) => member.teamRole === "verifier"), true)
-  return templates[0]
+/** 幂等创建三职能团队模板；输入 Runtime 和角色卡，返回唯一固定比赛模板。 */
+async function ensureTeamTemplate(runtime, roles) {
+  const rolesByTemplate = new Map(roles.map((role) => [role.templateId, role]))
+  const members = ROLE_DEFINITIONS.map((definition) => ({
+    roleCardId: rolesByTemplate.get(definition.templateId).id,
+    teamRole: definition.teamRole,
+  }))
+  const templates = (await runtime.listTeamTemplates()).teamTemplates
+  const existing = templates.find((template) => template.id === TEAM_TEMPLATE_ID)
+    || templates.find((template) => template.workspaceId === WORKSPACE_ID && template.name === "OpenXnet 跨域治理团队")
+  const expectedMembers = JSON.stringify(members)
+  if (existing && existing.enabled && existing.workspaceId === WORKSPACE_ID && JSON.stringify(existing.members) === expectedMembers) {
+    return existing
+  }
+  const result = await runtime.saveTeamTemplate({
+    mode: existing ? "update" : "create",
+    teamTemplate: {
+      id: existing?.id || TEAM_TEMPLATE_ID,
+      name: "OpenXnet 跨域治理团队",
+      description: "由 Leader、Evidence Worker 和 Independent Verifier 组成的 AgentTeams 复赛主 Demo 团队。",
+      workspaceId: WORKSPACE_ID,
+      enabled: true,
+      members,
+    },
+  })
+  return result.teamTemplate
 }
 
 /** 保存并检查三个 SynapXnet 平台入口；输入 Runtime，返回不含凭据的健康状态。 */
@@ -139,8 +206,8 @@ async function main() {
   })
   const workspace = await ensureWorkspace(workspaceRuntime)
   const project = await ensureProject(runtime)
-  const roles = await alignRoleCards(runtime)
-  const template = await requireTeamTemplate(runtime, roles)
+  const roles = await ensureRoleCards(runtime)
+  const template = await ensureTeamTemplate(runtime, roles)
   const services = await configurePlatformServices(runtime)
   const sandbox = await runtime.getSandboxState()
   const sandboxRoleIds = new Set(sandbox.agents.map((agent) => agent.id))

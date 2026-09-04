@@ -1,0 +1,15 @@
+{
+  "schema": "synapxnet.skill.feature-drift.input.v1",
+  "workspaceId": "ws_goai_demo",
+  "incidentId": "inc_feature_drift",
+  "traceId": "trace_feature_drift",
+  "scenarioType": "feature-drift",
+  "environmentScope": "simulation",
+  "evidenceIds": ["ev_alert", "ev_health", "ev_workload", "ev_quality", "ev_schema", "ev_lineage", "ev_workflow", "ev_deployment", "ev_probe"],
+  "expectedResourceVersion": "74",
+  "approvalId": "apr_feature_drift",
+  "planDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "approvedStepIds": ["fallback-feature-apply", "feature-history-backfill", "repaired-dataset-gate", "risk-model-retrain", "risk-model-evaluation", "risk-model-register", "risk-canary-release", "risk-full-promotion", "fallback-feature-remove"],
+  "compensationStepIds": ["risk-deployment-rollback", "risk-fallback-preserve"],
+  "allowedTools": ["mlops.feature.fallback.apply", "dataops.feature.backfill.start", "dataops.dataset.validation.get", "mlops.training.search.start", "mlops.model.evaluation.run", "mlops.model.register", "mlops.deployment.canary.apply", "mlops.deployment.promote", "mlops.feature.fallback.remove"]
+}

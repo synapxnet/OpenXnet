@@ -209,6 +209,33 @@ export class FeaturePackManager {
   }
 
   /**
+   * 发现任意只读目录中的 Feature Pack，但把完整载荷哈希校验延迟到实际启动前。
+   *
+   * @param packDirectory 包含 manifest.json 和运行入口的只读目录。
+   * @returns 已完成协议、平台、架构和启动文件检查的 Feature Pack。
+   */
+  public async discoverDirectory(packDirectory: string): Promise<InstalledFeaturePack> {
+    const resolvedDirectory = path.resolve(packDirectory);
+    const manifest = await this.readManifest(resolvedDirectory);
+    this.assertCompatible(manifest);
+    const entrypointPath = path.join(resolvedDirectory, ...manifest.entrypoint.split("/"));
+    const runtimeExecutablePath = path.join(
+      resolvedDirectory,
+      ...manifest.runtimeExecutable.split("/"),
+    );
+    for (const requiredPath of [entrypointPath, runtimeExecutablePath]) {
+      const stats = await fs.stat(requiredPath);
+      if (!stats.isFile()) {
+        throw new FeaturePackError(
+          "INVALID_PACK_CONTENT",
+          "Feature-pack launch path is not a regular file.",
+        );
+      }
+    }
+    return { manifest, rootDirectory: resolvedDirectory, entrypointPath };
+  }
+
+  /**
    * Remove every installed version and active pointer for one capability.
    *
    * @param capabilityId Capability whose private store should be removed.
@@ -244,23 +271,11 @@ export class FeaturePackManager {
     if (packDirectory === null) {
       return null;
     }
-    const manifest = await this.readManifest(packDirectory);
-    this.assertCompatible(manifest);
-    if (manifest.id !== capabilityId) {
+    const pack = await this.discoverDirectory(packDirectory);
+    if (pack.manifest.id !== capabilityId) {
       throw new FeaturePackError("INVALID_MANIFEST", "Feature-pack capability does not match its install path.");
     }
-    const entrypointPath = path.join(packDirectory, ...manifest.entrypoint.split("/"));
-    const runtimeExecutablePath = path.join(
-      packDirectory,
-      ...manifest.runtimeExecutable.split("/"),
-    );
-    for (const requiredPath of [entrypointPath, runtimeExecutablePath]) {
-      const stats = await fs.stat(requiredPath);
-      if (!stats.isFile()) {
-        throw new FeaturePackError("INVALID_PACK_CONTENT", "Feature-pack launch path is not a regular file.");
-      }
-    }
-    return { manifest, rootDirectory: packDirectory, entrypointPath };
+    return pack;
   }
 
   /**

@@ -129,6 +129,12 @@ export interface RecordTrustedApplicationEnterpriseMessageInput {
   readonly status?: ApplicationEnterpriseMessageStatus;
 }
 
+/** Main 内部按 Incident/Trace 清理比赛协作轨迹的范围。 */
+export interface PurgeApplicationEnterpriseCompetitionMessagesInput {
+  readonly incidentIds: readonly string[];
+  readonly traceIds: readonly string[];
+}
+
 interface EnterpriseSandboxDocument {
   readonly agents: readonly Readonly<Record<string, unknown>>[];
   readonly scene: Readonly<Record<string, unknown>>;
@@ -686,6 +692,24 @@ export class ApplicationEnterpriseRuntimeService {
     });
   }
 
+  /** 清理指定比赛事件的协作轨迹；输入 Main 可信 Incident/Trace 集合，返回删除数量并保留普通聊天。 */
+  public purgeCompetitionMessages(
+    input: PurgeApplicationEnterpriseCompetitionMessagesInput,
+  ): Promise<number> {
+    const incidentIds = this.parseTrustedReferenceSet(input.incidentIds, "Competition incident ids");
+    const traceIds = this.parseTrustedReferenceSet(input.traceIds, "Competition trace ids");
+    return this.enqueueOperation(async () => {
+      const messages = await this.readMessages();
+      const remaining = messages.filter((message) => (
+        !incidentIds.has(message.taskId ?? "") && !traceIds.has(message.traceId ?? "")
+      ));
+      if (remaining.length !== messages.length) {
+        await this.writeJsonFile(this.messagePath, remaining, "Enterprise messages");
+      }
+      return messages.length - remaining.length;
+    });
+  }
+
   /** 列出企业空间 Skill 绑定；无输入，返回规范化启用状态且不扫描全局技能目录。 */
   public async listSkillBindings(): Promise<ApplicationEnterpriseSkillBindingListResult> {
     return {
@@ -1098,6 +1122,12 @@ export class ApplicationEnterpriseRuntimeService {
     }
     messages.push(message);
     await this.writeJsonFile(this.messagePath, messages, "Enterprise messages");
+  }
+
+  /** 校验 Main 可信引用集合；输入未知数组和标签，返回最多一万个唯一 ID。 */
+  private parseTrustedReferenceSet(values: readonly string[], label: string): ReadonlySet<string> {
+    if (!Array.isArray(values) || values.length > MAX_ENTERPRISE_MESSAGES) throw new Error(`${label} are invalid.`);
+    return new Set(values.map((value) => requireEnterpriseId(value, label)));
   }
 
   /** 读取并规范角色卡兼容文件；无输入，返回最多 2000 条，损坏项被忽略。 */

@@ -61,6 +61,20 @@ test("parseApplicationAccessRequest enforces exact routes, methods, and queries"
     }).targetPath,
     "/sub/orders/order-1/cancel",
   );
+  const resetRequest = parseApplicationAccessRequest({
+    path: "/v1/access/auth/password/reset",
+    method: "POST",
+    body: {
+      phone: "18800000000",
+      code: "123456",
+      new_password: "new-password-123",
+      terms_accepted: true,
+      privacy_accepted: true,
+      agreements_locale: "zh-CN",
+    },
+  });
+  assert.equal(resetRequest.targetPath, "/auth/password/reset");
+  assert.equal(resetRequest.sessionAction, "capture");
   assert.throws(
     () => parseApplicationAccessRequest({ path: "https://evil.test/v1/access/plans" }),
     /path is invalid/,
@@ -74,6 +88,14 @@ test("parseApplicationAccessRequest enforces exact routes, methods, and queries"
       path: "/v1/access/auth/login/password",
       method: "POST",
       body: { identity: "ada", password: "secret", unexpected: true },
+    }),
+    /body fields are invalid/,
+  );
+  assert.throws(
+    () => parseApplicationAccessRequest({
+      path: "/v1/access/auth/password/reset",
+      method: "POST",
+      body: { phone: "18800000000", code: "123456", password: "not-allowed" },
     }),
     /body fields are invalid/,
   );

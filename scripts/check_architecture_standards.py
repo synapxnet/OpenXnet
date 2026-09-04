@@ -47,6 +47,7 @@ EXCLUDED_PARTS = {
     "dist",
     "node_modules",
     "release",
+    "runtime",
 }
 EXCLUDED_PREFIXES = {
     ("static", "libs"),

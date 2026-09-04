@@ -48,6 +48,14 @@ class MemoryWorkerClient:
         token = os.environ.get("OPENXNET_WORKER_RPC_TOKEN", "").strip()
         return cls(origin, token, _normalize_legacy_configuration(config))
 
+    @classmethod
+    def from_environment(cls) -> "MemoryWorkerClient":
+        """Construct a V3-capable client that does not require legacy Mem0 configuration."""
+
+        origin = os.environ.get("OPENXNET_WORKER_RPC_ORIGIN", "").strip()
+        token = os.environ.get("OPENXNET_WORKER_RPC_TOKEN", "").strip()
+        return cls(origin, token, {})
+
     @property
     def configured(self) -> bool:
         """Return whether Electron supplied both a loopback origin and bearer token."""
@@ -97,6 +105,54 @@ class MemoryWorkerClient:
             },
         )
         return result.get("result")
+
+    def recall_v3(
+        self,
+        query: str,
+        *,
+        requester_agent: str,
+        task_id: str = "",
+        required_tags: tuple[str, ...] = (),
+        limit: int = 4,
+        maximum_characters: int = 4_000,
+    ) -> Mapping[str, Any]:
+        """Recall permission-filtered SynapXnet V3 memory for a chat request."""
+
+        return self._request_sync(
+            "memory.v3.recall",
+            {
+                "requesterAgent": requester_agent,
+                "query": query,
+                "taskId": task_id,
+                "requiredTags": list(required_tags),
+                "limit": limit,
+                "maximumCharacters": maximum_characters,
+            },
+        )
+
+    def append_v3_short_term(
+        self,
+        *,
+        session_id: str,
+        requester_agent: str,
+        input_text: str,
+        output_text: str,
+        token_count: int,
+        ttl_seconds: int = 86_400,
+    ) -> Mapping[str, Any]:
+        """Append hash-only short-term exchange evidence with a bounded TTL."""
+
+        return self._request_sync(
+            "memory.v3.short-term.append",
+            {
+                "sessionId": session_id,
+                "requesterAgent": requester_agent,
+                "input": input_text,
+                "output": output_text,
+                "tokenCount": token_count,
+                "ttlSeconds": ttl_seconds,
+            },
+        )
 
     def _require_configuration(self) -> None:
         """Raise a stable retryable failure when Electron RPC is unavailable."""

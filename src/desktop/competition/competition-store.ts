@@ -109,6 +109,10 @@ export function createEmptySnapshot(now: string): ApplicationCompetitionSnapshot
     auditReceipts: [],
     teamBindings: [],
     agentDecisions: [],
+    skillUsages: [],
+    taskGraphs: [],
+    reasoningDecisions: [],
+    skillEvolutionRuns: [],
     updatedAt: now,
   };
 }
@@ -140,7 +144,11 @@ export function parseStoredSnapshot(value: unknown): ApplicationCompetitionSnaps
     actions: Array.isArray(cloned.actions)
       ? cloned.actions.map(normalizeAction)
       : cloned.actions,
-    agentDecisions: Array.isArray(cloned.agentDecisions) ? cloned.agentDecisions : [],
+    agentDecisions: Array.isArray(cloned.agentDecisions) ? cloned.agentDecisions.map(normalizeAgentDecision) : [],
+    skillUsages: Array.isArray(cloned.skillUsages) ? cloned.skillUsages : [],
+    taskGraphs: Array.isArray(cloned.taskGraphs) ? cloned.taskGraphs.map(normalizeTaskGraph) : [],
+    reasoningDecisions: Array.isArray(cloned.reasoningDecisions) ? cloned.reasoningDecisions : [],
+    skillEvolutionRuns: Array.isArray(cloned.skillEvolutionRuns) ? cloned.skillEvolutionRuns : [],
   };
   requireCollection(snapshot.incidents, "incidents");
   requireCollection(snapshot.traces, "traces");
@@ -151,20 +159,35 @@ export function parseStoredSnapshot(value: unknown): ApplicationCompetitionSnaps
   requireCollection(snapshot.auditReceipts, "auditReceipts");
   requireCollection(snapshot.teamBindings, "teamBindings");
   requireCollection(snapshot.agentDecisions, "agentDecisions");
+  requireCollection(snapshot.skillUsages, "skillUsages");
+  requireCollection(snapshot.taskGraphs, "taskGraphs");
+  requireCollection(snapshot.reasoningDecisions, "reasoningDecisions");
+  requireCollection(snapshot.skillEvolutionRuns, "skillEvolutionRuns");
   if (typeof snapshot.updatedAt !== "string" || snapshot.updatedAt.length > 128) {
     throw new Error("Competition snapshot timestamp is invalid.");
   }
   return snapshot;
 }
 
+/** 迁移 Task Graph；输入旧版或新版记录，为旧数据补齐协同事件列表。 */
+function normalizeTaskGraph(value: ApplicationCompetitionSnapshot["taskGraphs"][number]): ApplicationCompetitionSnapshot["taskGraphs"][number] {
+  const compatible = value as ApplicationCompetitionSnapshot["taskGraphs"][number] & { readonly events?: unknown };
+  return {
+    ...value,
+    events: Array.isArray(compatible.events) ? compatible.events : [],
+  };
+}
+
 /** 迁移单个 Incident；输入旧版或新版记录，补齐三场景类型并返回独立对象。 */
 function normalizeIncident(value: ApplicationCompetitionIncident): ApplicationCompetitionIncident {
   const compatible = value as ApplicationCompetitionIncident & {
+    readonly projectId?: unknown;
     readonly scenario: ApplicationCompetitionIncident["scenario"] & { readonly scenarioType?: unknown };
   };
   const scenarioType = compatible.scenario?.scenarioType;
   return {
     ...value,
+    projectId: typeof compatible.projectId === "string" ? compatible.projectId : null,
     scenario: {
       ...value.scenario,
       scenarioType: scenarioType === "recommendation-capacity" || scenarioType === "quantitative-iteration"
@@ -253,6 +276,15 @@ function normalizeTeamBinding(value: ApplicationCompetitionAgentTeamBinding): Ap
       : null,
     teamTemplateName: typeof compatible.teamTemplateName === "string" ? compatible.teamTemplateName : "",
     memberSnapshots: Array.isArray(compatible.memberSnapshots) ? compatible.memberSnapshots : [],
+  };
+}
+
+/** 迁移 AgentTeams 决策；输入旧版或新版记录，为旧数据补齐空事件账本。 */
+function normalizeAgentDecision(value: ApplicationCompetitionSnapshot["agentDecisions"][number]): ApplicationCompetitionSnapshot["agentDecisions"][number] {
+  const compatible = value as ApplicationCompetitionSnapshot["agentDecisions"][number] & { readonly transportEvents?: unknown };
+  return {
+    ...value,
+    transportEvents: Array.isArray(compatible.transportEvents) ? compatible.transportEvents : [],
   };
 }
 

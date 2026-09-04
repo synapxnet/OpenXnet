@@ -1,8 +1,10 @@
 import {
   APPLICATION_COMPETITION_RUNTIME_CHANNELS,
   type ApplicationCompetitionMutationResult,
+  type ApplicationCompetitionEvaluationExportResult,
   type ApplicationCompetitionResourceResult,
   type ApplicationCompetitionSnapshot,
+  type ApplicationCompetitionUiProfile,
 } from "../contracts/application-competition-runtime";
 import type { ApplicationCompetitionRuntimeService } from "../competition/application-competition-runtime";
 import type { IpcMainLike } from "./register-core-ipc";
@@ -14,6 +16,7 @@ export interface RegisterApplicationCompetitionRuntimeIpcOptions {
     ApplicationCompetitionRuntimeService,
     | "getSnapshot"
     | "resetDemoData"
+    | "startEnterpriseTask"
     | "createIncident"
     | "runInvestigation"
     | "decideApproval"
@@ -21,9 +24,11 @@ export interface RegisterApplicationCompetitionRuntimeIpcOptions {
     | "verifyRemediation"
     | "readResource"
     | "exportRetrospective"
+    | "exportEvaluation"
     | "setAdapterMode"
   >;
   readonly authorizeEvent: (event: unknown) => void;
+  readonly readUiProfile: () => ApplicationCompetitionUiProfile;
   readonly resolveActorId: (
     role: "investigator" | "approver" | "operator" | "verifier",
   ) => string;
@@ -33,7 +38,7 @@ export interface RegisterApplicationCompetitionRuntimeIpcOptions {
 export function registerApplicationCompetitionRuntimeIpc(
   options: RegisterApplicationCompetitionRuntimeIpcOptions,
 ): () => void {
-  const { ipcMain, runtime, authorizeEvent, resolveActorId } = options;
+  const { ipcMain, runtime, authorizeEvent, readUiProfile, resolveActorId } = options;
 
   /** 由 Main 覆盖 Renderer 身份；输入未知请求和职责，返回带可信 actorId 的普通对象。 */
   function withTrustedActor(
@@ -52,10 +57,25 @@ export function registerApplicationCompetitionRuntimeIpc(
     return runtime.getSnapshot();
   }
 
+  /** 读取事件中心发布配置；输入 IPC 事件，鉴权后返回不含凭据的只读能力。 */
+  function handleGetUiProfile(event: unknown): ApplicationCompetitionUiProfile {
+    authorizeEvent(event);
+    return readUiProfile();
+  }
+
   /** 重置演示数据；输入 IPC 事件和确认请求，鉴权后仅清理竞赛控制面。 */
   function handleResetDemoData(event: unknown, request: unknown): Promise<ApplicationCompetitionSnapshot> {
     authorizeEvent(event);
     return runtime.resetDemoData(request);
+  }
+
+  /** 从企业项目群发起主 Demo；输入受限任务，操作者身份由 Main 单独传入 Runtime。 */
+  function handleStartEnterpriseTask(
+    event: unknown,
+    request: unknown,
+  ): Promise<ApplicationCompetitionMutationResult> {
+    authorizeEvent(event);
+    return runtime.startEnterpriseTask(request, resolveActorId("investigator"));
   }
 
   /** 创建事件；输入 IPC 事件和未知请求，返回变更结果，未授权时不写文件。 */
@@ -73,7 +93,10 @@ export function registerApplicationCompetitionRuntimeIpc(
   /** 提交人工审批；输入 IPC 事件和未知决策，返回审批状态。 */
   function handleDecideApproval(event: unknown, request: unknown): Promise<ApplicationCompetitionMutationResult> {
     authorizeEvent(event);
-    return runtime.decideApproval(withTrustedActor(request, "approver"));
+    return runtime.decideApproval(withTrustedActor(request, "approver"), {
+      operatorId: resolveActorId("operator"),
+      verifierId: resolveActorId("verifier"),
+    });
   }
 
   /** 执行 MLOps 回滚；输入 IPC 事件和治理请求，返回动作及回执。 */
@@ -100,6 +123,15 @@ export function registerApplicationCompetitionRuntimeIpc(
     return runtime.exportRetrospective(request);
   }
 
+  /** 导出复赛评测证据；输入 IPC 事件和终态事件 ID，返回报告与遥测文件路径。 */
+  function handleExportEvaluation(
+    event: unknown,
+    request: unknown,
+  ): Promise<ApplicationCompetitionEvaluationExportResult> {
+    authorizeEvent(event);
+    return runtime.exportEvaluation(request);
+  }
+
   /** 切换 Adapter；输入 IPC 事件和模式，返回最新快照。 */
   function handleSetAdapterMode(event: unknown, request: unknown): Promise<ApplicationCompetitionSnapshot> {
     authorizeEvent(event);
@@ -108,8 +140,10 @@ export function registerApplicationCompetitionRuntimeIpc(
 
   const channels = APPLICATION_COMPETITION_RUNTIME_CHANNELS;
   Object.values(channels).forEach((channel) => ipcMain.removeHandler(channel));
+  ipcMain.handle(channels.getUiProfile, handleGetUiProfile);
   ipcMain.handle(channels.getSnapshot, handleGetSnapshot);
   ipcMain.handle(channels.resetDemoData, handleResetDemoData);
+  ipcMain.handle(channels.startEnterpriseTask, handleStartEnterpriseTask);
   ipcMain.handle(channels.createIncident, handleCreateIncident);
   ipcMain.handle(channels.runInvestigation, handleRunInvestigation);
   ipcMain.handle(channels.decideApproval, handleDecideApproval);
@@ -117,6 +151,7 @@ export function registerApplicationCompetitionRuntimeIpc(
   ipcMain.handle(channels.verifyRemediation, handleVerifyRemediation);
   ipcMain.handle(channels.readResource, handleReadResource);
   ipcMain.handle(channels.exportRetrospective, handleExportRetrospective);
+  ipcMain.handle(channels.exportEvaluation, handleExportEvaluation);
   ipcMain.handle(channels.setAdapterMode, handleSetAdapterMode);
 
   /** 移除竞赛 Runtime 的全部 IPC；无输入和返回，可重复调用。 */

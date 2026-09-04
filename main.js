@@ -8,6 +8,7 @@ const { spawn } = require('child_process')
 const { download } = require('electron-dl');
 const fs = require('fs')
 const os = require('os')
+const applicationPackage = require('./package.json')
 const net = require('net') // 添加 net 模块用于端口检测
 const dgram = require('dgram');
 const osc = require('osc');
@@ -52,10 +53,12 @@ const {
   HttpCompetitionApprovalPublisher,
   CompetitionMcpGateway,
   evaluateApplicationNeuroSymbolicPolicy,
+  resolveApplicationCompetitionUiProfile,
   ApplicationKernelRuntimeService,
   ApplicationModelAssetRuntimeService,
   ApplicationAgentRuntimeService,
   ApplicationMemoryManagementRuntimeService,
+  ApplicationSynapxnetMemoryRuntimeService,
   getApplicationCloudVrmModelPaths,
   ApplicationRecallRuntimeService,
   ApplicationConnectorRuntimeService,
@@ -98,6 +101,7 @@ const {
   registerApplicationModelAssetIpc,
   registerApplicationAgentRuntimeIpc,
   registerApplicationMemoryManagementIpc,
+  registerApplicationSynapxnetMemoryIpc,
   registerApplicationRecallRuntimeIpc,
   APPLICATION_RECALL_RUNTIME_CHANNELS,
   registerApplicationProvidersIpc,
@@ -140,6 +144,12 @@ const {
 } = require('./build-ts/desktop')
 const OPENXNET_APP_NAME = 'OpenXnet'
 const OPENXNET_APP_ID = 'com.openxnet.desktop'
+const GOAI_STAGING_MEMORY_BOOTSTRAP_MANIFEST = 'b0a7a9fd7ecb78c035007aa2b33b6bb87e1eb93586bad155461ffb5fe3171546'
+const GOAI_MEMORY_SHARED_AGENT_IDS = Object.freeze([
+  'role_goai_incident_commander',
+  'role_goai_evidence_agent',
+  'role_goai_verification_agent',
+])
 const DESKTOP_PROCESS_STARTED_AT = Date.now()
 const OPENXNET_WINDOW_ICON = path.join(
   __dirname,
@@ -158,6 +168,21 @@ function resolveDesktopUserDataDirectory(appDataDirectory) {
   return configuredDirectory
     ? path.resolve(configuredDirectory)
     : path.join(appDataDirectory, OPENXNET_APP_NAME)
+}
+
+/**
+ * 解析复赛验收版可信记忆迁移包；无输入，普通发行版返回 undefined。
+ *
+ * @returns {{path: string, expectedManifestSha256: string}|undefined} 固定安装路径和发布者锁定摘要。
+ */
+function resolveGoaiStagingMemoryBootstrap() {
+  if (applicationPackage?.openxnet?.releaseProfile !== 'goai-staging') return undefined
+  return {
+    path: app.isPackaged
+      ? path.join(process.resourcesPath, 'bootstrap', 'goai-staging-memory-transfer.v1.json')
+      : path.join(__dirname, 'data', 'goai-staging-memory-transfer.v1.json'),
+    expectedManifestSha256: GOAI_STAGING_MEMORY_BOOTSTRAP_MANIFEST,
+  }
 }
 
 try {
@@ -486,6 +511,8 @@ let competitionMcpGateway = null
 let executionEngineSupervisor = null
 const featurePackRoot = process.env.OPENXNET_FEATURE_PACK_ROOT
   || path.join(app.getPath('userData'), 'feature-packs')
+const bundledFeaturePackRoot = process.env.OPENXNET_BUNDLED_FEATURE_PACK_ROOT
+  || path.join(process.resourcesPath, 'feature-packs')
 const featurePackManager = new FeaturePackManager({
   rootDirectory: featurePackRoot,
 })
@@ -805,6 +832,7 @@ async function configureInstalledFeaturePacks() {
       manager: featurePackManager,
       supervisor: workerSupervisor,
       capability: 'memory',
+      bundledDirectory: isDev ? undefined : path.join(bundledFeaturePackRoot, 'memory'),
       createDefinition: (pack) => ({
         capability: 'memory',
         command: pack.entrypointPath,
@@ -827,7 +855,7 @@ async function configureInstalledFeaturePacks() {
         idleTimeoutMs: 5 * 60_000,
       }),
     })
-    const installedMemoryPack = unsubscribe !== null
+    const memoryFeaturePackAvailable = unsubscribe !== null
 
     if (unsubscribe === null && isDev) {
       unsubscribe = registerWorkerCapability({
@@ -859,8 +887,8 @@ async function configureInstalledFeaturePacks() {
       console.log('[FeaturePack] Memory Worker will use the development Python environment')
     }
 
-    if (installedMemoryPack) {
-      console.log('[FeaturePack] Memory Worker is installed and available on demand')
+    if (memoryFeaturePackAvailable) {
+      console.log('[FeaturePack] Memory Worker is available on demand')
     }
     if (unsubscribe !== null) {
       workerCapabilityUnsubscribers.push(unsubscribe)
@@ -1303,6 +1331,8 @@ async function startWorkerRpcGateway() {
         'memory.status',
         'memory.search',
         'memory.add',
+        'memory.v3.recall',
+        'memory.v3.short-term.append',
         'memory.release',
         'recall.bootstrap',
         'recall.search',
@@ -2434,6 +2464,41 @@ function buildCompetitionGovernanceOperation(event) {
 }
 
 /**
+ * 将 Matrix 事件映射到企业群聊身份与收件人。
+ *
+ * @param {object} event 已通过 Desktop 契约校验的脱敏传输事件。
+ * @param {object} task AgentTeams 阶段任务回执。
+ * @returns {{senderType: 'agent'|'system', senderId: string, senderName: string, recipientIds: string[]}} 群聊身份映射。
+ */
+function resolveCompetitionTransportConversationIdentity(event, task) {
+  if (event.direction === 'INBOUND' && event.kind === 'ROUTE_RESPONSE' && task.route) {
+    return {
+      senderType: 'agent',
+      senderId: task.route.leaderRoleCardId,
+      senderName: task.route.leaderName,
+      recipientIds: [task.route.assigneeRoleCardId],
+    }
+  }
+  if (event.direction === 'INBOUND' && event.kind === 'TASK_RESPONSE') {
+    return {
+      senderType: 'agent',
+      senderId: task.result.roleCardId,
+      senderName: task.result.agentName,
+      recipientIds: [],
+    }
+  }
+  const recipientIds = event.kind === 'ROUTE_REQUEST' && task.route
+    ? [task.route.leaderRoleCardId]
+    : event.kind === 'TASK_REQUEST' ? [task.result.roleCardId] : []
+  return {
+    senderType: 'system',
+    senderId: 'openxnet-agentteams-gateway',
+    senderName: 'AgentTeams Gateway',
+    recipientIds,
+  }
+}
+
+/**
  * 把真实 AgentTeams 路由和执行回执投影到企业协作群。
  *
  * @param {object} input AgentTeams 阶段输入，包含 Workspace、Trace 和团队绑定。
@@ -2442,9 +2507,29 @@ function buildCompetitionGovernanceOperation(event) {
  */
 async function recordCompetitionAgentTeamConversation(input, task) {
   try {
+    if (Array.isArray(task.transportEvents) && task.transportEvents.length > 0) {
+      for (const event of task.transportEvents) {
+        const identity = resolveCompetitionTransportConversationIdentity(event, task)
+        await applicationEnterpriseRuntime.recordTrustedMessage({
+          workspaceId: input.incident.workspaceId,
+          projectId: input.incident.projectId,
+          taskId: task.taskId,
+          traceId: input.traceId,
+          senderType: identity.senderType,
+          senderId: identity.senderId,
+          senderName: identity.senderName,
+          recipientIds: identity.recipientIds,
+          content: `[Matrix ${event.kind} · ${event.eventId}]\n${event.redactedBody}`.slice(0, 16000),
+          operation: event.kind === 'TASK_RESPONSE' ? buildCompetitionAgentOperation(input, task) : null,
+          status: 'delivered',
+        })
+      }
+      return
+    }
     if (task.route) {
       await applicationEnterpriseRuntime.recordTrustedMessage({
         workspaceId: input.incident.workspaceId,
+        projectId: input.incident.projectId,
         taskId: task.taskId,
         traceId: input.traceId,
         senderType: 'agent',
@@ -2456,6 +2541,7 @@ async function recordCompetitionAgentTeamConversation(input, task) {
     }
     await applicationEnterpriseRuntime.recordTrustedMessage({
       workspaceId: input.incident.workspaceId,
+      projectId: input.incident.projectId,
       taskId: task.taskId,
       traceId: input.traceId,
       senderType: 'agent',
@@ -2475,6 +2561,7 @@ async function recordCompetitionOperationConversation(event) {
   const operation = buildCompetitionGovernanceOperation(event)
   await applicationEnterpriseRuntime.recordTrustedMessage({
     workspaceId: event.workspaceId,
+    projectId: event.projectId,
     taskId: event.actionId || event.approvalId || event.operationId,
     traceId: event.traceId,
     senderType: 'system',
@@ -2486,21 +2573,227 @@ async function recordCompetitionOperationConversation(event) {
   })
 }
 
+/**
+ * 把已结晶企业 Skill 的有界复盘写入 V3；输入发布请求，创建或追加版本。
+ *
+ * @param {object} request Competition Runtime 生成的脱敏 Skill 发布请求。
+ * @returns {Promise<object>} 新建或编辑后的 V3 记忆记录。
+ */
+async function persistCompetitionSkillMemory(request) {
+  const currentSettings = legacyRendererState.getSnapshot().settings
+  const ownerAgent = String(currentSettings.mainAgent || 'openxnet-model').trim() || 'openxnet-model'
+  const taskId = `skill:${String(request.skillId || '').trim()}`.slice(0, 512)
+  const title = `Skill: ${String(request.name || request.skillId || '').trim()}`.slice(0, 512)
+  const workflow = String(request.workflow || '').trim()
+  const content = [
+    `Skill ID: ${request.skillId}`,
+    `Description: ${request.description}`,
+    `Trigger: ${request.triggerContext}`,
+    `Workflow:\n${workflow}`,
+    `Required capabilities: ${(request.requiredCapabilities || []).join('; ')}`,
+    `Verification: ${(request.verification || []).join('; ')}`,
+    `Rollback: ${request.rollback}`,
+    `Source incident: ${request.incidentId}`,
+    `Family: ${request.familyId}`,
+    `Environment: ${request.environmentScope}`,
+    `Derivation: ${request.derivationMethod}`,
+  ].join('\n\n')
+  const permissions = GOAI_MEMORY_SHARED_AGENT_IDS
+  const tags = ['skill', 'competition', String(request.environmentScope || 'simulation'), String(request.familyId || 'retrospective')]
+  const listing = await applicationSynapxnetMemoryRuntime.list({
+    requesterAgent: ownerAgent,
+    query: String(request.skillId || ''),
+    ownerAgent,
+    includeRetired: true,
+    limit: 20,
+  })
+  const existing = (listing.items || []).find((item) => item.taskId === taskId)
+  if (existing) {
+    return applicationSynapxnetMemoryRuntime.edit({
+      memoryId: existing.memoryId,
+      baseVersion: existing.version,
+      actorAgent: ownerAgent,
+      title,
+      content,
+      qualityScore: 0.98,
+      permissions,
+      tags,
+      reason: `Skill ${request.skillId} crystallized from incident ${request.incidentId}`.slice(0, 2048),
+    })
+  }
+  return applicationSynapxnetMemoryRuntime.create({
+    ownerAgent,
+    actorAgent: ownerAgent,
+    taskId,
+    title,
+    content,
+    qualityScore: 0.98,
+    permissions,
+    tags,
+    source: 'competition-retrospective',
+  })
+}
+
+/**
+ * 将竞赛控制面稳定枚举转换为长期记忆中的中文文本。
+ *
+ * @param {unknown} value 控制面枚举或 Agent 名称。
+ * @returns {string} 中文标签或原始稳定标识。
+ */
+function localizeCompetitionMemoryValue(value) {
+  const normalized = String(value || '-')
+  const labels = {
+    INVESTIGATION_PLAN: '取证计划',
+    CHANGE_DECISION: '处置决策',
+    VERIFICATION: '独立验证',
+    'Evidence Agent': '证据智能体',
+    'Incident Commander': '事件指挥智能体',
+    'Verification Agent': '验证智能体',
+    worker: '执行者',
+    leader: '主控',
+    COLLECT_EVIDENCE: '收集证据',
+    REQUEST_APPROVAL: '申请审批',
+    VERIFY_RESULT: '验证结果',
+    CLOSE_INCIDENT: '关闭事件',
+  }
+  return labels[normalized] || normalized
+}
+
+/**
+ * 把已通过独立验证的比赛事件写入 Memory V3。
+ *
+ * @param {object} request Competition Runtime 生成的脱敏闭环摘要。
+ * @returns {Promise<object>} 已存在的幂等记录或新建的 V3 记忆。
+ */
+async function persistCompetitionResolvedMemory(request) {
+  const currentSettings = legacyRendererState.getSnapshot().settings
+  const ownerAgent = String(currentSettings.mainAgent || 'openxnet-model').trim() || 'openxnet-model'
+  const taskId = `incident:${String(request.incidentId || '').trim()}`.slice(0, 512)
+  const listing = await applicationSynapxnetMemoryRuntime.list({
+    requesterAgent: ownerAgent,
+    query: String(request.incidentId || ''),
+    ownerAgent,
+    includeRetired: true,
+    limit: 20,
+  })
+  const existing = (listing.items || []).find((item) => item.taskId === taskId)
+  if (existing) return existing
+  const decisionLines = (request.agentDecisions || []).map((decision) => (
+    `- ${localizeCompetitionMemoryValue(decision.stage)}：${localizeCompetitionMemoryValue(decision.agentName)}`
+    + ` / ${localizeCompetitionMemoryValue(decision.teamRole)} -> ${localizeCompetitionMemoryValue(decision.decision)}；`
+    + `${decision.summary}`
+  ))
+  const content = [
+    '# 事件闭环记忆',
+    `工作空间：${request.workspaceId}`,
+    `项目：${request.projectId || '工作空间级任务'}`,
+    `事件编号：${request.incidentId}`,
+    `追踪编号：${request.traceId}`,
+    `场景类型：${request.scenarioType}`,
+    `问题摘要：${request.summary}`,
+    `闭环时间：${request.resolvedAt}`,
+    `审批编号：${request.approvalId}`,
+    `执行编号：${request.actionId}`,
+    `调用工具：${(request.toolNames || []).join(', ')}`,
+    `证据引用：${(request.evidenceIds || []).join(', ')}`,
+    `独立验证证据：${(request.verificationEvidenceIds || []).join(', ')}`,
+    `AgentTeams 决策：\n${decisionLines.join('\n') || '- 本次运行未产生身份化决策。'}`,
+  ].join('\n\n')
+  return applicationSynapxnetMemoryRuntime.create({
+    ownerAgent,
+    actorAgent: ownerAgent,
+    taskId,
+    title: `闭环记忆：${String(request.title || request.incidentId || '').trim()}`.slice(0, 512),
+    content,
+    qualityScore: 0.97,
+    permissions: GOAI_MEMORY_SHARED_AGENT_IDS,
+    tags: ['competition', 'resolved-incident', 'memory-type:incident', String(request.scenarioType || 'unknown')],
+    source: 'competition-resolved-incident',
+  })
+}
+
 const applicationCompetitionRuntime = new ApplicationCompetitionRuntimeService({
   userDataDirectory: app.getPath('userData'),
   fixtureAdapter: competitionFixtureAdapter,
   liveAdapter: competitionLiveAdapter,
   publishApproval: (approval) => competitionApprovalPublisher.publish(approval),
   resolveTeamTemplate: (teamTemplateId) => applicationEnterpriseRuntime.resolveTeamTemplate(teamTemplateId),
+  /** 仅把当前 Workspace 已启用的同名 Skill 提供给竞赛控制面，用于生成真实复用证据。 */
+  resolveEnabledEnterpriseSkill: async (workspaceId, skillId) => {
+    const result = await applicationEnterpriseRuntime.listSkillBindings()
+    const binding = result.bindings.find((item) => (
+      item.workspaceId === workspaceId && item.skillId === skillId && item.enabled
+    ))
+    if (!binding) return null
+    const catalog = await applicationSkillRuntime.listSkills()
+    const skill = catalog.skills.find((item) => item.id === skillId)
+    if (!skill) return null
+    return {
+      sourceIncidentId: binding.sourceIncidentId,
+      lifecycleStatus: skill.lifecycleStatus,
+      environmentScope: skill.environmentScope,
+      productionEligible: skill.productionEligible
+    }
+  },
+  /** 在 Workspace 图谱边界内执行在线检索；先定位所属 Incident，再按任务查询词对历史事实排序。 */
+  retrieveCompetitionKnowledge: async (workspaceId, query) => {
+    const workspaceEntity = `Workspace:${workspaceId}`
+    const workspaceFacts = await applicationEnterpriseInsightsRuntime.queryKnowledgeGraphEntity({
+      subject: workspaceEntity,
+      limit: 100
+    })
+    const incidentSubjects = [...new Set((workspaceFacts.facts || [])
+      .filter((fact) => fact.current === true && fact.source_type === 'competition'
+        && fact.direction === 'incoming' && fact.predicate === 'belongs_to_workspace'
+        && String(fact.object || '') === workspaceEntity)
+      .map((fact) => String(fact.subject || ''))
+      .filter(Boolean))].slice(0, 10)
+    const incidentResults = await Promise.all(incidentSubjects.map((subject) => (
+      applicationEnterpriseInsightsRuntime.queryKnowledgeGraphEntity({ subject, limit: 100 })
+    )))
+    const terms = String(query || '').toLocaleLowerCase().split(/[\s,:/._-]+/u).filter((term) => term.length >= 2).slice(0, 32)
+    const scored = incidentResults.flatMap((result) => result.facts || [])
+      .filter((fact) => fact.current === true && fact.source_type === 'competition')
+      .map((fact) => {
+        const text = `${fact.subject} ${fact.predicate} ${fact.object}`.toLocaleLowerCase()
+        return { fact, score: terms.filter((term) => text.includes(term)).length }
+      })
+      .sort((left, right) => right.score - left.score || Number(right.fact.confidence || 0) - Number(left.fact.confidence || 0))
+    const seen = new Set()
+    return scored.filter(({ fact }) => {
+      const key = `${fact.subject}\u0000${fact.predicate}\u0000${fact.object}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    }).slice(0, 100).map(({ fact }) => ({
+      subject: fact.subject,
+      predicate: fact.predicate,
+      object: fact.object,
+      confidence: fact.confidence
+    }))
+  },
   agentTeamsIsolatedServiceEnabled: process.env.OPENXNET_COMPETITION_AGENTTEAMS_ISOLATED_SERVICE_ENABLED === '1',
   prepareAgentTeam: (incident, traceId, teamTemplate) => competitionAgentTeamsAdapter.prepare(incident, traceId, teamTemplate),
   dispatchAgentTeamTask: (input) => competitionAgentTeamsAdapter.dispatch(input),
   /** 把竞赛 Runtime 已接受的 AgentTeams 回执写入企业协作轨迹。 */
   recordAgentTeamConversation: (input, task) => recordCompetitionAgentTeamConversation(input, task),
+  /** 把领导的受控任务消息写入对应项目群，并用 Incident ID 作为初始任务引用。 */
+  recordEnterpriseTaskConversation: (input) => applicationEnterpriseRuntime.postMessage({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    recipientIds: input.recipientIds,
+    content: input.content,
+    taskId: input.taskId,
+    traceId: null,
+  }).then(() => undefined),
   /** 把审批、执行和验证状态写入企业协作轨迹。 */
   recordOperationConversation: (event) => recordCompetitionOperationConversation(event),
+  /** 仅在独立验证通过后把闭环摘要持久化到 Memory V3。 */
+  persistResolvedIncidentMemory: (request) => persistCompetitionResolvedMemory(request),
   synchronizeKnowledge: (projection) => applicationEnterpriseInsightsRuntime.synchronizeCompetitionKnowledge(projection),
   purgeKnowledge: (request) => applicationEnterpriseInsightsRuntime.purgeCompetitionKnowledge(request),
+  /** 重置比赛控制面前同步清理相同 Incident/Trace 的项目群轨迹，普通聊天保持不变。 */
+  purgeEnterpriseTaskConversations: (request) => applicationEnterpriseRuntime.purgeCompetitionMessages(request),
   /** 将竞赛复盘结晶到全局技能目录，并在事件所属企业空间中启用。 */
   publishRetrospectiveSkill: async (request) => {
     const writeResult = await applicationSkillRuntime.crystallizeSkill({
@@ -2547,6 +2840,11 @@ const applicationCompetitionRuntime = new ApplicationCompetitionRuntimeService({
       enabled: false,
       sourceIncidentId: request.incidentId,
     })
+    try {
+      await persistCompetitionSkillMemory(request)
+    } catch (error) {
+      console.warn('Competition Skill memory persistence failed; the Candidate Skill remains available.', error)
+    }
     return { skillId }
   },
   logger: console,
@@ -2594,6 +2892,10 @@ const unregisterApplicationCompetitionRuntimeIpc = registerApplicationCompetitio
   ipcMain,
   runtime: applicationCompetitionRuntime,
   authorizeEvent: assertCompetitionRendererSender,
+  readUiProfile: () => resolveApplicationCompetitionUiProfile(
+    applicationPackage?.openxnet?.releaseProfile,
+    process.env.OPENXNET_COMPETITION_REHEARSAL_ENABLED,
+  ),
   resolveActorId: resolveCompetitionActorId,
 })
 const applicationRecallRuntime = new ApplicationRecallRuntimeService({
@@ -2617,6 +2919,18 @@ const applicationMemoryManagementRuntime = new ApplicationMemoryManagementRuntim
 const unregisterApplicationMemoryManagementIpc = registerApplicationMemoryManagementIpc({
   ipcMain,
   runtime: applicationMemoryManagementRuntime,
+  authorizeEvent: assertMainRendererSender,
+})
+const applicationSynapxnetMemoryRuntime = new ApplicationSynapxnetMemoryRuntimeService({
+  core: desktopCore,
+  supervisor: workerSupervisor,
+  reconcileTrustedHistory: () => applicationCompetitionRuntime.reconcileResolvedMemories(),
+  bootstrapTransfer: resolveGoaiStagingMemoryBootstrap(),
+  logger: console,
+})
+const unregisterApplicationSynapxnetMemoryIpc = registerApplicationSynapxnetMemoryIpc({
+  ipcMain,
+  runtime: applicationSynapxnetMemoryRuntime,
   authorizeEvent: assertMainRendererSender,
 })
 const applicationMcpRuntime = new ApplicationMcpRuntimeService({
@@ -5230,12 +5544,6 @@ async function startBackend() {
         clearTimeout(startupTimeout)
         startupTimeout = null
       }
-      if (currentBackendProcess?.stdout) {
-        currentBackendProcess.stdout.off('data', onData)
-      }
-      if (currentBackendProcess?.stderr) {
-        currentBackendProcess.stderr.off('data', onData)
-      }
     }
 
     const settle = (resolver, value) => {
@@ -7195,6 +7503,7 @@ app.on('before-quit', async (event) => {
     unregisterApplicationModelAssetIpc();
     unregisterApplicationRecallRuntimeIpc();
     unregisterApplicationMemoryManagementIpc();
+    unregisterApplicationSynapxnetMemoryIpc();
     unregisterApplicationTelegramCredentialsIpc();
     unregisterApplicationImageHostCredentialsIpc();
     unregisterApplicationRepositoryCredentialsIpc();

@@ -1,0 +1,10 @@
+{
+  "schema": "synapxnet.skill.feature-drift.output.v1",
+  "outcome": "SUCCEEDED",
+  "actionId": "action_feature_drift",
+  "completedStepIds": ["fallback-feature-apply", "feature-history-backfill", "repaired-dataset-gate", "risk-model-retrain", "risk-model-evaluation", "risk-model-register", "risk-canary-release", "risk-full-promotion", "fallback-feature-remove"],
+  "verificationEvidenceIds": ["ev_recovery_after", "ev_dataset_after", "ev_probe_after", "ev_deployment_after", "ev_release_after"],
+  "finalResourceVersion": "77",
+  "retrospectiveSkillId": "synapxnet-feature-drift-recovery",
+  "summary": "业务恢复、修复数据集、推理契约、目标修订和灰度发布状态均通过独立验证。"
+}

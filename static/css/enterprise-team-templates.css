@@ -256,6 +256,7 @@
 }
 
 .enterprise-team-form-grid input[type="text"],
+.enterprise-team-form-grid select,
 .enterprise-team-form-grid textarea,
 .enterprise-team-role-row select {
   box-sizing: border-box;
@@ -268,6 +269,7 @@
 }
 
 .enterprise-team-form-grid input[type="text"],
+.enterprise-team-form-grid select,
 .enterprise-team-role-row select {
   height: 36px;
   padding: 0 10px;
@@ -280,6 +282,7 @@
 }
 
 .enterprise-team-form-grid input:focus,
+.enterprise-team-form-grid select:focus,
 .enterprise-team-form-grid textarea:focus,
 .enterprise-team-role-row select:focus {
   border-color: var(--ox-accent);

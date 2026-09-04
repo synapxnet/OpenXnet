@@ -11,20 +11,31 @@ import {
   parseResetApplicationCompetitionDemoDataRequest,
   parseRunApplicationCompetitionInvestigationRequest,
   parseSetApplicationCompetitionAdapterModeRequest,
+  parseStartApplicationCompetitionEnterpriseTaskRequest,
   parseVerifyApplicationCompetitionRemediationRequest,
   type ApplicationCompetitionAdapterMode,
   type ApplicationCompetitionAgentDecision,
+  type ApplicationCompetitionAgentTransportEvent,
   type ApplicationCompetitionAgentRoleSnapshot,
   type ApplicationCompetitionAgentTeamBinding,
   type ApplicationCompetitionApproval,
   type ApplicationCompetitionAuditReceipt,
   type ApplicationCompetitionDeploymentAction,
   type ApplicationCompetitionEvidence,
+  type ApplicationCompetitionEvaluationExportResult,
   type ApplicationCompetitionExecutionStep,
   type ApplicationCompetitionIncident,
   type ApplicationCompetitionMutationResult,
+  type ApplicationCompetitionReasoningCandidate,
+  type ApplicationCompetitionReasoningDecision,
   type ApplicationCompetitionResourceResult,
+  type ApplicationCompetitionScenarioContext,
   type ApplicationCompetitionSnapshot,
+  type ApplicationCompetitionSkillUsage,
+  type ApplicationCompetitionTaskGraph,
+  type ApplicationCompetitionTaskGraphEvent,
+  type ApplicationCompetitionTaskGraphNode,
+  type ApplicationCompetitionSkillEvolutionRun,
   type ApplicationCompetitionToolInvocation,
   type ApplicationCompetitionTrace,
   type ExecuteApplicationCompetitionRollbackRequest,
@@ -56,12 +67,34 @@ import {
   parseCompetitionToolArguments,
   type CompetitionToolName,
 } from "./competition-tool-registry";
+import { evaluateApplicationNeuroSymbolicPolicy } from "../governance/application-neuro-symbolic-governance";
 
 const COMPETITION_AGENT_SKILLS = Object.freeze({
   evidence: Object.freeze({ name: "goai-evidence-collect", version: "1.1.0" }),
   change: Object.freeze({ name: "goai-change-execute", version: "1.1.0" }),
   verification: Object.freeze({ name: "goai-service-verify", version: "1.1.0" }),
 });
+
+const COMPETITION_SCENARIO_SKILLS = Object.freeze([
+  Object.freeze({
+    scenarioType: "recommendation-capacity",
+    skillId: "synapxnet-recommendation-capacity-recovery",
+    title: "推荐服务 GPU 拥塞自治恢复",
+    keywords: Object.freeze(["推荐", "GPU", "推理", "队列", "P99", "扩容", "拥塞"]),
+  }),
+  Object.freeze({
+    scenarioType: "quantitative-iteration",
+    skillId: "synapxnet-quantitative-model-iteration",
+    title: "量化模型归因与受控迭代",
+    keywords: Object.freeze(["量化", "因子", "归因", "IC", "训练", "模拟盘", "迭代"]),
+  }),
+  Object.freeze({
+    scenarioType: "feature-drift",
+    skillId: "synapxnet-feature-drift-recovery",
+    title: "跨域特征漂移恢复",
+    keywords: Object.freeze(["特征", "漂移", "血缘", "Schema", "回填", "重训练", "风控"]),
+  }),
+] as const);
 
 /** 将 AgentTeams 客户端异常转换为不含 URL、请求体和凭据的诊断；输入未知错误，返回固定安全原因。 */
 function describeAgentTeamsDispatchFailure(error: unknown): string {
@@ -103,6 +136,12 @@ export interface ApplicationCompetitionTeamPreparationResult {
   readonly status: "READY" | "DEGRADED";
 }
 
+/** 自动闭环中由 Main 注入的职责分离身份。 */
+export interface ApplicationCompetitionAutomaticExecutionActors {
+  readonly operatorId: string;
+  readonly verifierId: string;
+}
+
 /** 竞赛执行链向通用企业群聊投影的治理事件类型。 */
 export type ApplicationCompetitionOperationConversationEventType =
   | "APPROVAL_REQUESTED"
@@ -120,6 +159,7 @@ export type ApplicationCompetitionOperationConversationEventType =
 export interface ApplicationCompetitionOperationConversationEvent {
   readonly eventType: ApplicationCompetitionOperationConversationEventType;
   readonly workspaceId: string;
+  readonly projectId: string | null;
   readonly incidentId: string;
   readonly traceId: string;
   readonly actorId: string;
@@ -130,6 +170,39 @@ export interface ApplicationCompetitionOperationConversationEvent {
   readonly targetResource: string;
   readonly evidenceIds: readonly string[];
   readonly summary: string;
+}
+
+/** 企业领导从项目群发起受控任务时写入协作轨迹的字段。 */
+export interface ApplicationCompetitionEnterpriseTaskConversationInput {
+  readonly workspaceId: string;
+  readonly projectId: string | null;
+  readonly taskId: string;
+  readonly recipientIds: readonly string[];
+  readonly content: string;
+}
+
+/** 成功闭环向 Memory V3 发布的脱敏事件摘要。 */
+export interface ApplicationCompetitionResolvedMemoryPublicationRequest {
+  readonly workspaceId: string;
+  readonly projectId: string | null;
+  readonly incidentId: string;
+  readonly traceId: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly scenarioType: ApplicationCompetitionScenarioContext["scenarioType"];
+  readonly resolvedAt: string;
+  readonly actionId: string;
+  readonly approvalId: string;
+  readonly evidenceIds: readonly string[];
+  readonly verificationEvidenceIds: readonly string[];
+  readonly toolNames: readonly string[];
+  readonly agentDecisions: readonly {
+    readonly stage: ApplicationCompetitionAgentDecision["stage"];
+    readonly agentName: string;
+    readonly teamRole: ApplicationCompetitionAgentDecision["teamRole"];
+    readonly decision: ApplicationCompetitionAgentDecision["decision"];
+    readonly summary: string;
+  }[];
 }
 
 /** 竞赛 Runtime 的依赖。 */
@@ -151,17 +224,48 @@ export interface ApplicationCompetitionRuntimeServiceOptions {
     input: CompetitionAgentTeamsTaskInput,
     task: CompetitionAgentTeamsTaskResult,
   ) => Promise<void>;
+  readonly recordEnterpriseTaskConversation?: (
+    input: ApplicationCompetitionEnterpriseTaskConversationInput,
+  ) => Promise<void>;
   readonly recordOperationConversation?: (
     event: ApplicationCompetitionOperationConversationEvent,
   ) => Promise<void>;
+  readonly persistResolvedIncidentMemory?: (
+    request: ApplicationCompetitionResolvedMemoryPublicationRequest,
+  ) => Promise<unknown>;
   readonly resolveTeamTemplate?: (teamTemplateId: string) => Promise<ApplicationEnterpriseResolvedTeamTemplate>;
+  readonly resolveEnabledEnterpriseSkill?: (
+    workspaceId: string,
+    skillId: string,
+  ) => Promise<ApplicationCompetitionEnterpriseSkillResolution | null>;
+  readonly retrieveCompetitionKnowledge?: (
+    workspaceId: string,
+    query: string,
+  ) => Promise<readonly {
+    readonly subject: string;
+    readonly predicate: string;
+    readonly object: string;
+    readonly confidence: number;
+  }[]>;
   readonly agentTeamsIsolatedServiceEnabled?: boolean;
   readonly synchronizeKnowledge?: (request: ApplicationCompetitionKnowledgeProjectionRequest) => Promise<unknown>;
   readonly purgeKnowledge?: (request: ApplicationCompetitionKnowledgePurgeRequest) => Promise<unknown>;
+  readonly purgeEnterpriseTaskConversations?: (request: {
+    readonly incidentIds: readonly string[];
+    readonly traceIds: readonly string[];
+  }) => Promise<unknown>;
   readonly publishRetrospectiveSkill?: (
     request: ApplicationCompetitionRetrospectiveSkillPublicationRequest,
   ) => Promise<ApplicationCompetitionRetrospectiveSkillPublicationResult>;
   readonly logger?: { warn(message: string): void };
+}
+
+/** 企业 Skill 解析结果；描述 Workspace 绑定、生命周期、环境认证和生产资格。 */
+export interface ApplicationCompetitionEnterpriseSkillResolution {
+  readonly sourceIncidentId: string | null;
+  readonly lifecycleStatus: "candidate" | "verified" | "active" | "deprecated" | "retired" | "legacy";
+  readonly environmentScope: "synthetic" | "simulation" | "staging" | "shadow" | "canary" | "production" | "legacy";
+  readonly productionEligible: boolean;
 }
 
 /** 复盘 Skill 发布到 OpenXnet 技能目录和企业空间所需的有界字段。 */
@@ -198,6 +302,89 @@ interface RecordedToolResult {
   readonly adapterRequest: CompetitionToolAdapterRequest;
 }
 
+/** 企业沙盘三类任务对应的 Main-owned 固定定义，Renderer 只能选择场景代码。 */
+const ENTERPRISE_TASK_SCENARIOS = Object.freeze({
+  "recommendation-capacity": Object.freeze({
+    title: "推荐服务 GPU 推理队列拥塞",
+    severity: "P0" as const,
+    scenario: Object.freeze({
+      scenarioType: "recommendation-capacity" as const,
+      alertUid: "alert_rec_p99_spike",
+      serviceUid: "service_rec_inference",
+      clusterId: "3",
+      namespace: "recommendation-prod",
+      workloadName: "recommendation-inference",
+      reportUid: "qr_rec_traffic_latest",
+      assetUid: "asset_rec_features_prod",
+      workflowInstanceUid: "task_rec_features_latest",
+      deploymentUid: "deploy_recommendation_prod",
+      failingRevision: 6,
+      targetRevision: 20,
+      rollbackRevision: 6,
+      expectedResourceVersion: "42",
+      testDatasetRef: "staging://goai/recommendation-dcn-v1/probe",
+    }),
+  }),
+  "quantitative-iteration": Object.freeze({
+    title: "量化模型归因与受控迭代",
+    severity: "P1" as const,
+    scenario: Object.freeze({
+      scenarioType: "quantitative-iteration" as const,
+      alertUid: "alert_quant_ic_degradation",
+      serviceUid: "service_quant_signal",
+      clusterId: "3",
+      namespace: "quant-prod",
+      workloadName: "quant-signal-inference",
+      reportUid: "report_quant_a_share_v1",
+      assetUid: "asset_quant_market_daily",
+      workflowInstanceUid: "task_quant_a_share_eod_ready",
+      deploymentUid: "deploy_quant_ashare_research",
+      failingRevision: 1,
+      targetRevision: 2,
+      rollbackRevision: 1,
+      expectedResourceVersion: "42",
+      testDatasetRef: "quant://a-share-factor-demo-v1/test",
+    }),
+  }),
+  "feature-drift": Object.freeze({
+    title: "风控模型输入契约漂移",
+    severity: "P1" as const,
+    scenario: Object.freeze({
+      scenarioType: "feature-drift" as const,
+      alertUid: "alert_risk_error_rate",
+      serviceUid: "service_risk_inference",
+      clusterId: "3",
+      namespace: "risk-prod",
+      workloadName: "risk-inference",
+      reportUid: "qr_risk_features_120",
+      assetUid: "asset_risk_features_prod",
+      workflowInstanceUid: "task_risk_features_latest",
+      deploymentUid: "deploy_risk_prod",
+      failingRevision: 18,
+      targetRevision: 19,
+      rollbackRevision: 17,
+      expectedResourceVersion: "42",
+      testDatasetRef: "staging://goai/dataops/assets/asset_risk_features_prod/versions/risk-120-v1",
+    }),
+  }),
+});
+
+/** 解析企业任务的固定场景；输入已校验场景代码，返回隔离副本和展示元数据。 */
+function createEnterpriseTaskScenario(
+  scenarioType: keyof typeof ENTERPRISE_TASK_SCENARIOS,
+): {
+  readonly title: string;
+  readonly severity: "P0" | "P1";
+  readonly scenario: ApplicationCompetitionScenarioContext;
+} {
+  const definition = ENTERPRISE_TASK_SCENARIOS[scenarioType];
+  return {
+    title: definition.title,
+    severity: definition.severity,
+    scenario: { ...definition.scenario },
+  };
+}
+
 /** 北向 MCP Gateway 使用的已认证工具请求。 */
 export interface ApplicationCompetitionToolCallRequest {
   readonly workspaceId: string;
@@ -224,6 +411,7 @@ export class ApplicationCompetitionRuntimeService {
   private readonly now: () => Date;
   private readonly createId: () => string;
   private readonly retrospectiveRoot: string;
+  private readonly evaluationRoot: string;
   private readonly logger: { warn(message: string): void };
 
   /** 创建竞赛控制面；输入 Store、Fixture/Live Adapter 和可选 Agent Team 插件，不提前访问平台。 */
@@ -235,6 +423,7 @@ export class ApplicationCompetitionRuntimeService {
       now: this.now,
     });
     this.retrospectiveRoot = path.join(options.userDataDirectory, "competition", "retrospectives");
+    this.evaluationRoot = path.join(options.userDataDirectory, "competition", "evaluations");
     this.logger = options.logger ?? console;
   }
 
@@ -248,6 +437,16 @@ export class ApplicationCompetitionRuntimeService {
     }
     await Promise.all(synchronizations);
     return snapshot;
+  }
+
+  /** 补投影历史成功闭环到 Memory V3；无输入，返回已存在或成功写入的可信记忆数量。 */
+  public async reconcileResolvedMemories(): Promise<number> {
+    const snapshot = await this.store.read();
+    let reconciled = 0;
+    for (const incident of snapshot.incidents) {
+      if (await this.persistResolvedIncidentMemory(snapshot, incident)) reconciled += 1;
+    }
+    return reconciled;
   }
 
   /** 重置竞赛演示控制面；输入固定确认标记，清除事件链路但保留已导出的复盘 Skill。 */
@@ -268,6 +467,20 @@ export class ApplicationCompetitionRuntimeService {
         throw new ApplicationCompetitionRuntimeError(
           "KNOWLEDGE_PROJECTION_UNAVAILABLE",
           "比赛知识投影清理失败，演示数据尚未重置，请重试。",
+          true,
+        );
+      }
+    }
+    if (this.options.purgeEnterpriseTaskConversations !== undefined && current.incidents.length > 0) {
+      try {
+        await this.options.purgeEnterpriseTaskConversations({
+          incidentIds: current.incidents.map((incident) => incident.incidentId),
+          traceIds: current.traces.map((trace) => trace.traceId),
+        });
+      } catch {
+        throw new ApplicationCompetitionRuntimeError(
+          "ENTERPRISE_CONVERSATION_PURGE_UNAVAILABLE",
+          "比赛协作轨迹清理失败，演示数据尚未重置，请重试。",
           true,
         );
       }
@@ -369,6 +582,40 @@ export class ApplicationCompetitionRuntimeService {
     };
   }
 
+  /** 从企业协作群发起主 Demo；输入受限任务和可信操作者，写入领导消息并启动 AgentTeams 取证。 */
+  public async startEnterpriseTask(value: unknown, actorId: string): Promise<ApplicationCompetitionMutationResult> {
+    const request = parseStartApplicationCompetitionEnterpriseTaskRequest(value);
+    if (this.options.recordEnterpriseTaskConversation === undefined) {
+      throw new ApplicationCompetitionRuntimeError(
+        "ENTERPRISE_TASK_UNAVAILABLE",
+        "企业任务入口尚未连接协作消息运行时。",
+      );
+    }
+    const definition = createEnterpriseTaskScenario(request.scenarioType);
+    const created = await this.createIncident({
+      workspaceId: request.workspaceId,
+      projectId: request.projectId,
+      title: definition.title,
+      summary: request.content,
+      severity: definition.severity,
+      actorId,
+      scenario: definition.scenario,
+    });
+    await this.options.recordEnterpriseTaskConversation({
+      workspaceId: request.workspaceId,
+      projectId: request.projectId,
+      taskId: created.incidentId,
+      recipientIds: request.recipientIds,
+      content: request.content,
+    });
+    return this.runInvestigation({
+      incidentId: created.incidentId,
+      actorId,
+      teamRuntime: request.teamRuntime,
+      teamTemplateId: request.teamTemplateId,
+    });
+  }
+
   /** 创建待调查事件；输入未知 Renderer 请求，返回新事件和最新快照。 */
   public async createIncident(value: unknown): Promise<ApplicationCompetitionMutationResult> {
     const request = parseCreateApplicationCompetitionIncidentRequest(value);
@@ -377,6 +624,7 @@ export class ApplicationCompetitionRuntimeService {
     const incident: ApplicationCompetitionIncident = {
       incidentId,
       workspaceId: request.workspaceId,
+      projectId: request.projectId,
       title: request.title,
       summary: request.summary,
       severity: request.severity,
@@ -419,6 +667,7 @@ export class ApplicationCompetitionRuntimeService {
       updatedAt: timestamp,
       completedAt: null,
     };
+    const skillSelection = await this.createSkillSelection(incident, traceId, current.adapterMode, timestamp);
     const binding = await this.prepareTeamBinding(
       incident,
       traceId,
@@ -426,21 +675,28 @@ export class ApplicationCompetitionRuntimeService {
       request.teamTemplateId,
       timestamp,
     );
-    await this.store.update((snapshot) => ({
-      ...snapshot,
-      incidents: replaceIncident(snapshot.incidents, incident.incidentId, {
-        ...incident,
-        status: "INVESTIGATING",
-        activeTraceId: traceId,
-        activeApprovalId: null,
-        activeActionId: null,
+    const taskGraph = this.createTaskGraph(incident, traceId, binding, current, timestamp);
+    await this.store.update((snapshot) => {
+      const next = {
+        ...snapshot,
+        incidents: replaceIncident(snapshot.incidents, incident.incidentId, {
+          ...incident,
+          status: "INVESTIGATING" as const,
+          activeTraceId: traceId,
+          activeApprovalId: null,
+          activeActionId: null,
+          updatedAt: timestamp,
+          resolvedAt: null,
+        }),
+        traces: [...snapshot.traces, trace],
+        teamBindings: [...snapshot.teamBindings, binding],
+        skillUsages: [...snapshot.skillUsages, skillSelection.usage],
+        taskGraphs: [...snapshot.taskGraphs, taskGraph],
+        reasoningDecisions: [...snapshot.reasoningDecisions, skillSelection.decision],
         updatedAt: timestamp,
-        resolvedAt: null,
-      }),
-      traces: [...snapshot.traces, trace],
-      teamBindings: [...snapshot.teamBindings, binding],
-      updatedAt: timestamp,
-    }));
+      };
+      return this.reconcileTaskGraph(next, incident.incidentId, traceId, timestamp);
+    });
 
     try {
       const availableCalls = this.investigationCalls(incident);
@@ -463,11 +719,16 @@ export class ApplicationCompetitionRuntimeService {
         selectedCalls = this.selectAgentInvestigationCalls(availableCalls, plan);
         evidenceActorId = this.agentActorId(plan.result.roleCardId);
       }
+      const assignmentSnapshot = request.teamRuntime === "agentteams"
+        ? await this.store.read()
+        : null;
       const recordedEvidence = await Promise.all(selectedCalls.map(({ toolName, arguments: argumentsValue }) =>
         this.invokeAndRecord({
           incident,
           traceId,
-          actorId: evidenceActorId,
+          actorId: assignmentSnapshot === null
+            ? evidenceActorId
+            : this.resolveInvestigationActorId(assignmentSnapshot, traceId, toolName, evidenceActorId),
           toolName,
           arguments: argumentsValue,
           governance: null,
@@ -502,27 +763,41 @@ export class ApplicationCompetitionRuntimeService {
         approvalRequester = this.agentActorId(conclusion.result.roleCardId);
         approvalReason = conclusion.result.summary;
       }
+      const planDecision = this.createPlanSelection(
+        incident,
+        traceId,
+        current.adapterMode,
+        recordedEvidence.map((item) => item.evidenceId),
+        skillSelection.decision.retrievalMode,
+        skillSelection.decision.knowledgeRefs,
+        this.now().toISOString(),
+      );
       const approval = this.createRemediationApproval(incident, traceId, approvalRequester, approvalReason);
       const completedAt = this.now().toISOString();
-      const snapshot = await this.store.update((state) => ({
-        ...state,
-        incidents: replaceIncident(state.incidents, incident.incidentId, {
-          ...requireIncident(state, incident.incidentId),
-          status: "AWAITING_APPROVAL",
-          activeApprovalId: approval.approvalId,
+      const snapshot = await this.store.update((state) => {
+        const next = {
+          ...state,
+          incidents: replaceIncident(state.incidents, incident.incidentId, {
+            ...requireIncident(state, incident.incidentId),
+            status: "AWAITING_APPROVAL" as const,
+            activeApprovalId: approval.approvalId,
+            updatedAt: completedAt,
+          }),
+          traces: replaceTrace(state.traces, traceId, {
+            ...requireTrace(state, traceId),
+            status: "AWAITING_APPROVAL" as const,
+            updatedAt: completedAt,
+          }),
+          approvals: [...state.approvals, approval],
+          reasoningDecisions: [...state.reasoningDecisions, planDecision],
           updatedAt: completedAt,
-        }),
-        traces: replaceTrace(state.traces, traceId, {
-          ...requireTrace(state, traceId),
-          status: "AWAITING_APPROVAL",
-          updatedAt: completedAt,
-        }),
-        approvals: [...state.approvals, approval],
-        updatedAt: completedAt,
-      }));
+        };
+        return this.reconcileTaskGraph(next, incident.incidentId, traceId, completedAt);
+      });
       await this.projectOperationConversation({
         eventType: "APPROVAL_REQUESTED",
         workspaceId: incident.workspaceId,
+        projectId: incident.projectId,
         incidentId: incident.incidentId,
         traceId,
         actorId: approval.requestedBy,
@@ -538,14 +813,30 @@ export class ApplicationCompetitionRuntimeService {
       return this.mutationResult(snapshot, incident.incidentId);
     } catch (error) {
       await this.markTraceFailed(incident.incidentId, traceId);
-      await this.synchronizeIncidentKnowledge(await this.store.read(), incident.incidentId);
+      const failedAt = this.now().toISOString();
+      const failed = await this.store.update((state) => this.reconcileTaskGraph(
+        state,
+        incident.incidentId,
+        traceId,
+        failedAt,
+      ));
+      await this.synchronizeIncidentKnowledge(failed, incident.incidentId);
       throw error;
     }
   }
 
   /** 提交人工审批决策；输入审批、决策人和原因，返回职责分离后的最新状态。 */
-  public async decideApproval(value: unknown): Promise<ApplicationCompetitionMutationResult> {
+  public async decideApproval(
+    value: unknown,
+    automaticActors?: ApplicationCompetitionAutomaticExecutionActors,
+  ): Promise<ApplicationCompetitionMutationResult> {
     const request = parseDecideApplicationCompetitionApprovalRequest(value);
+    if (request.decision === "APPROVED" && request.executionMode === "automatic" && automaticActors === undefined) {
+      throw new ApplicationCompetitionRuntimeError(
+        "AUTOMATION_ACTORS_UNAVAILABLE",
+        "自动闭环缺少职责分离的执行人与验证人。",
+      );
+    }
     const timestamp = this.now().toISOString();
     const snapshot = await this.store.update((current) => {
       const approval = requireApproval(current, request.approvalId);
@@ -563,7 +854,7 @@ export class ApplicationCompetitionRuntimeService {
         decidedAt: timestamp,
         decisionReason: request.reason,
       };
-      return {
+      const next = {
         ...current,
         approvals: replaceApproval(current.approvals, approval.approvalId, nextApproval),
         incidents: replaceIncident(current.incidents, incident.incidentId, {
@@ -573,11 +864,13 @@ export class ApplicationCompetitionRuntimeService {
         }),
         updatedAt: timestamp,
       };
+      return this.reconcileTaskGraph(next, incident.incidentId, approval.traceId, timestamp);
     });
     const approval = requireApproval(snapshot, request.approvalId);
     await this.projectOperationConversation({
       eventType: approval.status === "APPROVED" ? "APPROVAL_APPROVED" : "APPROVAL_REJECTED",
       workspaceId: approval.workspaceId,
+      projectId: requireIncident(snapshot, approval.incidentId).projectId,
       incidentId: approval.incidentId,
       traceId: approval.traceId,
       actorId: approval.decidedBy ?? request.actorId,
@@ -590,6 +883,22 @@ export class ApplicationCompetitionRuntimeService {
       summary: approval.decisionReason ?? request.reason,
     });
     await this.synchronizeIncidentKnowledge(snapshot, approval.incidentId);
+    if (approval.status === "APPROVED" && request.executionMode === "automatic" && automaticActors !== undefined) {
+      const execution = await this.executeRollback({
+        approvalId: approval.approvalId,
+        actorId: automaticActors.operatorId,
+        idempotencyKey: `auto-${approval.approvalId}`.slice(0, 128),
+        dryRun: false,
+      });
+      if (execution.actionId === null) {
+        throw new ApplicationCompetitionRuntimeError("AUTOMATIC_EXECUTION_FAILED", "自动闭环没有生成可验证动作。", true);
+      }
+      await this.verifyRemediation({
+        actionId: execution.actionId,
+        actorId: automaticActors.verifierId,
+      });
+      return this.exportRetrospective({ incidentId: approval.incidentId });
+    }
     return this.mutationResult(snapshot, approval.incidentId);
   }
 
@@ -631,6 +940,7 @@ export class ApplicationCompetitionRuntimeService {
       await this.projectOperationConversation({
         eventType: "REHEARSAL_SUCCEEDED",
         workspaceId: incident.workspaceId,
+        projectId: incident.projectId,
         incidentId: incident.incidentId,
         traceId: approval.traceId,
         actorId: request.actorId,
@@ -677,20 +987,24 @@ export class ApplicationCompetitionRuntimeService {
       verificationEvidenceIds: [],
       errorCode: null,
     };
-    await this.store.update((current) => ({
-      ...current,
-      incidents: replaceIncident(current.incidents, incident.incidentId, {
-        ...requireIncident(current, incident.incidentId),
-        status: "MITIGATING",
-        activeActionId: actionId,
+    await this.store.update((current) => {
+      const next = {
+        ...current,
+        incidents: replaceIncident(current.incidents, incident.incidentId, {
+          ...requireIncident(current, incident.incidentId),
+          status: "MITIGATING" as const,
+          activeActionId: actionId,
+          updatedAt: timestamp,
+        }),
+        actions: [...current.actions, action],
         updatedAt: timestamp,
-      }),
-      actions: [...current.actions, action],
-      updatedAt: timestamp,
-    }));
+      };
+      return this.reconcileTaskGraph(next, incident.incidentId, approval.traceId, timestamp);
+    });
     await this.projectOperationConversation({
       eventType: "ACTION_EXECUTING",
       workspaceId: incident.workspaceId,
+      projectId: incident.projectId,
       incidentId: incident.incidentId,
       traceId: approval.traceId,
       actorId: request.actorId,
@@ -715,7 +1029,13 @@ export class ApplicationCompetitionRuntimeService {
           compensation: false,
         });
       }
-      const completed = await this.store.read();
+      const completedAt = this.now().toISOString();
+      const completed = await this.store.update((state) => this.reconcileTaskGraph(
+        state,
+        incident.incidentId,
+        approval.traceId,
+        completedAt,
+      ));
       await this.synchronizeIncidentKnowledge(completed, incident.incidentId);
       return this.mutationResult(completed, incident.incidentId);
     } catch (error) {
@@ -729,7 +1049,14 @@ export class ApplicationCompetitionRuntimeService {
         steps: profile.executionPlan.compensationSteps,
       });
       await this.markActionFailed(actionId, incident.incidentId, approval.traceId, error);
-      await this.synchronizeIncidentKnowledge(await this.store.read(), incident.incidentId);
+      const failedAt = this.now().toISOString();
+      const failed = await this.store.update((state) => this.reconcileTaskGraph(
+        state,
+        incident.incidentId,
+        approval.traceId,
+        failedAt,
+      ));
+      await this.synchronizeIncidentKnowledge(failed, incident.incidentId);
       throw error;
     }
   }
@@ -855,34 +1182,38 @@ export class ApplicationCompetitionRuntimeService {
         resourceVersionAfter: String(action.targetRevision),
         outcome: "SUCCEEDED",
       });
-      const snapshot = await this.store.update((current) => ({
-        ...current,
-        incidents: replaceIncident(current.incidents, incident.incidentId, {
-          ...requireIncident(current, incident.incidentId),
-          status: "RESOLVED",
+      const snapshot = await this.store.update((current) => {
+        const next = {
+          ...current,
+          incidents: replaceIncident(current.incidents, incident.incidentId, {
+            ...requireIncident(current, incident.incidentId),
+            status: "RESOLVED" as const,
+            updatedAt: completedAt,
+            resolvedAt: completedAt,
+          }),
+          traces: replaceTrace(current.traces, action.traceId, {
+            ...requireTrace(current, action.traceId),
+            status: "SUCCEEDED" as const,
+            updatedAt: completedAt,
+            completedAt,
+          }),
+          actions: replaceAction(current.actions, action.actionId, {
+            ...requireAction(current, action.actionId),
+            status: "SUCCEEDED" as const,
+            stage: "COMPLETED" as const,
+            updatedAt: completedAt,
+            completedAt,
+            verificationEvidenceIds: evidenceIds,
+          }),
+          auditReceipts: [...current.auditReceipts, receipt],
           updatedAt: completedAt,
-          resolvedAt: completedAt,
-        }),
-        traces: replaceTrace(current.traces, action.traceId, {
-          ...requireTrace(current, action.traceId),
-          status: "SUCCEEDED",
-          updatedAt: completedAt,
-          completedAt,
-        }),
-        actions: replaceAction(current.actions, action.actionId, {
-          ...requireAction(current, action.actionId),
-          status: "SUCCEEDED",
-          stage: "COMPLETED",
-          updatedAt: completedAt,
-          completedAt,
-          verificationEvidenceIds: evidenceIds,
-        }),
-        auditReceipts: [...current.auditReceipts, receipt],
-        updatedAt: completedAt,
-      }));
+        };
+        return this.reconcileTaskGraph(next, incident.incidentId, action.traceId, completedAt);
+      });
       await this.projectOperationConversation({
         eventType: "VERIFICATION_SUCCEEDED",
         workspaceId: incident.workspaceId,
+        projectId: incident.projectId,
         incidentId: incident.incidentId,
         traceId: action.traceId,
         actorId: verificationActorId,
@@ -895,6 +1226,7 @@ export class ApplicationCompetitionRuntimeService {
         summary: "独立验证已经通过，业务与技术恢复阈值满足关闭条件。",
       });
       await this.synchronizeIncidentKnowledge(snapshot, incident.incidentId);
+      await this.persistResolvedIncidentMemory(snapshot, requireIncident(snapshot, incident.incidentId));
       return this.mutationResult(snapshot, incident.incidentId);
     } catch (error) {
       const approval = requireApproval(await this.store.read(), action.approvalId);
@@ -912,6 +1244,7 @@ export class ApplicationCompetitionRuntimeService {
       await this.projectOperationConversation({
         eventType: "VERIFICATION_FAILED",
         workspaceId: incident.workspaceId,
+        projectId: incident.projectId,
         incidentId: incident.incidentId,
         traceId: action.traceId,
         actorId: request.actorId,
@@ -923,7 +1256,14 @@ export class ApplicationCompetitionRuntimeService {
         evidenceIds: [],
         summary: "独立验证未通过，当前操作不能关闭并需要进入回滚或继续处置。",
       });
-      await this.synchronizeIncidentKnowledge(await this.store.read(), incident.incidentId);
+      const failedAt = this.now().toISOString();
+      const failed = await this.store.update((state) => this.reconcileTaskGraph(
+        state,
+        incident.incidentId,
+        action.traceId,
+        failedAt,
+      ));
+      await this.synchronizeIncidentKnowledge(failed, incident.incidentId);
       throw error;
     }
   }
@@ -959,29 +1299,73 @@ export class ApplicationCompetitionRuntimeService {
     const directory = path.join(this.retrospectiveRoot, incident.incidentId);
     const destination = path.join(directory, "SKILL.md");
     const content = this.buildRetrospectiveSkill(snapshot, incident);
-    await mkdir(directory, { recursive: true });
-    const temporaryPath = `${destination}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temporaryPath, content, { encoding: "utf8", flag: "wx", mode: 0o600 });
-      await rename(temporaryPath, destination);
-    } catch (error) {
-      await rm(temporaryPath, { force: true });
-      throw error;
-    }
+    await this.writeUtf8Artifact(destination, content);
     const exportedAt = this.now().toISOString();
+    const evolution = this.buildSkillEvolutionRun(snapshot, incident, exportedAt);
     const publication = this.options.publishRetrospectiveSkill === undefined
       ? null
       : await this.options.publishRetrospectiveSkill(
         this.buildRetrospectiveSkillPublication(snapshot, incident),
       );
-    await this.synchronizeIncidentKnowledge(snapshot, incident.incidentId, {
+    const crystallized = await this.store.update((current) => {
+      const traceId = incident.activeTraceId;
+      if (traceId === null) return current;
+      const withCrystallization = {
+        ...current,
+        taskGraphs: current.taskGraphs.map((graph) => (
+          graph.incidentId === incident.incidentId && graph.traceId === traceId
+            ? { ...graph, crystallizedAt: exportedAt, updatedAt: exportedAt }
+            : graph
+        )),
+        skillEvolutionRuns: [
+          ...current.skillEvolutionRuns.filter((run) => (
+            run.incidentId !== incident.incidentId || run.traceId !== evolution.traceId
+          )),
+          evolution,
+        ],
+        updatedAt: exportedAt,
+      };
+      return this.reconcileTaskGraph(withCrystallization, incident.incidentId, traceId, exportedAt);
+    });
+    await this.synchronizeIncidentKnowledge(crystallized, incident.incidentId, {
       name: publication?.skillId ?? `retrospective-${incident.incidentId}`,
       exportedAt,
     });
     return {
-      ...this.mutationResult(snapshot, incident.incidentId),
+      ...this.mutationResult(crystallized, incident.incidentId),
       retrospectivePath: destination,
       retrospectiveSkillId: publication?.skillId ?? null,
+    };
+  }
+
+  /** 导出复赛评测与遥测证据；输入终态事件 ID，返回 UTF-8 JSON 文件路径和真实结果摘要。 */
+  public async exportEvaluation(value: unknown): Promise<ApplicationCompetitionEvaluationExportResult> {
+    const request = parseExportApplicationCompetitionRetrospectiveRequest(value);
+    const snapshot = await this.store.read();
+    const incident = requireIncident(snapshot, request.incidentId);
+    if (incident.status !== "RESOLVED" && incident.status !== "FAILED") {
+      throw new ApplicationCompetitionRuntimeError("INCIDENT_NOT_TERMINAL", "只有已解决或已失败事件可以导出复赛评测证据。");
+    }
+    const directory = path.join(this.evaluationRoot, incident.incidentId);
+    const reportPath = path.join(directory, "evaluation-report.json");
+    const telemetryPath = path.join(directory, "otel-telemetry.json");
+    const agentTeamsEventsPath = path.join(directory, "agentteams-events.jsonl");
+    const skillUsage = snapshot.skillUsages
+      .filter((item) => item.incidentId === incident.incidentId)
+      .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))[0] ?? null;
+    await Promise.all([
+      this.writeUtf8Artifact(reportPath, `${JSON.stringify(this.buildEvaluationReport(snapshot, incident), null, 2)}\n`),
+      this.writeUtf8Artifact(telemetryPath, `${JSON.stringify(this.buildOtlpTelemetry(snapshot, incident), null, 2)}\n`),
+      this.writeUtf8Artifact(agentTeamsEventsPath, this.buildAgentTeamsEventLedger(snapshot, incident)),
+    ]);
+    return {
+      schema: "openxnet.competition-evaluation-export.v1",
+      incidentId: incident.incidentId,
+      reportPath,
+      telemetryPath,
+      agentTeamsEventsPath,
+      outcome: incident.status,
+      skillUsageStatus: skillUsage?.status ?? "BASELINE",
     };
   }
 
@@ -992,12 +1376,679 @@ export class ApplicationCompetitionRuntimeService {
     return this.store.update((current) => ({ ...current, adapterMode: request.mode, updatedAt: timestamp }));
   }
 
+  /** 在线检索并选择企业 Skill；输入事件、Trace、环境和时间，返回复用证据及可解释多候选裁决。 */
+  private async createSkillSelection(
+    incident: ApplicationCompetitionIncident,
+    traceId: string,
+    adapterMode: ApplicationCompetitionAdapterMode,
+    recordedAt: string,
+  ): Promise<{
+    readonly usage: ApplicationCompetitionSkillUsage;
+    readonly decision: ApplicationCompetitionReasoningDecision;
+  }> {
+    const profile = getCompetitionScenarioProfile(incident.scenario);
+    const skillId = profile.skill.skillId;
+    const problemFingerprint = `${incident.scenario.scenarioType}:${incident.scenario.serviceUid}`;
+    const query = [incident.title, incident.summary, incident.scenario.scenarioType, incident.scenario.serviceUid]
+      .join(" ").slice(0, 2048);
+    let retrievalMode: ApplicationCompetitionReasoningDecision["retrievalMode"] = "CATALOG_FALLBACK";
+    let knowledgeRefs: ApplicationCompetitionReasoningDecision["knowledgeRefs"] = [];
+    if (this.options.retrieveCompetitionKnowledge !== undefined) {
+      try {
+        knowledgeRefs = (await this.options.retrieveCompetitionKnowledge(incident.workspaceId, query)).slice(0, 100);
+        retrievalMode = "ONLINE_HYBRID_RAG_KG";
+      } catch {
+        knowledgeRefs = [];
+      }
+    }
+    let enabled: Awaited<ReturnType<NonNullable<ApplicationCompetitionRuntimeServiceOptions["resolveEnabledEnterpriseSkill"]>>> = null;
+    let lookupFailed = false;
+    if (this.options.resolveEnabledEnterpriseSkill !== undefined) {
+      try {
+        enabled = await this.options.resolveEnabledEnterpriseSkill(incident.workspaceId, skillId);
+      } catch {
+        lookupFailed = true;
+      }
+    }
+    const reuseEligible = enabled !== null && isEnterpriseSkillReusable(enabled, adapterMode);
+    const candidates = COMPETITION_SCENARIO_SKILLS.map((candidate) => {
+      const matchesScenario = candidate.scenarioType === incident.scenario.scenarioType;
+      const semanticScore = matchesScenario
+        ? 1
+        : Math.min(0.45, candidate.keywords.filter((keyword) => query.toLocaleLowerCase().includes(keyword.toLocaleLowerCase())).length / candidate.keywords.length);
+      const graphScore = knowledgeRefs.some((fact) => (
+        fact.object === `Scenario:${candidate.scenarioType}`
+        || fact.object === `Skill:${candidate.skillId}`
+        || fact.object.startsWith(`Skill:${candidate.skillId}@`)
+      )) ? 1 : 0;
+      const safetyScore = matchesScenario
+        ? (reuseEligible ? 1 : adapterMode === "fixture" ? 0.85 : 0.65)
+        : 0.25;
+      const policy = evaluateApplicationNeuroSymbolicPolicy({
+        operationKind: "advise",
+        environment: adapterMode === "fixture" ? "sandbox" : "staging",
+        riskClass: "RK-0",
+        evidenceGrade: graphScore > 0 ? "EV-1" : "EV-0",
+        permissionGranted: true,
+        reversible: true,
+        hasRollbackPoint: true,
+        hasResourceVersion: true,
+        hasIdempotencyKey: true,
+        certifiedSkill: matchesScenario && adapterMode === "fixture",
+        delegatedAuthority: false,
+        approvalGranted: false,
+      });
+      const ruleCodes = matchesScenario
+        ? [...policy.ruleCodes, "SCENARIO_SCOPE_MATCH"]
+        : [...policy.ruleCodes, "SCENARIO_SCOPE_MISMATCH"];
+      const ruleReasons = matchesScenario
+        ? [...policy.ruleReasons, "Skill 场景类型与 Incident 指纹一致。"]
+        : [...policy.ruleReasons, "Skill 场景类型与当前 Incident 不一致，符号硬门拒绝复用。"];
+      return {
+        candidateId: `skill:${candidate.skillId}`,
+        candidateType: "SKILL" as const,
+        title: candidate.title,
+        skillId: candidate.skillId,
+        strategyId: null,
+        semanticScore,
+        graphScore,
+        evidenceScore: 0,
+        safetyScore,
+        totalScore: roundScore((semanticScore * 0.55) + (graphScore * 0.2) + (safetyScore * 0.25)),
+        eligible: matchesScenario,
+        authorityLevel: policy.authorityLevel,
+        riskClass: policy.riskClass,
+        evidenceGrade: policy.evidenceGrade,
+        policyDecision: matchesScenario ? policy.decision : "DENY" as const,
+        ruleCodes,
+        ruleReasons,
+      } satisfies ApplicationCompetitionReasoningCandidate;
+    }).sort((left, right) => right.totalScore - left.totalScore);
+    const selectedCandidateId = `skill:${skillId}`;
+    const usage: ApplicationCompetitionSkillUsage = {
+      usageId: this.id("skill-usage"),
+      workspaceId: incident.workspaceId,
+      incidentId: incident.incidentId,
+      traceId,
+      skillId,
+      sourceIncidentId: reuseEligible ? enabled!.sourceIncidentId : null,
+      status: lookupFailed ? "LOOKUP_FAILED" : (reuseEligible ? "REUSED" : "BASELINE"),
+      problemFingerprint,
+      matchReason: lookupFailed
+        ? "企业 Skill 查询失败，未声明复用并按基线流程继续。"
+        : enabled === null
+          ? "混合检索命中场景 Skill，但企业空间未启用同指纹版本，使用受治理基线流程。"
+          : reuseEligible
+            ? "语义、知识图谱、场景硬门、企业绑定与当前环境认证一致，复用受治理 Skill。"
+            : "企业空间已启用该 Skill，但生命周期或环境认证不覆盖本轮运行，继续使用基线流程。",
+      recordedAt,
+    };
+    return {
+      usage,
+      decision: {
+        reasoningId: this.id("reasoning"),
+        workspaceId: incident.workspaceId,
+        incidentId: incident.incidentId,
+        traceId,
+        decisionType: "SKILL_SELECTION",
+        retrievalMode,
+        query,
+        knowledgeRefs,
+        candidates,
+        selectedCandidateId,
+        explanation: `从 ${candidates.length} 个场景 Skill 中先语义召回，再使用 Workspace 图谱证据和场景硬门筛选，最终选择 ${skillId}。`,
+        createdAt: recordedAt,
+      },
+    };
+  }
+
+  /** 对完整计划、仅止损和直接写入三个候选执行神经符号裁决；输入证据与检索上下文，返回计划选择记录。 */
+  private createPlanSelection(
+    incident: ApplicationCompetitionIncident,
+    traceId: string,
+    adapterMode: ApplicationCompetitionAdapterMode,
+    evidenceIds: readonly string[],
+    retrievalMode: ApplicationCompetitionReasoningDecision["retrievalMode"],
+    knowledgeRefs: ApplicationCompetitionReasoningDecision["knowledgeRefs"],
+    createdAt: string,
+  ): ApplicationCompetitionReasoningDecision {
+    const profile = getCompetitionScenarioProfile(incident.scenario);
+    const expectedEvidence = Math.max(1, profile.investigationCalls.length);
+    const evidenceScore = roundScore(Math.min(1, evidenceIds.length / expectedEvidence));
+    const evidenceGrade = evidenceScore >= 0.9 ? "EV-2" as const : evidenceScore > 0 ? "EV-1" as const : "EV-0" as const;
+    const governedPolicy = evaluateApplicationNeuroSymbolicPolicy({
+      operationKind: "execute",
+      environment: "production",
+      riskClass: "RK-2",
+      evidenceGrade,
+      permissionGranted: true,
+      reversible: true,
+      hasRollbackPoint: profile.executionPlan.compensationSteps.length > 0,
+      hasResourceVersion: true,
+      hasIdempotencyKey: true,
+      certifiedSkill: adapterMode === "fixture",
+      delegatedAuthority: false,
+      approvalGranted: false,
+    });
+    const directPolicy = evaluateApplicationNeuroSymbolicPolicy({
+      operationKind: "execute",
+      environment: "production",
+      riskClass: "RK-2",
+      evidenceGrade,
+      permissionGranted: true,
+      reversible: false,
+      hasRollbackPoint: false,
+      hasResourceVersion: false,
+      hasIdempotencyKey: false,
+      certifiedSkill: false,
+      delegatedAuthority: false,
+      approvalGranted: false,
+    });
+    const candidates: ApplicationCompetitionReasoningCandidate[] = [
+      {
+        candidateId: `plan:${profile.executionPlan.planId}`,
+        candidateType: "PLAN" as const,
+        title: profile.executionPlan.title,
+        skillId: profile.skill.skillId,
+        strategyId: "governed-full-closure",
+        semanticScore: 1,
+        graphScore: knowledgeRefs.length > 0 ? 0.8 : 0,
+        evidenceScore,
+        safetyScore: 1,
+        totalScore: roundScore(0.4 + (evidenceScore * 0.3) + (knowledgeRefs.length > 0 ? 0.1 : 0) + 0.2),
+        eligible: governedPolicy.decision === "APPROVAL_REQUIRED" || governedPolicy.decision === "ALLOW",
+        authorityLevel: governedPolicy.authorityLevel,
+        riskClass: governedPolicy.riskClass,
+        evidenceGrade: governedPolicy.evidenceGrade,
+        policyDecision: governedPolicy.decision,
+        ruleCodes: [...governedPolicy.ruleCodes, "END_TO_END_CLOSURE_REQUIRED"],
+        ruleReasons: [...governedPolicy.ruleReasons, "候选覆盖止损、修复、发布、验证和补偿闭环。"],
+      },
+      {
+        candidateId: `plan:${profile.executionPlan.planId}:mitigation-only`,
+        candidateType: "PLAN" as const,
+        title: "仅执行即时止损",
+        skillId: profile.skill.skillId,
+        strategyId: "mitigation-only",
+        semanticScore: 0.65,
+        graphScore: knowledgeRefs.length > 0 ? 0.5 : 0,
+        evidenceScore,
+        safetyScore: 0.7,
+        totalScore: roundScore(0.26 + (evidenceScore * 0.25) + (knowledgeRefs.length > 0 ? 0.05 : 0) + 0.14),
+        eligible: false,
+        authorityLevel: governedPolicy.authorityLevel,
+        riskClass: governedPolicy.riskClass,
+        evidenceGrade: governedPolicy.evidenceGrade,
+        policyDecision: "ABSTAIN" as const,
+        ruleCodes: [...governedPolicy.ruleCodes, "END_TO_END_CLOSURE_MISSING"],
+        ruleReasons: [...governedPolicy.ruleReasons, "只止损不能完成根因修复、独立验证和经验沉淀。"],
+      },
+      {
+        candidateId: `plan:${profile.executionPlan.planId}:direct-write`,
+        candidateType: "PLAN" as const,
+        title: "绕过审批直接写入",
+        skillId: null,
+        strategyId: "direct-write",
+        semanticScore: 0.8,
+        graphScore: 0,
+        evidenceScore,
+        safetyScore: 0,
+        totalScore: roundScore(0.32 + (evidenceScore * 0.15)),
+        eligible: false,
+        authorityLevel: directPolicy.authorityLevel,
+        riskClass: directPolicy.riskClass,
+        evidenceGrade: directPolicy.evidenceGrade,
+        policyDecision: directPolicy.decision,
+        ruleCodes: directPolicy.ruleCodes,
+        ruleReasons: directPolicy.ruleReasons,
+      },
+    ].sort((left, right) => right.totalScore - left.totalScore);
+    return {
+      reasoningId: this.id("reasoning"),
+      workspaceId: incident.workspaceId,
+      incidentId: incident.incidentId,
+      traceId,
+      decisionType: "PLAN_SELECTION",
+      retrievalMode,
+      query: `${incident.title} ${profile.executionPlan.summary}`.slice(0, 2048),
+      knowledgeRefs,
+      candidates,
+      selectedCandidateId: `plan:${profile.executionPlan.planId}`,
+      explanation: `证据覆盖 ${evidenceIds.length}/${expectedEvidence}；仅完整受治理计划通过闭环硬门，并保持人工审批、资源版本、幂等、回滚和独立验证。`,
+      createdAt,
+    };
+  }
+
+  /** 编译一次 Trace 的动态 Task Graph；输入场景、团队、历史快照和时间，返回含并行组、依赖、超时及冲突策略的图。 */
+  private createTaskGraph(
+    incident: ApplicationCompetitionIncident,
+    traceId: string,
+    binding: ApplicationCompetitionAgentTeamBinding,
+    snapshot: ApplicationCompetitionSnapshot,
+    createdAt: string,
+  ): ApplicationCompetitionTaskGraph {
+    const profile = getCompetitionScenarioProfile(incident.scenario);
+    const revision = snapshot.taskGraphs.filter((graph) => graph.incidentId === incident.incidentId).length + 1;
+    const graphId = this.id("task-graph");
+    const previousGraph = [...snapshot.taskGraphs].reverse().find((graph) => graph.incidentId === incident.incidentId) ?? null;
+    const leader = binding.memberSnapshots.find((member) => member.teamRole === "leader") ?? null;
+    const verifier = binding.memberSnapshots.find((member) => member.teamRole === "verifier") ?? null;
+    const workers = binding.memberSnapshots.filter((member) => member.teamRole === "worker");
+    /** 按工具能力选择真实 Worker；输入工具名，返回命中身份和匹配模式。 */
+    const selectWorker = (toolName: string, nodeId: string): {
+      readonly member: ApplicationCompetitionAgentRoleSnapshot | null;
+      readonly mode: "CAPABILITY_MATCH" | "ROLE_FALLBACK" | "REASSIGNMENT";
+    } => {
+      const platform = toolName.split(".", 1)[0] ?? "";
+      const matchedWorkers = workers.filter((member) => (
+        member.tools.includes(toolName)
+        || member.tools.some((tool) => tool.startsWith(`${platform}.`))
+        || member.skills.some((skill) => skill.toLocaleLowerCase().includes(platform))
+      ));
+      const candidates = matchedWorkers.length > 0 ? matchedWorkers : workers;
+      const previousNode = previousGraph?.nodes.find((node) => node.nodeId === nodeId) ?? null;
+      const reassigned = previousNode?.status === "FAILED"
+        ? candidates.find((member) => member.roleCardId !== previousNode.assignedRoleCardId)
+        : undefined;
+      if (reassigned !== undefined) return { member: reassigned, mode: "REASSIGNMENT" };
+      const matched = candidates[0];
+      return matched === undefined
+        ? { member: null, mode: "ROLE_FALLBACK" }
+        : { member: matched, mode: matchedWorkers.length > 0 ? "CAPABILITY_MATCH" : "ROLE_FALLBACK" };
+    };
+    const evidenceNodes = profile.investigationCalls.map((call) => {
+      const nodeId = taskNodeId("evidence", call.toolName);
+      const assignment = selectWorker(call.toolName, nodeId);
+      return {
+      nodeId,
+      lane: "EVIDENCE" as const,
+      title: `读取 ${call.toolName}`,
+      nodeType: "TOOL_CALL" as const,
+      toolName: call.toolName,
+      dependsOn: ["route-agent-team"],
+      parallelGroup: "parallel-evidence",
+      timeoutMs: getCompetitionToolDescriptor(call.toolName).timeoutMs,
+      maximumAttempts: 2,
+      assignedRoleCardId: assignment.member?.roleCardId ?? null,
+      assignedAgentName: assignment.member?.name ?? "Evidence Agent",
+      assignmentMode: assignment.mode,
+      status: "PENDING" as const,
+      evidenceIds: [],
+      };
+    });
+    const primaryStepIds = new Set(profile.executionPlan.steps.flatMap((step) => step.dependsOn));
+    const terminalSteps = profile.executionPlan.steps.filter((step) => !primaryStepIds.has(step.stepId));
+    const executionNodes = profile.executionPlan.steps.map((step) => ({
+      nodeId: `execute:${step.stepId}`,
+      lane: "EXECUTION" as const,
+      title: step.title,
+      nodeType: step.kind === "QUALITY_GATE" ? "QUALITY_GATE" as const : "TOOL_CALL" as const,
+      toolName: step.toolName,
+      dependsOn: step.dependsOn.length > 0
+        ? step.dependsOn.map((dependency) => `execute:${dependency}`)
+        : ["human-approval"],
+      parallelGroup: null,
+      timeoutMs: getCompetitionToolDescriptor(step.toolName).timeoutMs,
+      maximumAttempts: 1,
+      assignedRoleCardId: null,
+      assignedAgentName: "OpenXnet Controlled Executor",
+      assignmentMode: "CONTROL_PLANE" as const,
+      status: "PENDING" as const,
+      evidenceIds: [],
+    }));
+    const verificationDependencies = terminalSteps.map((step) => `execute:${step.stepId}`);
+    const verificationNodes = profile.verificationCalls.map((call) => ({
+      nodeId: taskNodeId("verify", call.toolName),
+      lane: "VERIFICATION" as const,
+      title: `独立验证 ${call.toolName}`,
+      nodeType: "TOOL_CALL" as const,
+      toolName: call.toolName,
+      dependsOn: verificationDependencies,
+      parallelGroup: "parallel-verification",
+      timeoutMs: getCompetitionToolDescriptor(call.toolName).timeoutMs,
+      maximumAttempts: 2,
+      assignedRoleCardId: verifier?.roleCardId ?? null,
+      assignedAgentName: verifier?.name ?? "Independent Verifier",
+      assignmentMode: verifier === null ? "ROLE_FALLBACK" as const : "CAPABILITY_MATCH" as const,
+      status: "PENDING" as const,
+      evidenceIds: [],
+    }));
+    const nodes: ApplicationCompetitionTaskGraphNode[] = [
+      {
+        nodeId: "route-agent-team",
+        lane: "ROUTING",
+        title: binding.runtime === "agentteams" ? "AgentTeams Leader 路由" : "内置团队路由",
+        nodeType: "AGENT_TASK",
+        toolName: null,
+        dependsOn: [],
+        parallelGroup: null,
+        timeoutMs: 30_000,
+        maximumAttempts: 1,
+        assignedRoleCardId: leader?.roleCardId ?? null,
+        assignedAgentName: leader?.name ?? "Incident Commander",
+        assignmentMode: leader === null ? "ROLE_FALLBACK" : "CAPABILITY_MATCH",
+        status: binding.status === "READY" ? "SUCCEEDED" : "FAILED",
+        evidenceIds: [],
+      },
+      {
+        nodeId: "retrieve-enterprise-skill",
+        lane: "RETRIEVAL",
+        title: "在线 RAG 与知识图谱检索",
+        nodeType: "SKILL_RETRIEVAL",
+        toolName: null,
+        dependsOn: ["route-agent-team"],
+        parallelGroup: null,
+        timeoutMs: 10_000,
+        maximumAttempts: 1,
+        assignedRoleCardId: leader?.roleCardId ?? null,
+        assignedAgentName: leader?.name ?? "Incident Commander",
+        assignmentMode: leader === null ? "ROLE_FALLBACK" : "CAPABILITY_MATCH",
+        status: "PENDING",
+        evidenceIds: [],
+      },
+      ...evidenceNodes,
+      {
+        nodeId: "fuse-cross-platform-evidence",
+        lane: "REASONING",
+        title: "跨平台证据汇聚",
+        nodeType: "EVIDENCE_FUSION",
+        toolName: null,
+        dependsOn: evidenceNodes.map((node) => node.nodeId),
+        parallelGroup: null,
+        timeoutMs: 10_000,
+        maximumAttempts: 1,
+        assignedRoleCardId: leader?.roleCardId ?? null,
+        assignedAgentName: leader?.name ?? "Incident Commander",
+        assignmentMode: leader === null ? "ROLE_FALLBACK" : "CAPABILITY_MATCH",
+        status: "PENDING",
+        evidenceIds: [],
+      },
+      {
+        nodeId: "select-governed-plan",
+        lane: "REASONING",
+        title: "神经符号多候选裁决",
+        nodeType: "POLICY_DECISION",
+        toolName: null,
+        dependsOn: ["retrieve-enterprise-skill", "fuse-cross-platform-evidence"],
+        parallelGroup: null,
+        timeoutMs: 10_000,
+        maximumAttempts: 1,
+        assignedRoleCardId: leader?.roleCardId ?? null,
+        assignedAgentName: leader?.name ?? "Incident Commander",
+        assignmentMode: leader === null ? "ROLE_FALLBACK" : "CAPABILITY_MATCH",
+        status: "PENDING",
+        evidenceIds: [],
+      },
+      {
+        nodeId: "human-approval",
+        lane: "APPROVAL",
+        title: "独立人工审批",
+        nodeType: "HUMAN_GATE",
+        toolName: null,
+        dependsOn: ["select-governed-plan"],
+        parallelGroup: null,
+        timeoutMs: 24 * 60 * 60 * 1000,
+        maximumAttempts: 1,
+        assignedRoleCardId: null,
+        assignedAgentName: "Independent Human Approver",
+        assignmentMode: "HUMAN",
+        status: "PENDING",
+        evidenceIds: [],
+      },
+      ...executionNodes,
+      ...verificationNodes,
+      {
+        nodeId: "verifier-conclusion",
+        lane: "VERIFICATION",
+        title: "Verifier 独立关闭裁决",
+        nodeType: "POLICY_DECISION",
+        toolName: null,
+        dependsOn: verificationNodes.map((node) => node.nodeId),
+        parallelGroup: null,
+        timeoutMs: 30_000,
+        maximumAttempts: 1,
+        assignedRoleCardId: verifier?.roleCardId ?? null,
+        assignedAgentName: verifier?.name ?? "Independent Verifier",
+        assignmentMode: verifier === null ? "ROLE_FALLBACK" : "CAPABILITY_MATCH",
+        status: "PENDING",
+        evidenceIds: [],
+      },
+      {
+        nodeId: "crystallize-retrospective-skill",
+        lane: "CRYSTALLIZATION",
+        title: "结晶并启用企业 Skill",
+        nodeType: "SKILL_WRITE",
+        toolName: null,
+        dependsOn: ["verifier-conclusion"],
+        parallelGroup: null,
+        timeoutMs: 30_000,
+        maximumAttempts: 1,
+        assignedRoleCardId: leader?.roleCardId ?? null,
+        assignedAgentName: leader?.name ?? "Incident Commander",
+        assignmentMode: leader === null ? "ROLE_FALLBACK" : "CAPABILITY_MATCH",
+        status: "PENDING",
+        evidenceIds: [],
+      },
+    ];
+    const assignmentEvents: ApplicationCompetitionTaskGraphEvent[] = nodes
+      .filter((node) => node.assignedRoleCardId !== null)
+      .map((node) => {
+        const previousNode = previousGraph?.nodes.find((item) => item.nodeId === node.nodeId) ?? null;
+        const reassigned = node.assignmentMode === "REASSIGNMENT";
+        return {
+          eventId: this.id("graph-event"),
+          eventType: reassigned ? "TASK_REASSIGNED" : "TASK_ASSIGNED",
+          nodeId: node.nodeId,
+          attempt: revision,
+          fromRoleCardId: reassigned ? previousNode?.assignedRoleCardId ?? null : null,
+          toRoleCardId: node.assignedRoleCardId,
+          reasonCode: reassigned ? "PREVIOUS_ASSIGNEE_FAILED" : node.assignmentMode,
+          evidenceIds: [],
+          checkpointDigest: digestJson({ graphId, nodeId: node.nodeId, revision, assignee: node.assignedRoleCardId }),
+          createdAt,
+        };
+      });
+    const resumeEvents: ApplicationCompetitionTaskGraphEvent[] = revision > 1 ? [{
+      eventId: this.id("graph-event"),
+      eventType: "TRACE_RESUMED",
+      nodeId: null,
+      attempt: revision,
+      fromRoleCardId: null,
+      toRoleCardId: leader?.roleCardId ?? null,
+      reasonCode: previousGraph?.status === "FAILED" ? "FAILED_TRACE_REPLANNED" : "EVIDENCE_REFRESH_REPLANNED",
+      evidenceIds: [],
+      checkpointDigest: digestJson({ graphId, revision, previousGraphId: previousGraph?.graphId ?? null }),
+      createdAt,
+    }] : [];
+    return {
+      graphId,
+      workspaceId: incident.workspaceId,
+      incidentId: incident.incidentId,
+      traceId,
+      revision,
+      status: "ACTIVE",
+      replanReason: revision > 1 ? "前序 Trace 失败或证据过期，使用当前资源版本重新规划。" : null,
+      conflictPolicies: ["RESOURCE_VERSION_WINS", "HUMAN_APPROVAL_ON_CONFLICT", "REPLAN_AFTER_STALE_EVIDENCE"],
+      nodes,
+      events: [...resumeEvents, ...assignmentEvents],
+      createdAt,
+      updatedAt: createdAt,
+      completedAt: null,
+      crystallizedAt: null,
+    };
+  }
+
+  /** 依据控制面事实重算 Task Graph 节点状态；输入快照、事件、Trace 和时间，返回替换最新图的快照。 */
+  private reconcileTaskGraph(
+    snapshot: ApplicationCompetitionSnapshot,
+    incidentId: string,
+    traceId: string,
+    updatedAt: string,
+  ): ApplicationCompetitionSnapshot {
+    const graph = [...snapshot.taskGraphs].reverse().find((item) => item.incidentId === incidentId && item.traceId === traceId);
+    if (graph === undefined) return snapshot;
+    const incident = requireIncident(snapshot, incidentId);
+    const binding = snapshot.teamBindings.find((item) => item.incidentId === incidentId && item.traceId === traceId);
+    const approval = [...snapshot.approvals].reverse().find((item) => item.incidentId === incidentId && item.traceId === traceId);
+    const action = [...snapshot.actions].reverse().find((item) => item.incidentId === incidentId && item.traceId === traceId);
+    const skillDecision = snapshot.reasoningDecisions.find((item) => item.traceId === traceId && item.decisionType === "SKILL_SELECTION");
+    const planDecision = snapshot.reasoningDecisions.find((item) => item.traceId === traceId && item.decisionType === "PLAN_SELECTION");
+    const verificationEvidence = new Set(action?.verificationEvidenceIds ?? []);
+    const investigationInvocations = snapshot.invocations.filter((item) => (
+      item.traceId === traceId && item.actionId === null && !verificationEvidence.has(item.evidenceId ?? "")
+    ));
+    const verificationInvocations = snapshot.invocations.filter((item) => (
+      item.traceId === traceId && verificationEvidence.has(item.evidenceId ?? "")
+    ));
+    const agentVerification = snapshot.agentDecisions.find((item) => (
+      item.traceId === traceId && item.stage === "VERIFICATION_CONCLUSION"
+    ));
+    const agentEvidencePlan = snapshot.agentDecisions.find((item) => (
+      item.traceId === traceId && item.stage === "INVESTIGATION_PLAN"
+    ));
+    const agentPlanDecision = snapshot.agentDecisions.find((item) => (
+      item.traceId === traceId && item.stage === "INVESTIGATION_CONCLUSION"
+    ));
+    const updatedNodes = graph.nodes.map((node): ApplicationCompetitionTaskGraphNode => {
+      let status = node.status;
+      let evidenceIds = node.evidenceIds;
+      let assignedRoleCardId = node.assignedRoleCardId;
+      let assignedAgentName = node.assignedAgentName;
+      let assignmentMode = node.assignmentMode;
+      if (node.nodeId === "route-agent-team") {
+        status = binding?.status === "READY" ? "SUCCEEDED" : binding?.status === "DEGRADED" ? "FAILED" : "PENDING";
+      } else if (node.nodeId === "retrieve-enterprise-skill") {
+        status = skillDecision === undefined ? "PENDING" : "SUCCEEDED";
+      } else if (node.lane === "EVIDENCE" && node.toolName !== null) {
+        const invocation = investigationInvocations.find((item) => item.toolName === node.toolName);
+        status = invocation === undefined ? "PENDING" : invocation.status;
+        evidenceIds = invocation?.evidenceId ? [invocation.evidenceId] : [];
+        if (agentEvidencePlan !== undefined && node.assignedRoleCardId === null) {
+          assignedRoleCardId = agentEvidencePlan.roleCardId;
+          assignedAgentName = agentEvidencePlan.agentName;
+          assignmentMode = "CAPABILITY_MATCH";
+        }
+      } else if (node.nodeId === "fuse-cross-platform-evidence") {
+        status = investigationInvocations.some((item) => item.status === "FAILED") ? "FAILED"
+          : investigationInvocations.length === node.dependsOn.length
+            && investigationInvocations.every((item) => item.status === "SUCCEEDED") ? "SUCCEEDED" : "PENDING";
+        evidenceIds = investigationInvocations.flatMap((item) => item.evidenceId ? [item.evidenceId] : []);
+      } else if (node.nodeId === "select-governed-plan") {
+        status = planDecision === undefined ? "PENDING" : "SUCCEEDED";
+        evidenceIds = planDecision === undefined ? [] : investigationInvocations.flatMap((item) => item.evidenceId ? [item.evidenceId] : []);
+        if (agentPlanDecision !== undefined) {
+          assignedRoleCardId = agentPlanDecision.roleCardId;
+          assignedAgentName = agentPlanDecision.agentName;
+          assignmentMode = "CAPABILITY_MATCH";
+        }
+      } else if (node.nodeId === "human-approval") {
+        status = approval === undefined ? "PENDING"
+          : approval.status === "PENDING" ? "AWAITING_APPROVAL"
+            : approval.status === "APPROVED" ? "SUCCEEDED" : "FAILED";
+      } else if (node.nodeId.startsWith("execute:")) {
+        const step = action?.steps.find((item) => `execute:${item.stepId}` === node.nodeId);
+        status = step?.status ?? (approval?.status === "REJECTED" ? "BLOCKED" : "PENDING");
+        evidenceIds = step?.evidenceId ? [step.evidenceId] : [];
+      } else if (node.lane === "VERIFICATION" && node.nodeType === "TOOL_CALL" && node.toolName !== null) {
+        const invocation = verificationInvocations.find((item) => item.toolName === node.toolName);
+        status = invocation === undefined ? (action?.status === "FAILED" ? "BLOCKED" : "PENDING") : invocation.status;
+        evidenceIds = invocation?.evidenceId ? [invocation.evidenceId] : [];
+        if (agentVerification !== undefined) {
+          assignedRoleCardId = agentVerification.roleCardId;
+          assignedAgentName = agentVerification.agentName;
+          assignmentMode = "CAPABILITY_MATCH";
+        }
+      } else if (node.nodeId === "verifier-conclusion") {
+        status = agentVerification !== undefined
+          ? (agentVerification.decision === "CLOSE" ? "SUCCEEDED" : "FAILED")
+          : incident.status === "RESOLVED" ? "SUCCEEDED"
+            : incident.status === "FAILED" && action !== undefined ? "FAILED" : "PENDING";
+        evidenceIds = [...verificationEvidence];
+      } else if (node.nodeId === "crystallize-retrospective-skill") {
+        status = graph.crystallizedAt !== null ? "SUCCEEDED"
+          : incident.status === "RESOLVED" ? "READY"
+            : incident.status === "FAILED" ? "BLOCKED" : "PENDING";
+      }
+      return { ...node, status, evidenceIds, assignedRoleCardId, assignedAgentName, assignmentMode };
+    });
+    const transitionEvents = updatedNodes.flatMap((node): readonly ApplicationCompetitionTaskGraphEvent[] => {
+      const previousNode = graph.nodes.find((item) => item.nodeId === node.nodeId);
+      if (previousNode === undefined || previousNode.status === node.status) return [];
+      const invocation = [...snapshot.invocations].reverse().find((item) => (
+        item.traceId === traceId && node.toolName !== null && item.toolName === node.toolName
+      ));
+      const executionStep = action === undefined ? undefined : [...action.steps, ...action.compensationSteps]
+        .find((step) => `execute:${step.stepId}` === node.nodeId);
+      const reasonCode = invocation?.errorCode ?? executionStep?.errorCode ?? node.status;
+      let eventType: ApplicationCompetitionTaskGraphEvent["eventType"] | null = null;
+      if (node.status === "SUCCEEDED") eventType = "CHECKPOINT_SAVED";
+      if (node.status === "FAILED") {
+        eventType = reasonCode.includes("TIMEOUT") || reasonCode === "UPSTREAM_UNAVAILABLE"
+          ? "WORKER_TIMEOUT"
+          : reasonCode === "RESOURCE_VERSION_CONFLICT"
+            ? "RESOURCE_CONFLICT_DETECTED"
+            : "TASK_FAILED";
+      }
+      if (eventType === null) return [];
+      return [{
+        eventId: this.id("graph-event"),
+        eventType,
+        nodeId: node.nodeId,
+        attempt: graph.revision,
+        fromRoleCardId: null,
+        toRoleCardId: node.assignedRoleCardId,
+        reasonCode,
+        evidenceIds: [...node.evidenceIds],
+        checkpointDigest: digestJson({
+          graphId: graph.graphId,
+          nodeId: node.nodeId,
+          status: node.status,
+          evidenceIds: node.evidenceIds,
+          reasonCode,
+        }),
+        createdAt: updatedAt,
+      }];
+    });
+    const nextStatus = incident.status === "FAILED" ? "FAILED"
+      : graph.crystallizedAt !== null ? "SUCCEEDED"
+        : incident.status === "AWAITING_APPROVAL" ? "AWAITING_APPROVAL" : "ACTIVE";
+    const nextGraph: ApplicationCompetitionTaskGraph = {
+      ...graph,
+      status: nextStatus,
+      nodes: updatedNodes,
+      events: [...graph.events, ...transitionEvents],
+      updatedAt,
+      completedAt: nextStatus === "SUCCEEDED" || nextStatus === "FAILED" ? updatedAt : null,
+    };
+    return {
+      ...snapshot,
+      taskGraphs: snapshot.taskGraphs.map((item) => item.graphId === graph.graphId ? nextGraph : item),
+      updatedAt,
+    };
+  }
+
   /** 构建固定取证工具调用；输入事件，返回九个只读跨域请求。 */
   private investigationCalls(incident: ApplicationCompetitionIncident): readonly {
     toolName: CompetitionToolName;
     arguments: Readonly<Record<string, unknown>>;
   }[] {
     return getCompetitionScenarioProfile(incident.scenario).investigationCalls;
+  }
+
+  /** 解析只读取证节点的真实执行身份；输入快照、Trace、工具和后备身份，返回 AgentTeams Actor ID。 */
+  private resolveInvestigationActorId(
+    snapshot: ApplicationCompetitionSnapshot,
+    traceId: string,
+    toolName: CompetitionToolName,
+    fallbackActorId: string,
+  ): string {
+    const graph = [...snapshot.taskGraphs].reverse().find((item) => item.traceId === traceId);
+    const node = graph?.nodes.find((item) => (
+      item.lane === "EVIDENCE" && item.toolName === toolName
+    ));
+    return node?.assignedRoleCardId === null || node?.assignedRoleCardId === undefined
+      ? fallbackActorId
+      : this.agentActorId(node.assignedRoleCardId);
   }
 
   /** 确保 MCP 调用具有持久 Incident/Trace；输入请求和参数，返回经 Workspace 校验的上下文。 */
@@ -1071,6 +2122,7 @@ export class ApplicationCompetitionRuntimeService {
     return {
       incidentId,
       workspaceId: request.workspaceId,
+      projectId: null,
       title: `MCP 工具调用：${request.toolName}`,
       summary: "由北向 MCP Gateway 创建的受审计工具调用上下文。",
       severity: "P2",
@@ -1300,6 +2352,54 @@ export class ApplicationCompetitionRuntimeService {
     }
   }
 
+  /** 把成功闭环脱敏后写入 Memory V3；输入终态快照和事件，失败仅记录诊断且不伪造处置失败。 */
+  private async persistResolvedIncidentMemory(
+    snapshot: ApplicationCompetitionSnapshot,
+    incident: ApplicationCompetitionIncident,
+  ): Promise<boolean> {
+    if (this.options.persistResolvedIncidentMemory === undefined || incident.status !== "RESOLVED") return false;
+    const traceId = incident.activeTraceId;
+    if (traceId === null || incident.resolvedAt === null) return false;
+    const action = [...snapshot.actions].reverse().find((item) => (
+      item.incidentId === incident.incidentId && item.traceId === traceId && item.status === "SUCCEEDED"
+    ));
+    if (action === undefined) return false;
+    const evidence = snapshot.evidence.filter((item) => (
+      item.incidentId === incident.incidentId && item.traceId === traceId
+    ));
+    const decisions = snapshot.agentDecisions.filter((item) => (
+      item.incidentId === incident.incidentId && item.traceId === traceId
+    ));
+    try {
+      await this.options.persistResolvedIncidentMemory({
+        workspaceId: incident.workspaceId,
+        projectId: incident.projectId,
+        incidentId: incident.incidentId,
+        traceId,
+        title: incident.title,
+        summary: incident.summary,
+        scenarioType: incident.scenario.scenarioType,
+        resolvedAt: incident.resolvedAt,
+        actionId: action.actionId,
+        approvalId: action.approvalId,
+        evidenceIds: evidence.map((item) => item.evidenceId),
+        verificationEvidenceIds: action.verificationEvidenceIds,
+        toolNames: [...new Set(evidence.map((item) => item.toolName))],
+        agentDecisions: decisions.map((item) => ({
+          stage: item.stage,
+          agentName: item.agentName,
+          teamRole: item.teamRole,
+          decision: item.decision,
+          summary: item.summary,
+        })),
+      });
+      return true;
+    } catch {
+      this.logger.warn("Resolved competition memory persistence failed; the verified incident remains resolved.");
+      return false;
+    }
+  }
+
   /** 把 AgentTeams 阶段结果写入统一 Trace；输入事件、Binding 和任务结果，返回持久记录。 */
   private async recordAgentDecision(
     incident: ApplicationCompetitionIncident,
@@ -1307,40 +2407,83 @@ export class ApplicationCompetitionRuntimeService {
     task: CompetitionAgentTeamsTaskResult,
   ): Promise<ApplicationCompetitionAgentDecision> {
     const timestamp = this.now().toISOString();
-    const decision: ApplicationCompetitionAgentDecision = {
-      decisionId: this.id("decision"),
-      taskId: task.taskId,
-      bindingId: binding.bindingId,
-      workspaceId: incident.workspaceId,
-      incidentId: incident.incidentId,
-      traceId: binding.traceId,
-      stage: task.stage,
-      teamName: binding.teamName,
-      roleCardId: task.result.roleCardId,
-      agentName: task.result.agentName,
-      teamRole: task.result.teamRole,
-      transportSender: task.result.transportSender,
-      eventId: task.result.eventId,
-      decision: task.result.decision,
-      summary: task.result.summary,
-      confidence: task.result.confidence,
-      requestedToolNames: [...task.result.requestedToolNames],
-      evidenceIds: [...task.result.evidenceIds],
-      skillName: task.result.skillName,
-      skillVersion: task.result.skillVersion,
-      outputDigest: task.result.outputDigest,
-      routedByRoleCardId: task.route?.leaderRoleCardId ?? null,
-      routedByName: task.route?.leaderName ?? null,
-      routedByTransportSender: task.route?.transportSender ?? null,
-      taskBriefDigest: task.route?.taskBriefDigest ?? null,
-      createdAt: timestamp,
-    };
-    await this.store.update((current) => ({
-      ...current,
-      agentDecisions: [...current.agentDecisions, decision],
-      updatedAt: timestamp,
-    }));
-    return decision;
+    let recorded: ApplicationCompetitionAgentDecision | null = null;
+    await this.store.update((current) => {
+      const decision: ApplicationCompetitionAgentDecision = {
+          decisionId: this.id("decision"),
+          taskId: task.taskId,
+          bindingId: binding.bindingId,
+          workspaceId: incident.workspaceId,
+          incidentId: incident.incidentId,
+          traceId: binding.traceId,
+          stage: task.stage,
+          teamName: binding.teamName,
+          roleCardId: task.result.roleCardId,
+          agentName: task.result.agentName,
+          teamRole: task.result.teamRole,
+          transportSender: task.result.transportSender,
+          eventId: task.result.eventId,
+          decision: task.result.decision,
+          summary: task.result.summary,
+          confidence: task.result.confidence,
+          requestedToolNames: [...task.result.requestedToolNames],
+          evidenceIds: [...task.result.evidenceIds],
+          skillName: task.result.skillName,
+          skillVersion: task.result.skillVersion,
+          outputDigest: task.result.outputDigest,
+          routedByRoleCardId: task.route?.leaderRoleCardId ?? null,
+          routedByName: task.route?.leaderName ?? null,
+          routedByTransportSender: task.route?.transportSender ?? null,
+          taskBriefDigest: task.route?.taskBriefDigest ?? null,
+          transportEvents: this.chainAgentTransportEvents(current, incident.incidentId, task),
+          createdAt: timestamp,
+      };
+      recorded = decision;
+      return {
+        ...current,
+        agentDecisions: [...current.agentDecisions, decision],
+        updatedAt: timestamp,
+      };
+    });
+    if (recorded === null) throw new Error("AgentTeams decision was not persisted.");
+    return recorded;
+  }
+
+  /** 把 Adapter 事件接入 Incident 级连续哈希链；输入当前快照、事件和任务，返回不可变事件列表。 */
+  private chainAgentTransportEvents(
+    snapshot: ApplicationCompetitionSnapshot,
+    incidentId: string,
+    task: CompetitionAgentTeamsTaskResult,
+  ): readonly ApplicationCompetitionAgentTransportEvent[] {
+    const previousEvents = snapshot.agentDecisions
+      .filter((decision) => decision.incidentId === incidentId)
+      .flatMap((decision) => decision.transportEvents);
+    let sequence = previousEvents.at(-1)?.sequence ?? 0;
+    let previousLedgerDigest = previousEvents.at(-1)?.ledgerDigest ?? "0".repeat(64);
+    return task.transportEvents.map((event) => {
+      sequence += 1;
+      const ledgerDigest = createHash("sha256").update(JSON.stringify({
+        previousLedgerDigest,
+        sequence,
+        kind: event.kind,
+        direction: event.direction,
+        roomId: event.roomId,
+        eventId: event.eventId,
+        sender: event.sender,
+        recipient: event.recipient,
+        originServerTs: event.originServerTs,
+        observedAt: event.observedAt,
+        bodyDigest: event.bodyDigest,
+      }), "utf8").digest("hex");
+      const persisted: ApplicationCompetitionAgentTransportEvent = {
+        ...event,
+        sequence,
+        previousLedgerDigest,
+        ledgerDigest,
+      };
+      previousLedgerDigest = ledgerDigest;
+      return persisted;
+    });
   }
 
   /** 根据 Evidence Agent 结果筛选工具调用；输入允许调用和任务结果，返回覆盖三平台的只读调用。 */
@@ -1728,6 +2871,7 @@ export class ApplicationCompetitionRuntimeService {
       await this.projectOperationConversation({
         eventType: input.compensation ? "COMPENSATION_EXECUTING" : "ACTION_STEP_SUCCEEDED",
         workspaceId: input.incident.workspaceId,
+        projectId: input.incident.projectId,
         incidentId: input.incident.incidentId,
         traceId: input.approval.traceId,
         actorId: input.actorId,
@@ -1824,6 +2968,7 @@ export class ApplicationCompetitionRuntimeService {
       await this.projectOperationConversation({
         eventType: "COMPENSATION_SUCCEEDED",
         workspaceId: input.incident.workspaceId,
+        projectId: input.incident.projectId,
         incidentId: input.incident.incidentId,
         traceId: input.approval.traceId,
         actorId: input.actorId,
@@ -1912,6 +3057,7 @@ export class ApplicationCompetitionRuntimeService {
       const recovery = dataFor("aiops.inference.recovery.status");
       const workflow = dataFor("dataops.workflow.instance.get");
       const deployment = dataFor("mlops.deployment.get");
+      const probe = dataFor("mlops.inference.probe");
       passed = metrics !== null
         && typeof metrics.p99Ms === "number" && metrics.p99Ms <= 300
         && typeof metrics.batchQueueSize === "number" && metrics.batchQueueSize <= 10
@@ -1920,7 +3066,16 @@ export class ApplicationCompetitionRuntimeService {
         && recovery.queueAwareAutoscaling === true
         && recovery.businessKpiRecovered === true
         && workflow?.status === "SUCCEEDED"
-        && deployment !== null;
+        && deployment?.ready === true
+        && deployment.algorithmId === "dcn_1"
+        && deployment.modelVersion === "recommendation-dcn-demo-v1"
+        && probe?.passed === true
+        && probe.contractStatus === "MATCHED"
+        && probe.algorithmId === "dcn_1"
+        && probe.productVersion === "recommendation-dcn-demo-v1"
+        && typeof probe.candidateCount === "number" && probe.candidateCount >= 8
+        && typeof probe.errorRate === "number" && probe.errorRate === 0
+        && typeof probe.modelDigestSha256 === "string" && /^[a-f0-9]{64}$/u.test(probe.modelDigestSha256);
     } else if (scenarioType === "quantitative-iteration") {
       const health = dataFor("aiops.service.health");
       const dataset = dataFor("dataops.dataset.validation.get");
@@ -2130,6 +3285,494 @@ export class ApplicationCompetitionRuntimeService {
     };
   }
 
+  /** 构建测试者、开发者和 Verifier 的 Skill 递进结晶记录；输入已解决事件，返回无自动执行权的候选。 */
+  private buildSkillEvolutionRun(
+    snapshot: ApplicationCompetitionSnapshot,
+    incident: ApplicationCompetitionIncident,
+    createdAt: string,
+  ): ApplicationCompetitionSkillEvolutionRun {
+    const traceId = incident.activeTraceId;
+    if (traceId === null) {
+      throw new ApplicationCompetitionRuntimeError("TRACE_NOT_FOUND", "已解决事件缺少 Skill 结晶 Trace。");
+    }
+    const profile = getCompetitionScenarioProfile(incident.scenario);
+    const evidence = snapshot.evidence.filter((item) => item.incidentId === incident.incidentId && item.traceId === traceId);
+    const action = [...snapshot.actions].reverse().find((item) => item.incidentId === incident.incidentId && item.traceId === traceId) ?? null;
+    const verificationIds = new Set(action?.verificationEvidenceIds ?? []);
+    const investigationEvidenceIds = evidence.filter((item) => !verificationIds.has(item.evidenceId)).map((item) => item.evidenceId);
+    const verificationEvidenceIds = evidence.filter((item) => verificationIds.has(item.evidenceId)).map((item) => item.evidenceId);
+    const planDecision = snapshot.reasoningDecisions.find((item) => (
+      item.traceId === traceId && item.decisionType === "PLAN_SELECTION"
+    )) ?? null;
+    const verifierDecision = snapshot.agentDecisions.find((item) => (
+      item.traceId === traceId && item.stage === "VERIFICATION_CONCLUSION"
+    )) ?? null;
+    const verificationReceipt = [...snapshot.auditReceipts].reverse().find((item) => (
+      item.traceId === traceId && item.toolName === "openxnet.remediation.verify"
+    )) ?? null;
+    const selectedCandidate = planDecision?.candidates.find((item) => item.candidateId === planDecision.selectedCandidateId) ?? null;
+    const rejectedStrategyIds = planDecision?.candidates
+      .filter((item) => item.candidateId !== planDecision.selectedCandidateId)
+      .map((item) => item.strategyId ?? item.candidateId) ?? [];
+    const roundInputs = [
+      {
+        role: "TESTER" as const,
+        stage: "PROBLEM_REPRODUCTION" as const,
+        question: "原始问题能否由跨平台只读证据稳定复现，并排除单一指标误判？",
+        outcome: investigationEvidenceIds.length >= profile.investigationCalls.length ? "PASSED" as const : "FAILED" as const,
+        evidenceIds: investigationEvidenceIds,
+      },
+      {
+        role: "DEVELOPER" as const,
+        stage: "STRATEGY_COMPARISON" as const,
+        question: "完整闭环、仅止损和回滚优先方案中，哪一个同时满足证据、安全和恢复目标？",
+        outcome: selectedCandidate?.eligible === true && (planDecision?.candidates.length ?? 0) >= 3
+          ? "PASSED" as const
+          : "FAILED" as const,
+        evidenceIds: planDecision === null ? [] : [planDecision.reasoningId],
+      },
+      {
+        role: "TESTER" as const,
+        stage: "PROGRESSIVE_CHALLENGE" as const,
+        question: "执行成功后，独立探针、业务阈值和版本契约是否仍能否决错误关闭？",
+        outcome: verificationEvidenceIds.length >= profile.verificationCalls.length && action?.status === "SUCCEEDED"
+          ? "PASSED" as const
+          : "FAILED" as const,
+        evidenceIds: verificationEvidenceIds,
+      },
+      {
+        role: "VERIFIER" as const,
+        stage: "INDEPENDENT_CERTIFICATION" as const,
+        question: "Verifier 身份、确定性门禁和审计回执是否共同支持进入环境认证？",
+        outcome: verifierDecision?.decision === "CLOSE" && verificationReceipt?.outcome === "SUCCEEDED"
+          ? "PASSED" as const
+          : "FAILED" as const,
+        evidenceIds: [verifierDecision?.decisionId, verificationReceipt?.receiptId]
+          .filter((item): item is string => typeof item === "string"),
+      },
+    ];
+    const rounds = roundInputs.map((round, index) => ({
+      round: index + 1,
+      ...round,
+      outputDigest: digestJson({
+        incidentId: incident.incidentId,
+        traceId,
+        stage: round.stage,
+        outcome: round.outcome,
+        evidenceIds: round.evidenceIds,
+      }),
+      createdAt,
+    }));
+    const ready = rounds.every((round) => round.outcome === "PASSED");
+    return {
+      evolutionId: this.id("skill-evolution"),
+      workspaceId: incident.workspaceId,
+      incidentId: incident.incidentId,
+      traceId,
+      skillId: profile.skill.skillId,
+      familyId: `family-${profile.skill.skillId}`,
+      status: ready ? "READY_FOR_CERTIFICATION" : "CANDIDATE",
+      selectedStrategyId: selectedCandidate?.strategyId ?? selectedCandidate?.candidateId ?? null,
+      rejectedStrategyIds,
+      rounds,
+      hallucinationGuards: [
+        "SIMULATION_OR_STAGING_EVIDENCE_CANNOT_GRANT_PRODUCTION_RIGHTS",
+        "FAILED_OR_UNVERIFIED_INCIDENT_CANNOT_PROMOTE_SKILL",
+        "STALE_RESOURCE_VERSION_REQUIRES_REPLAN",
+        "NO_MATCH_OR_LOW_CONFIDENCE_REQUIRES_ABSTENTION",
+      ],
+      createdAt,
+      updatedAt: createdAt,
+    };
+  }
+
+  /** 构建复赛机器可读评测报告；输入快照和终态事件，返回要求覆盖、失败路径和量化计数。 */
+  private buildEvaluationReport(
+    snapshot: ApplicationCompetitionSnapshot,
+    incident: ApplicationCompetitionIncident,
+  ): Readonly<Record<string, unknown>> {
+    const trace = snapshot.traces.find((item) => item.traceId === incident.activeTraceId) ?? null;
+    const invocations = snapshot.invocations.filter((item) => item.incidentId === incident.incidentId);
+    const evidence = snapshot.evidence.filter((item) => item.incidentId === incident.incidentId);
+    const approvals = snapshot.approvals.filter((item) => item.incidentId === incident.incidentId);
+    const actions = snapshot.actions.filter((item) => item.incidentId === incident.incidentId);
+    const receipts = snapshot.auditReceipts.filter((item) => item.incidentId === incident.incidentId);
+    const decisions = snapshot.agentDecisions.filter((item) => item.incidentId === incident.incidentId);
+    const transportEvents = decisions.flatMap((decision) => decision.transportEvents);
+    const binding = snapshot.teamBindings.find((item) => item.traceId === incident.activeTraceId) ?? null;
+    const skillUsage = snapshot.skillUsages.find((item) => item.traceId === incident.activeTraceId) ?? null;
+    const taskGraph = [...snapshot.taskGraphs].reverse().find((item) => item.traceId === incident.activeTraceId) ?? null;
+    const reasoningDecisions = snapshot.reasoningDecisions.filter((item) => item.traceId === incident.activeTraceId);
+    const skillEvolution = [...snapshot.skillEvolutionRuns].reverse().find((item) => (
+      item.incidentId === incident.incidentId && item.traceId === incident.activeTraceId
+    )) ?? null;
+    const action = actions.at(-1) ?? null;
+    const elapsedMs = Math.max(0, Date.parse(incident.updatedAt) - Date.parse(incident.createdAt));
+    return {
+      schema: "openxnet.competition-evaluation.v1",
+      generatedAt: this.now().toISOString(),
+      environmentClaim: snapshot.adapterMode === "fixture" ? "simulation" : "staging",
+      incident: {
+        incidentId: incident.incidentId,
+        workspaceId: incident.workspaceId,
+        projectId: incident.projectId,
+        scenarioType: incident.scenario.scenarioType,
+        status: incident.status,
+        traceId: incident.activeTraceId,
+      },
+      orchestration: {
+        runtime: binding?.runtime ?? "unknown",
+        teamStatus: binding?.status ?? "unknown",
+        distinctFunctions: [...new Set(binding?.memberSnapshots.map((item) => item.teamRole) ?? [])],
+        agentCount: binding?.memberSnapshots.length ?? 0,
+        decisionCount: decisions.length,
+        transportEventCount: transportEvents.length,
+        finalTransportLedgerDigest: transportEvents.at(-1)?.ledgerDigest ?? null,
+        silentFallbackAllowed: false,
+        taskGraph: taskGraph === null ? null : {
+          graphId: taskGraph.graphId,
+          revision: taskGraph.revision,
+          status: taskGraph.status,
+          nodeCount: taskGraph.nodes.length,
+          parallelGroupCount: new Set(taskGraph.nodes.map((node) => node.parallelGroup).filter(Boolean)).size,
+          replanReason: taskGraph.replanReason,
+          conflictPolicies: taskGraph.conflictPolicies,
+          coordinationEventCount: taskGraph.events.length,
+          checkpointCount: taskGraph.events.filter((item) => item.eventType === "CHECKPOINT_SAVED").length,
+          exceptionEventCount: taskGraph.events.filter((item) => (
+            item.eventType === "WORKER_TIMEOUT"
+            || item.eventType === "TASK_FAILED"
+            || item.eventType === "RESOURCE_CONFLICT_DETECTED"
+          )).length,
+          reassignmentCount: taskGraph.events.filter((item) => item.eventType === "TASK_REASSIGNED").length,
+        },
+      },
+      skillEngineering: skillEvolution === null ? null : {
+        evolutionId: skillEvolution.evolutionId,
+        status: skillEvolution.status,
+        roundCount: skillEvolution.rounds.length,
+        roles: [...new Set(skillEvolution.rounds.map((round) => round.role))],
+        selectedStrategyId: skillEvolution.selectedStrategyId,
+        rejectedStrategyCount: skillEvolution.rejectedStrategyIds.length,
+        hallucinationGuards: skillEvolution.hallucinationGuards,
+      },
+      metrics: {
+        elapsedMs,
+        invocationCount: invocations.length,
+        succeededInvocationCount: invocations.filter((item) => item.status === "SUCCEEDED").length,
+        failedInvocationCount: invocations.filter((item) => item.status === "FAILED").length,
+        evidenceCount: evidence.length,
+        approvalCount: approvals.length,
+        executionStepCount: action?.steps.length ?? 0,
+        succeededExecutionStepCount: action?.steps.filter((item) => item.status === "SUCCEEDED").length ?? 0,
+        verificationEvidenceCount: action?.verificationEvidenceIds.length ?? 0,
+        compensationStepCount: action?.compensationSteps.length ?? 0,
+        auditReceiptCount: receipts.length,
+        reasoningDecisionCount: reasoningDecisions.length,
+        reasoningCandidateCount: reasoningDecisions.reduce((total, item) => total + item.candidates.length, 0),
+        onlineKnowledgeReferenceCount: reasoningDecisions.reduce((total, item) => total + item.knowledgeRefs.length, 0),
+      },
+      failurePath: {
+        actionStatus: action?.status ?? null,
+        compensationStatus: action?.compensationStatus ?? "NOT_REQUIRED",
+        failedStepIds: action?.steps.filter((item) => item.status === "FAILED").map((item) => item.stepId) ?? [],
+      },
+      skillReuse: skillUsage ?? {
+        status: "BASELINE",
+        skillId: getCompetitionScenarioProfile(incident.scenario).skill.skillId,
+        sourceIncidentId: null,
+      },
+      requirementCoverage: {
+        taskInput: true,
+        taskDecomposition: binding !== null,
+        contextTransfer: binding?.runtime === "agentteams" ? decisions.length >= 2 : binding !== null,
+        toolCalls: invocations.length > 0,
+        independentVerification: (action?.verificationEvidenceIds.length ?? 0) > 0,
+        evidencePersistence: evidence.length > 0 && receipts.length > 0,
+        approvalAndRollback: approvals.length > 0 && (action?.compensationSteps.length ?? 0) > 0,
+        experienceCrystallization: incident.status === "RESOLVED",
+        sharedState: trace !== null,
+        trajectoryObservability: invocations.length > 0,
+        originalAgentTeamsEvents: binding?.runtime === "agentteams" ? transportEvents.length > 0 : false,
+        dynamicTaskGraph: taskGraph !== null && taskGraph.nodes.length > 0,
+        coordinationCheckpoints: taskGraph !== null
+          && taskGraph.events.some((item) => item.eventType === "CHECKPOINT_SAVED"),
+        resumableReplanning: taskGraph !== null
+          && taskGraph.conflictPolicies.includes("REPLAN_AFTER_STALE_EVIDENCE"),
+        skillEvolutionTrail: skillEvolution !== null && skillEvolution.rounds.length >= 4,
+        hybridRagAndKnowledgeGraph: reasoningDecisions.some((item) => item.retrievalMode === "ONLINE_HYBRID_RAG_KG"),
+        neuroSymbolicCandidateDecision: reasoningDecisions.length >= 2
+          && reasoningDecisions.every((item) => item.candidates.length >= 3),
+      },
+      reasoning: reasoningDecisions.map((decision) => ({
+        reasoningId: decision.reasoningId,
+        decisionType: decision.decisionType,
+        retrievalMode: decision.retrievalMode,
+        selectedCandidateId: decision.selectedCandidateId,
+        candidateCount: decision.candidates.length,
+        rejectedCandidateIds: decision.candidates.filter((candidate) => !candidate.eligible).map((candidate) => candidate.candidateId),
+        selectedRuleCodes: decision.candidates.find((candidate) => candidate.candidateId === decision.selectedCandidateId)?.ruleCodes ?? [],
+        explanation: decision.explanation,
+      })),
+      evidenceRefs: evidence.map((item) => ({
+        evidenceId: item.evidenceId,
+        platform: item.platform,
+        toolName: item.toolName,
+        contentDigest: item.contentDigest,
+      })),
+    };
+  }
+
+  /** 验证并导出 AgentTeams 事件账本；输入终态快照和事件，返回包含清单行的 UTF-8 JSONL。 */
+  private buildAgentTeamsEventLedger(
+    snapshot: ApplicationCompetitionSnapshot,
+    incident: ApplicationCompetitionIncident,
+  ): string {
+    const decisions = snapshot.agentDecisions.filter((decision) => decision.incidentId === incident.incidentId);
+    const entries = decisions.flatMap((decision) => decision.transportEvents.map((event) => ({ decision, event })));
+    let expectedSequence = 1;
+    let previousLedgerDigest = "0".repeat(64);
+    for (const { event } of entries) {
+      const expectedDigest = createHash("sha256").update(JSON.stringify({
+        previousLedgerDigest,
+        sequence: expectedSequence,
+        kind: event.kind,
+        direction: event.direction,
+        roomId: event.roomId,
+        eventId: event.eventId,
+        sender: event.sender,
+        recipient: event.recipient,
+        originServerTs: event.originServerTs,
+        observedAt: event.observedAt,
+        bodyDigest: event.bodyDigest,
+      }), "utf8").digest("hex");
+      if (
+        event.sequence !== expectedSequence
+        || event.previousLedgerDigest !== previousLedgerDigest
+        || event.ledgerDigest !== expectedDigest
+      ) {
+        throw new ApplicationCompetitionRuntimeError(
+          "AGENTTEAMS_EVENT_LEDGER_INVALID",
+          "AgentTeams 原始事件账本校验失败，已停止导出。",
+          true,
+        );
+      }
+      expectedSequence += 1;
+      previousLedgerDigest = expectedDigest;
+    }
+    const manifest = {
+      schema: "openxnet.agentteams.event-ledger.v1",
+      recordType: "MANIFEST",
+      workspaceId: incident.workspaceId,
+      incidentId: incident.incidentId,
+      traceId: incident.activeTraceId,
+      eventCount: entries.length,
+      finalLedgerDigest: entries.at(-1)?.event.ledgerDigest ?? null,
+      exportedAt: this.now().toISOString(),
+      bodyPolicy: "redacted-body-with-original-sha256",
+    };
+    const records = entries.map(({ decision, event }) => ({
+      schema: "openxnet.agentteams.event-ledger.v1",
+      recordType: "MATRIX_EVENT",
+      workspaceId: incident.workspaceId,
+      incidentId: incident.incidentId,
+      traceId: decision.traceId,
+      decisionId: decision.decisionId,
+      taskId: decision.taskId,
+      stage: decision.stage,
+      ...event,
+    }));
+    return `${[manifest, ...records].map((record) => JSON.stringify(record)).join("\n")}\n`;
+  }
+
+  /** 构建 OTLP 风格 Trace 与 Metrics；输入快照和事件，返回不含工具参数和凭据的遥测包。 */
+  private buildOtlpTelemetry(
+    snapshot: ApplicationCompetitionSnapshot,
+    incident: ApplicationCompetitionIncident,
+  ): Readonly<Record<string, unknown>> {
+    const traces = snapshot.traces.filter((item) => item.incidentId === incident.incidentId);
+    const invocations = snapshot.invocations.filter((item) => item.incidentId === incident.incidentId);
+    const agentDecisions = snapshot.agentDecisions.filter((item) => item.incidentId === incident.incidentId);
+    const reasoningDecisions = snapshot.reasoningDecisions.filter((item) => item.incidentId === incident.incidentId);
+    const taskGraphs = snapshot.taskGraphs.filter((item) => item.incidentId === incident.incidentId);
+    const skillEvolutionRuns = snapshot.skillEvolutionRuns.filter((item) => item.incidentId === incident.incidentId);
+    const traceId = telemetryId(incident.activeTraceId ?? incident.incidentId, 32);
+    const startTime = toUnixNano(incident.createdAt);
+    const endTime = toUnixNano(incident.updatedAt);
+    const spans = [
+      {
+        traceId,
+        spanId: telemetryId(incident.incidentId, 16),
+        name: `openxnet.${incident.scenario.scenarioType}`,
+        kind: 1,
+        startTimeUnixNano: startTime,
+        endTimeUnixNano: endTime,
+        attributes: telemetryAttributes({
+          "gen_ai.operation.name": "execute_agent",
+          "openxnet.incident.id": incident.incidentId,
+          "openxnet.workspace.id": incident.workspaceId,
+          "openxnet.project.id": incident.projectId ?? "",
+          "openxnet.incident.status": incident.status,
+        }),
+        status: { code: incident.status === "RESOLVED" ? 1 : 2 },
+      },
+      ...invocations.map((item) => ({
+        traceId,
+        spanId: telemetryId(item.invocationId, 16),
+        parentSpanId: telemetryId(incident.incidentId, 16),
+        name: item.toolName,
+        kind: 3,
+        startTimeUnixNano: toUnixNano(item.startedAt),
+        endTimeUnixNano: toUnixNano(item.completedAt ?? item.startedAt),
+        attributes: telemetryAttributes({
+          "gen_ai.operation.name": "execute_tool",
+          "openxnet.tool.name": item.toolName,
+          "openxnet.platform": item.platform,
+          "openxnet.evidence.id": item.evidenceId ?? "",
+          "openxnet.action.id": item.actionId ?? "",
+        }),
+        status: { code: item.status === "SUCCEEDED" ? 1 : 2 },
+      })),
+      ...agentDecisions.map((item) => ({
+        traceId,
+        spanId: telemetryId(item.decisionId, 16),
+        parentSpanId: telemetryId(incident.incidentId, 16),
+        name: `agentteams.${item.stage.toLocaleLowerCase()}`,
+        kind: 1,
+        startTimeUnixNano: toUnixNano(item.createdAt),
+        endTimeUnixNano: toUnixNano(item.createdAt),
+        attributes: telemetryAttributes({
+          "gen_ai.operation.name": "execute_agent",
+          "gen_ai.agent.name": item.agentName,
+          "openxnet.agent.role": item.teamRole,
+          "openxnet.agent.decision": item.decision,
+          "openxnet.skill.name": item.skillName,
+          "openxnet.skill.version": item.skillVersion,
+          "openxnet.evidence.count": String(item.evidenceIds.length),
+        }),
+        status: { code: ["HALT", "ROLLBACK_REQUIRED"].includes(item.decision) ? 2 : 1 },
+      })),
+      ...reasoningDecisions.map((item) => ({
+        traceId,
+        spanId: telemetryId(item.reasoningId, 16),
+        parentSpanId: telemetryId(incident.incidentId, 16),
+        name: `openxnet.reasoning.${item.decisionType.toLocaleLowerCase()}`,
+        kind: 1,
+        startTimeUnixNano: toUnixNano(item.createdAt),
+        endTimeUnixNano: toUnixNano(item.createdAt),
+        attributes: telemetryAttributes({
+          "gen_ai.operation.name": "select_candidate",
+          "openxnet.retrieval.mode": item.retrievalMode,
+          "openxnet.reasoning.candidate_count": String(item.candidates.length),
+          "openxnet.reasoning.selected_candidate": item.selectedCandidateId,
+          "openxnet.knowledge.reference_count": String(item.knowledgeRefs.length),
+        }),
+        status: { code: 1 },
+      })),
+      ...taskGraphs.flatMap((graph) => graph.nodes.map((node) => ({
+        traceId,
+        spanId: telemetryId(`${graph.graphId}:${node.nodeId}`, 16),
+        parentSpanId: telemetryId(incident.incidentId, 16),
+        name: `openxnet.task.${node.nodeType.toLocaleLowerCase()}`,
+        kind: node.toolName === null ? 1 : 3,
+        startTimeUnixNano: toUnixNano(graph.createdAt),
+        endTimeUnixNano: toUnixNano(graph.updatedAt),
+        attributes: telemetryAttributes({
+          "openxnet.task_graph.id": graph.graphId,
+          "openxnet.task_graph.revision": String(graph.revision),
+          "openxnet.task.node_id": node.nodeId,
+          "openxnet.task.lane": node.lane,
+          "openxnet.task.parallel_group": node.parallelGroup ?? "",
+          "openxnet.task.status": node.status,
+          "openxnet.task.dependency_count": String(node.dependsOn.length),
+        }),
+        status: { code: node.status === "FAILED" || node.status === "BLOCKED" ? 2 : 1 },
+      }))),
+      ...taskGraphs.flatMap((graph) => graph.events.map((event) => ({
+        traceId,
+        spanId: telemetryId(event.eventId, 16),
+        parentSpanId: telemetryId(`${graph.graphId}:${event.nodeId ?? "graph"}`, 16),
+        name: `openxnet.coordination.${event.eventType.toLocaleLowerCase()}`,
+        kind: 1,
+        startTimeUnixNano: toUnixNano(event.createdAt),
+        endTimeUnixNano: toUnixNano(event.createdAt),
+        attributes: telemetryAttributes({
+          "openxnet.task_graph.id": graph.graphId,
+          "openxnet.task.node_id": event.nodeId ?? "",
+          "openxnet.coordination.event_type": event.eventType,
+          "openxnet.coordination.attempt": String(event.attempt),
+          "openxnet.coordination.reason_code": event.reasonCode,
+          "openxnet.coordination.checkpoint_digest": event.checkpointDigest,
+        }),
+        status: { code: ["WORKER_TIMEOUT", "TASK_FAILED", "RESOURCE_CONFLICT_DETECTED"].includes(event.eventType) ? 2 : 1 },
+      }))),
+      ...skillEvolutionRuns.flatMap((run) => run.rounds.map((round) => ({
+        traceId,
+        spanId: telemetryId(`${run.evolutionId}:${round.round}`, 16),
+        parentSpanId: telemetryId(incident.incidentId, 16),
+        name: `openxnet.skill_evolution.${round.stage.toLocaleLowerCase()}`,
+        kind: 1,
+        startTimeUnixNano: toUnixNano(round.createdAt),
+        endTimeUnixNano: toUnixNano(round.createdAt),
+        attributes: telemetryAttributes({
+          "openxnet.skill.id": run.skillId,
+          "openxnet.skill.family_id": run.familyId,
+          "openxnet.skill.evolution_status": run.status,
+          "openxnet.skill.evolution_role": round.role,
+          "openxnet.skill.evolution_stage": round.stage,
+          "openxnet.evidence.count": String(round.evidenceIds.length),
+          "openxnet.skill.output_digest": round.outputDigest,
+        }),
+        status: { code: round.outcome === "PASSED" ? 1 : 2 },
+      }))),
+    ];
+    return {
+      schema: "openxnet.otlp-evidence.v1",
+      semanticConvention: "OpenTelemetry GenAI compatible attribute mapping",
+      resourceSpans: [{
+        resource: { attributes: telemetryAttributes({
+          "service.name": "openxnet-enterprise-space",
+          "service.version": "1.2.0",
+          "deployment.environment.name": snapshot.adapterMode === "fixture" ? "simulation" : "staging",
+        }) },
+        scopeSpans: [{ scope: { name: "openxnet.competition-runtime", version: "1.2.0" }, spans }],
+      }],
+      resourceMetrics: [{
+        resource: { attributes: telemetryAttributes({ "service.name": "openxnet-enterprise-space" }) },
+        scopeMetrics: [{
+          scope: { name: "openxnet.competition-runtime", version: "1.2.0" },
+          metrics: [
+            { name: "openxnet.tool.invocations", sum: { dataPoints: [{ asInt: String(invocations.length), timeUnixNano: endTime }], aggregationTemporality: 2, isMonotonic: true } },
+            { name: "openxnet.trace.count", sum: { dataPoints: [{ asInt: String(traces.length), timeUnixNano: endTime }], aggregationTemporality: 2, isMonotonic: true } },
+            { name: "openxnet.agent.decisions", sum: { dataPoints: [{ asInt: String(agentDecisions.length), timeUnixNano: endTime }], aggregationTemporality: 2, isMonotonic: true } },
+            { name: "openxnet.reasoning.decisions", sum: { dataPoints: [{ asInt: String(reasoningDecisions.length), timeUnixNano: endTime }], aggregationTemporality: 2, isMonotonic: true } },
+            { name: "openxnet.task_graph.nodes", sum: { dataPoints: [{ asInt: String(taskGraphs.reduce((total, graph) => total + graph.nodes.length, 0)), timeUnixNano: endTime }], aggregationTemporality: 2, isMonotonic: true } },
+            { name: "openxnet.coordination.events", sum: { dataPoints: [{ asInt: String(taskGraphs.reduce((total, graph) => total + graph.events.length, 0)), timeUnixNano: endTime }], aggregationTemporality: 2, isMonotonic: true } },
+            { name: "openxnet.skill_evolution.rounds", sum: { dataPoints: [{ asInt: String(skillEvolutionRuns.reduce((total, run) => total + run.rounds.length, 0)), timeUnixNano: endTime }], aggregationTemporality: 2, isMonotonic: true } },
+          ],
+        }],
+      }],
+    };
+  }
+
+  /** 原子写入 UTF-8 文本产物；输入目标路径和内容，无返回，重复导出时安全覆盖旧文件。 */
+  private async writeUtf8Artifact(destination: string, content: string): Promise<void> {
+    await mkdir(path.dirname(destination), { recursive: true });
+    const temporaryPath = `${destination}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporaryPath, content, { encoding: "utf8", flag: "wx", mode: 0o600 });
+      try {
+        await rename(temporaryPath, destination);
+      } catch {
+        await rm(destination, { force: true });
+        await rename(temporaryPath, destination);
+      }
+    } catch (error) {
+      await rm(temporaryPath, { force: true });
+      throw error;
+    }
+  }
+
   /** 同步一个 Incident 的知识投影；输入快照、事件和可选复盘 Skill，失败时保留控制面结果并记录固定诊断。 */
   private async synchronizeIncidentKnowledge(
     snapshot: ApplicationCompetitionSnapshot,
@@ -2321,6 +3964,25 @@ export class ApplicationCompetitionRuntimeService {
         outcome: receipt.outcome,
         recordedAt: receipt.recordedAt,
       })),
+      taskGraphs: snapshot.taskGraphs.filter(belongsToIncident).slice(-20).map((graph) => ({
+        ...graph,
+        conflictPolicies: graph.conflictPolicies.slice(0, 20),
+        nodes: graph.nodes.slice(0, 200).map((node) => ({
+          ...node,
+          dependsOn: node.dependsOn.slice(0, 50),
+          evidenceIds: node.evidenceIds.slice(0, 100),
+        })),
+      })),
+      reasoningDecisions: snapshot.reasoningDecisions.filter(belongsToIncident).slice(-100).map((decision) => ({
+        ...decision,
+        query: decision.query.slice(0, 2048),
+        knowledgeRefs: decision.knowledgeRefs.slice(0, 100),
+        candidates: decision.candidates.slice(0, 20).map((candidate) => ({
+          ...candidate,
+          ruleCodes: candidate.ruleCodes.slice(0, 50),
+          ruleReasons: candidate.ruleReasons.slice(0, 50),
+        })),
+      })),
       retrospective,
     };
   }
@@ -2356,9 +4018,33 @@ function normalizeRuntimeError(error: unknown): ApplicationCompetitionRuntimeErr
   return new ApplicationCompetitionRuntimeError("UPSTREAM_UNAVAILABLE", "竞赛平台工具暂时不可用。", true);
 }
 
+/** 判断企业 Skill 是否覆盖当前运行环境；输入资产认证和 Adapter 模式，返回是否允许声明复用。 */
+function isEnterpriseSkillReusable(
+  skill: ApplicationCompetitionEnterpriseSkillResolution,
+  adapterMode: ApplicationCompetitionAdapterMode,
+): boolean {
+  if (skill.lifecycleStatus !== "verified" && skill.lifecycleStatus !== "active") return false;
+  const allowedScopes = adapterMode === "fixture"
+    ? new Set(["simulation", "staging", "shadow", "canary", "production"])
+    : new Set(["staging", "shadow", "canary", "production"]);
+  if (!allowedScopes.has(skill.environmentScope)) return false;
+  return skill.environmentScope !== "production" || skill.productionEligible;
+}
+
 /** 生成 JSON 的稳定 SHA-256；输入结构化值，返回十六进制摘要。 */
 function digestJson(value: unknown): string {
   return createHash("sha256").update(stableSerialize(value), "utf8").digest("hex");
+}
+
+/** 把评分约束到零至一并保留四位小数；输入任意有限数，返回稳定评分。 */
+function roundScore(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(Math.max(0, Math.min(1, value)) * 10_000) / 10_000;
+}
+
+/** 为 Task Graph 工具节点生成稳定 ID；输入阶段和工具名，返回不含歧义的节点标识。 */
+function taskNodeId(prefix: string, toolName: string): string {
+  return `${prefix}:${toolName.replace(/[^A-Za-z0-9._-]/gu, "-")}`;
 }
 
 /** 对 JSON 值执行确定性序列化；输入未知值，返回按对象键排序的 JSON 文本。 */
@@ -2388,6 +4074,22 @@ function textArgument(value: unknown, fallback: string): string {
 /** 读取工具参数正整数或默认值；输入未知参数和默认值，返回正整数。 */
 function integerArgument(value: unknown, fallback: number): number {
   return Number.isInteger(value) && Number(value) > 0 ? Number(value) : fallback;
+}
+
+/** 把内部标识映射为固定长度十六进制遥测 ID；输入文本和长度，返回不可逆摘要。 */
+function telemetryId(value: string, length: 16 | 32): string {
+  return createHash("sha256").update(value, "utf8").digest("hex").slice(0, length);
+}
+
+/** 把 ISO 时间转换为 OTLP 纳秒时间字符串；输入时间，非法值返回零。 */
+function toUnixNano(value: string): string {
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) ? (BigInt(milliseconds) * 1_000_000n).toString() : "0";
+}
+
+/** 把文本键值映射为 OTLP 属性；输入普通对象，返回 stringValue 属性数组。 */
+function telemetryAttributes(values: Readonly<Record<string, string>>): readonly Readonly<Record<string, unknown>>[] {
+  return Object.entries(values).map(([key, value]) => ({ key, value: { stringValue: value } }));
 }
 
 /** 从快照读取事件；输入快照和 ID，返回记录，不存在时抛出领域错误。 */

@@ -1,0 +1,46 @@
+{
+  "schema": "openxnet.skill-engineering.v2",
+  "skill_id": "synapxnet-feature-drift-recovery",
+  "name": "跨域特征漂移恢复",
+  "description": "对齐 DataOps 血缘、MLOps 输入契约和 AIOps 业务状态，完成止损、回填、重训练与灰度恢复。",
+  "version": "1.0.0",
+  "family_id": "family-synapxnet-feature-drift-recovery",
+  "problem_fingerprint": "feature-drift:upstream-contract-change",
+  "evidence_origin": "work",
+  "derivation_method": "work_crystallization",
+  "environment_scope": "simulation",
+  "environment_fingerprint": "goai-fixture-feature-drift-v2",
+  "lifecycle_status": "verified",
+  "scenario_type": "feature-drift",
+  "plan_step_count": 9,
+  "strategies": [
+    {
+      "strategy_id": "fallback-before-repair",
+      "name": "备用特征止损后完整修复",
+      "description": "先用认证备用特征恢复业务，再回填数据、重训练并渐进发布。",
+      "workflow": ["fallback-feature-apply", "feature-history-backfill", "repaired-dataset-gate", "risk-model-retrain", "risk-model-evaluation", "risk-model-register", "risk-canary-release", "risk-full-promotion", "fallback-feature-remove"],
+      "tool_chain": ["mlops.feature.fallback.apply", "dataops.feature.backfill.start", "dataops.dataset.validation.get", "mlops.training.search.start", "mlops.model.evaluation.run", "mlops.model.register", "mlops.deployment.canary.apply", "mlops.deployment.promote", "mlops.feature.fallback.remove"],
+      "risk_level": "high",
+      "cost_score": 0.9,
+      "source_event_ids": []
+    }
+  ],
+  "certifications": [
+    {
+      "scope": "simulation",
+      "status": "verified",
+      "environment_fingerprint": "goai-fixture-feature-drift-v2",
+      "evidence_event_ids": ["test:feature-drift-complete"]
+    },
+    {
+      "scope": "staging",
+      "status": "candidate",
+      "environment_fingerprint": "goai-staging",
+      "evidence_event_ids": []
+    }
+  ],
+  "contracts": {
+    "input_schema": "synapxnet.skill.feature-drift.input.v1",
+    "output_schema": "synapxnet.skill.feature-drift.output.v1"
+  }
+}

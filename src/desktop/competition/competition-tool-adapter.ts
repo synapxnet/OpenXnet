@@ -420,7 +420,8 @@ export class FixtureCompetitionToolAdapter implements CompetitionToolAdapter {
       }
       case "dataops.dataset.validation.get": {
         const datasetUid = String(argumentsValue.datasetUid ?? "");
-        const ready = datasetUid.includes("quant")
+        const quantitativeDataset = datasetUid === "a-share-factor-demo-v1" || datasetUid.includes("quant");
+        const ready = quantitativeDataset
           ? completedTools.has("dataops.training.dataset.build")
           : completedTools.has("dataops.feature.backfill.start");
         return success({
@@ -430,7 +431,14 @@ export class FixtureCompetitionToolAdapter implements CompetitionToolAdapter {
           schemaMatch: ready,
           qualityPassRate: ready ? 1 : 0,
           reproducible: ready,
-          historyCoverageMonths: datasetUid.includes("quant") ? 60 : 36,
+          historyCoverageMonths: quantitativeDataset ? 10 : 36,
+          ...(quantitativeDataset ? {
+            rowCount: 4_461,
+            symbolCount: 80,
+            sourceDateFrom: "2025-11-10",
+            sourceDateTo: "2026-08-26",
+            usageBoundary: "RESEARCH_ONLY / SIMULATION_ONLY",
+          } : {}),
         });
       }
       case "mlops.deployment.get":
@@ -438,27 +446,53 @@ export class FixtureCompetitionToolAdapter implements CompetitionToolAdapter {
           deploymentUid: argumentsValue.deploymentUid,
           activeRevision: currentRevision,
           resourceVersion: String(currentResourceVersion),
-          inputDimension: currentRevision <= 17 ? 120 : 128,
-          revisions: [18, 17, 16],
+          inputDimension: scenarioType === "quantitative-iteration" ? 5 : currentRevision <= 17 ? 120 : 128,
+          revisions: scenarioType === "quantitative-iteration" ? [2, 1] : [18, 17, 16],
+          ...(scenarioType === "recommendation-capacity" ? {
+            ready: true,
+            modelVersion: "recommendation-dcn-demo-v1",
+            algorithmId: "dcn_1",
+            candidateCount: 8,
+            modelDigestSha256: "be0cc4b7845294b61439469a345944aabea9c0878b94f3ea850230d72d697915",
+            approvalId: "APR-MEP-PROMOTE-20260828-001",
+          } : {}),
         });
       case "mlops.attribution.report.get":
         return success({
           deploymentUid: argumentsValue.deploymentUid,
           reportUid: argumentsValue.reportUid,
-          informationCoefficient: recovered ? 0.035 : 0.01,
-          informationCoefficientThreshold: 0.03,
-          sharpeImprovement: recovered ? 0.05 : -0.12,
-          regimeDrift: recovered ? "CONTROLLED" : "VALUE_TO_MOMENTUM",
-          degradedFactors: recovered ? [] : ["value_30d", "book_to_price", "earnings_yield"],
+          informationCoefficient: recovered ? 0.25228567 : -0.00993273,
+          informationCoefficientThreshold: 0.1,
+          sharpeImprovement: recovered ? 8.98509775 : 0,
+          maximumDrawdownChange: recovered ? 0.04354786 : 0,
+          regimeDrift: recovered ? "CONTROLLED" : "MULTI_PERIOD_MOMENTUM",
+          degradedFactors: recovered ? [] : ["volatility_20", "volume_expansion", "amount_expansion"],
+          recommendedFactors: ["momentum_5", "momentum_20", "momentum_60", "momentum_120", "volatility_20"],
+          usageBoundary: "RESEARCH_ONLY / SIMULATION_ONLY",
         });
       case "mlops.inference.probe":
         return success({
           deploymentUid: argumentsValue.deploymentUid,
-          passed: recovered && !forcedVerificationFailure,
+          passed: (scenarioType === "quantitative-iteration" || recovered) && !forcedVerificationFailure,
           sampleCount: argumentsValue.sampleLimit,
-          errorRate: recovered && !forcedVerificationFailure ? 0.01 : 0.82,
-          p95Ms: recovered && !forcedVerificationFailure ? 112 : 870,
-          contractMatch: recovered && !forcedVerificationFailure,
+          errorRate: (scenarioType === "quantitative-iteration" || recovered) && !forcedVerificationFailure
+            ? scenarioType === "quantitative-iteration" ? 0.4832
+              : scenarioType === "recommendation-capacity" ? 0 : 0.01
+            : 0.82,
+          p95Ms: (scenarioType === "quantitative-iteration" || recovered) && !forcedVerificationFailure
+            ? scenarioType === "quantitative-iteration" ? 0.02 : 112
+            : 870,
+          contractMatch: (scenarioType === "quantitative-iteration" || recovered) && !forcedVerificationFailure,
+          contractStatus: (scenarioType === "quantitative-iteration" || recovered) && !forcedVerificationFailure
+            ? "MATCHED"
+            : "MISMATCHED",
+          ...(scenarioType === "recommendation-capacity" ? {
+            algorithmId: "dcn_1",
+            productVersion: "recommendation-dcn-demo-v1",
+            candidateCount: 8,
+            modelDigestSha256: "be0cc4b7845294b61439469a345944aabea9c0878b94f3ea850230d72d697915",
+            approvalId: "APR-MEP-PROMOTE-20260828-001",
+          } : {}),
         });
       case "mlops.model.iteration.start": {
         const governance = request.governance;
@@ -506,10 +540,10 @@ export class FixtureCompetitionToolAdapter implements CompetitionToolAdapter {
           evaluationUid: `evaluation-${request.requestId}`,
           status: trained ? "PASSED" : "FAILED",
           passed: trained,
-          informationCoefficient: trained ? 0.038 : 0.01,
-          sharpeImprovement: trained ? 0.06 : -0.12,
-          maximumDrawdownChange: trained ? -0.012 : 0.03,
-          adversarialValidationPassed: trained,
+          informationCoefficient: trained && scenarioType === "quantitative-iteration" ? 0.25228567 : trained ? 0.038 : 0.01,
+          sharpeImprovement: trained && scenarioType === "quantitative-iteration" ? 8.98509775 : trained ? 0.06 : -0.12,
+          maximumDrawdownChange: trained && scenarioType === "quantitative-iteration" ? 0.04354786 : trained ? -0.012 : 0.03,
+          temporalSplitPassed: trained,
           contractMatched: trained,
           businessKpiRecovered: trained,
         });
@@ -687,13 +721,13 @@ export class FixtureCompetitionToolAdapter implements CompetitionToolAdapter {
       "dataops.feature.backfill.start": "修正版历史特征数据已经完成回填。",
       "dataops.dataset.validation.get": "训练数据集质量与契约验证已返回。",
       "mlops.deployment.get": `当前部署修订为 ${revision}。`,
-      "mlops.attribution.report.get": recovered ? "候选模型归因与风险指标达到门槛。" : "价值因子退化且市场状态发生漂移。",
+      "mlops.attribution.report.get": recovered ? "候选模型归因与风险指标达到门槛。" : "低波动与量能基线弱于多周期动量候选。",
       "mlops.inference.probe": recovered && !forcedVerificationFailure
         ? "推理探针通过。"
         : "推理探针确认输入契约不匹配。",
       "mlops.model.iteration.start": "模型受控迭代动作已受理。",
       "mlops.feature.pipeline.publish": "候选特征流水线已经发布。",
-      "mlops.training.search.start": "并行训练搜索已经完成。",
+      "mlops.training.search.start": "30 组受限训练搜索已经完成。",
       "mlops.model.evaluation.run": "候选模型评估结果已经生成。",
       "mlops.model.register": "候选模型和模型卡已经登记。",
       "mlops.feature.fallback.apply": "备用特征集已经启用。",
