@@ -80,7 +80,7 @@ GOAI 决赛版为 **v1.3.0**，主场景固定为“跨域特征漂移恢复”�
 
 ## 开发与验证
 
-开发依赖包括 Python 3.12、Node.js/npm 与各服务需要的外部依赖，确切版本见 [pyproject.toml](pyproject.toml)、[package.json](package.json) 和锁文件。先按依赖与环境配置准备本地开发环境：
+开发依赖包括 Python 3.12、[uv](https://docs.astral.sh/uv/getting-started/installation/)、Node.js/npm 与各服务需要的外部依赖；运行以下命令前需先安装这些工具，确切版本见 [pyproject.toml](pyproject.toml)、[package.json](package.json) 和锁文件。先按依赖与环境配置准备本地开发环境：
 
 ```sh
 git clone --branch v1.3.0 --single-branch https://github.com/synapxnet/OpenXnet.git

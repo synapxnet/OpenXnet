@@ -80,7 +80,7 @@ The shared [resident agent implementation](services/platform-resident-agent/DESI
 
 ## Development and verification
 
-The source uses Python 3.12, Node.js/npm and the external dependencies needed by the selected services. See [pyproject.toml](pyproject.toml), [package.json](package.json) and lock files for dependency versions. After preparing the development environment:
+The source uses Python 3.12, [uv](https://docs.astral.sh/uv/getting-started/installation/), Node.js/npm and the external dependencies needed by the selected services. Install these tools before running the commands below. See [pyproject.toml](pyproject.toml), [package.json](package.json) and lock files for dependency versions. After preparing the development environment:
 
 ```sh
 git clone --branch v1.3.0 --single-branch https://github.com/synapxnet/OpenXnet.git
