@@ -3,7 +3,7 @@ Copyright (C) 2026 Synapxnet. All rights reserved.
 This file is Synapxnet Proprietary and Confidential. It is strictly
 forbidden to copy, distribute, or use without explicit authorization.
 项目自述与发布入口 / Project readme and release entry points.
-Author: maoyo | Department: 研发部 | Date: 2026-09-17
+Author: maoyo | Department: 研发部 | Date: 2026-09-18
 Version: 1.3.0 | Security Level: INTERNAL
 Maintainer: maoyo | Email: synapxnet@gmail.com
 -->
@@ -52,6 +52,22 @@ GOAI 决赛版为 **v1.3.0**，主场景固定为“跨域特征漂移恢复”�
 
 访问码、模型 API Key 和内部执行凭据不随源码或安装包公开。服务地址由部署配置管理，变更服务器地址不要求重新打包客户端。
 
+## 三平台在线体验与登录
+
+以下是 GOAI Staging 演示环境的入口，与 GitHub 源码页、软件发布页分别管理。
+
+| 平台 | 在线体验 | 后端 API 基址 | 后端固定源码 | 前端固定源码 |
+|---|---|---|---|---|
+| XnetAIOps | [https://goai.xnetaiops.synapxnet.online/](https://goai.xnetaiops.synapxnet.online/) | `https://goai.xnetaiops.synapxnet.online/api/usr` | [XnetAIops/tree/v1.3.0](https://github.com/synapxnet/XnetAIops/tree/v1.3.0) | [XnetAIops-web/tree/v1.3.0](https://github.com/synapxnet/XnetAIops-web/tree/v1.3.0) |
+| XnetDataOps | [https://goai.xnetdataops.synapxnet.online/](https://goai.xnetdataops.synapxnet.online/) | `https://goai.xnetdataops.synapxnet.online/api` | [XnetDataops/tree/v1.3.0](https://github.com/synapxnet/XnetDataops/tree/v1.3.0) | [XnetDataops-web/tree/v1.3.0](https://github.com/synapxnet/XnetDataops-web/tree/v1.3.0) |
+| XnetMLOps | [https://goai.xnetmlops.synapxnet.online/](https://goai.xnetmlops.synapxnet.online/) | `https://goai.xnetmlops.synapxnet.online/api` | [XnetMLops/tree/v1.3.0](https://github.com/synapxnet/XnetMLops/tree/v1.3.0) | [XnetMLops-web/tree/v1.3.0](https://github.com/synapxnet/XnetMLops-web/tree/v1.3.0) |
+
+三平台演示登录：手机号 **17870171303**，六位演示验证码 **000000**。这是管理员指定的演示认证，不是八位密码，也不表示真实短信服务已配置。后端 API 需要登录凭据，浏览器直接打开受保护接口返回 401 不代表平台离线；各业务服务还有独立前缀，以配套仓库最新使用说明为准。
+
+以上登录信息仅用于三平台；OpenXnet 账号、AgentTeams 演示访问码、工作空间 Live 授权和模型 API Key 是不同凭据。AgentTeams 连接地址为 `https://goai.xnetaiops.synapxnet.online/agentteams-adapter/`，访问码和 Live 授权由管理员单独发放。驻场 Agent 在线与 AgentTeams 团队已绑定也不是同一状态，本轮 DataOps 回读的自动跨域移交状态仍为待接入，跨域 Demo 由 OpenXnet / AgentTeams 编排。
+
+固定标签内的 README 保留发行时内容。当前演示地址、认证方式和部署修订以配套仓库 `GOAI-Competition` 的 README 及 Release 顶部使用指南为准。
+
 ## 配套平台 v1.3.0
 
 | 平台 | 专业范围 | 后端 | 前端 |
@@ -67,14 +83,14 @@ GOAI 决赛版为 **v1.3.0**，主场景固定为“跨域特征漂移恢复”�
 开发依赖包括 Python 3.12、Node.js/npm 与各服务需要的外部依赖，确切版本见 [pyproject.toml](pyproject.toml)、[package.json](package.json) 和锁文件。先按依赖与环境配置准备本地开发环境：
 
 ```sh
-git clone --branch GOAI-Competition https://github.com/synapxnet/OpenXnet.git
+git clone --branch v1.3.0 --single-branch https://github.com/synapxnet/OpenXnet.git
 cd OpenXnet
 uv sync
 npm ci
 npm run dev
 ```
 
-固定发布版本可切换到 `v1.3.0` 标签。上述命令用于源码开发；不能替代模型配置、数据库及三平台部署，也不是普通安装者的必经步骤。桌面程序和独立服务分别构建，所用命令与资源以当前仓库脚本为准。
+以上克隆命令直接选定 `v1.3.0` 固定版本。上述命令用于源码开发；不能替代模型配置、数据库及三平台部署，也不是普通安装者的必经步骤。桌面程序和独立服务分别构建，所用命令与资源以当前仓库脚本为准。
 
 已完成的决赛验证包括 OpenXnet 类型检查与 144 项针对性回归；成功路径使用 Live Staging，失败补偿演示使用 Fixture 平台数据，两者均保留真实 AgentTeams 协作和人工批准。不能将 Fixture 称为生产故障注入，也不能将补偿成功称为业务已恢复。
 

@@ -3,7 +3,7 @@ Copyright (C) 2026 Synapxnet. All rights reserved.
 This file is Synapxnet Proprietary and Confidential. It is strictly
 forbidden to copy, distribute, or use without explicit authorization.
 项目自述与发布入口 / Project readme and release entry points.
-Author: maoyo | Department: 研发部 | Date: 2026-09-17
+Author: maoyo | Department: 研发部 | Date: 2026-09-18
 Version: 1.3.0 | Security Level: INTERNAL
 Maintainer: maoyo | Email: synapxnet@gmail.com
 -->
@@ -52,6 +52,22 @@ The recovery flow is: business anomaly → cross-domain evidence → plan → hu
 
 Model keys, internal execution credentials and demo access codes are not distributed with the source or installer. Service addresses are configurable; changing a server address does not require rebuilding the desktop client.
 
+## Online platform demos and sign-in
+
+These are the GOAI Staging demo endpoints. Repository source pages and release downloads are separate entry points.
+
+| Platform | Online demo | Backend API base | Pinned backend source | Pinned frontend source |
+|---|---|---|---|---|
+| XnetAIOps | [https://goai.xnetaiops.synapxnet.online/](https://goai.xnetaiops.synapxnet.online/) | `https://goai.xnetaiops.synapxnet.online/api/usr` | [XnetAIops/tree/v1.3.0](https://github.com/synapxnet/XnetAIops/tree/v1.3.0) | [XnetAIops-web/tree/v1.3.0](https://github.com/synapxnet/XnetAIops-web/tree/v1.3.0) |
+| XnetDataOps | [https://goai.xnetdataops.synapxnet.online/](https://goai.xnetdataops.synapxnet.online/) | `https://goai.xnetdataops.synapxnet.online/api` | [XnetDataops/tree/v1.3.0](https://github.com/synapxnet/XnetDataops/tree/v1.3.0) | [XnetDataops-web/tree/v1.3.0](https://github.com/synapxnet/XnetDataops-web/tree/v1.3.0) |
+| XnetMLOps | [https://goai.xnetmlops.synapxnet.online/](https://goai.xnetmlops.synapxnet.online/) | `https://goai.xnetmlops.synapxnet.online/api` | [XnetMLops/tree/v1.3.0](https://github.com/synapxnet/XnetMLops/tree/v1.3.0) | [XnetMLops-web/tree/v1.3.0](https://github.com/synapxnet/XnetMLops-web/tree/v1.3.0) |
+
+For all three platform demos, use phone **17870171303** and six-digit demo code **000000**. This is administrator-designated demo authentication, not an eight-digit password or proof of a configured SMS delivery service. Protected API endpoints require a login token; an unauthenticated 401 does not mean the platform is offline. Business services also use separate path prefixes documented in each companion repository.
+
+These credentials are for the three platforms only. OpenXnet accounts, AgentTeams demo access codes, workspace Live authorization and model API keys are distinct. The AgentTeams endpoint is `https://goai.xnetaiops.synapxnet.online/agentteams-adapter/`; its access code and Live grants are provided separately. An online resident agent does not mean an AgentTeams team is bound. DataOps currently reports automatic platform-to-platform handoff as pending integration; OpenXnet / AgentTeams orchestrate the cross-domain demo.
+
+The fixed tags retain the original release README. For corrected deployment instructions and current access details, use each companion repository's `GOAI-Competition` README or the guide linked at the top of its release page.
+
 ## Companion platform releases
 
 | Platform | Scope | Backend | Frontend |
@@ -67,14 +83,14 @@ The shared [resident agent implementation](services/platform-resident-agent/DESI
 The source uses Python 3.12, Node.js/npm and the external dependencies needed by the selected services. See [pyproject.toml](pyproject.toml), [package.json](package.json) and lock files for dependency versions. After preparing the development environment:
 
 ```sh
-git clone --branch GOAI-Competition https://github.com/synapxnet/OpenXnet.git
+git clone --branch v1.3.0 --single-branch https://github.com/synapxnet/OpenXnet.git
 cd OpenXnet
 uv sync
 npm ci
 npm run dev
 ```
 
-Check out `v1.3.0` for the frozen release baseline. These are developer steps; model configuration, databases and platform deployment are separate prerequisites. Desktop and standalone service packages use their respective build scripts.
+The clone command selects the frozen `v1.3.0` release baseline. These are developer steps; model configuration, databases and platform deployment are separate prerequisites. Desktop and standalone service packages use their respective build scripts.
 
 The release passed OpenXnet type checking and 144 targeted regressions. The demonstrated success path used Live Staging, while the compensation path used Fixture platform data; both retained real AgentTeams collaboration and human approval. Fixture failure injection is not a production incident, and compensation success is not business recovery.
 
