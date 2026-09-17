@@ -44,7 +44,7 @@ Maintainer: maoyo | Email: synapxnet@gmail.com
 
 以上登录信息仅用于三平台；OpenXnet 账号、AgentTeams 演示访问码、工作空间 Live 授权和模型 API Key 是不同凭据。AgentTeams 连接地址为 `https://goai.xnetaiops.synapxnet.online/agentteams-adapter/`，访问码和 Live 授权由管理员单独发放。驻场 Agent 在线与 AgentTeams 团队已绑定也不是同一状态，本轮 DataOps 回读的自动跨域移交状态仍为待接入，跨域 Demo 由 OpenXnet / AgentTeams 编排。
 
-固定标签内的 README 保留发行时内容。当前演示地址、认证方式和部署修订以配套仓库 `GOAI-Competition` 的 README 及 Release 顶部使用指南为准。
+七个 `v1.3.0` 源码页与源码包均纳入本次修订的 README。各发布页分别列明已验证的程序基线和文档修订；本次修订不改变程序代码与安装包。
 
 ## 安装与协作
 
