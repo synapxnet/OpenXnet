@@ -8,6 +8,7 @@
     "/v1/chat/completions",
     "/simple_chat",
     "/v1/chat/abort",
+    "/v1/chat/recovery-status",
     "/v1/models",
     "/execute_tool_manually",
     "/v1/kernel/approvals/resolve",
@@ -58,13 +59,28 @@
     return parsed;
   }
 
-  /** Create a standards-compatible abort error for stream readers. */
+  /** 创建标准取消错误并明确标记用户停止。 / Create a standard abort error with explicit user-cancellation semantics. */
   function createAbortError() {
-    if (typeof DOMException === "function") {
-      return new DOMException("The Desktop Chat request was aborted.", "AbortError");
+    const error = typeof DOMException === "function"
+      ? new DOMException("The Desktop Chat request was aborted.", "AbortError")
+      : new Error("The Desktop Chat request was aborted.");
+    if (error.name !== "AbortError") error.name = "AbortError";
+    error.cancelled = true;
+    return error;
+  }
+
+  /** 保留真实终止字段供宿主分类，禁止推断状态或重试。 / Preserve actual terminal fields for host classification without inferring status or retries. */
+  function createStreamError(event) {
+    const cancelled = event.cancelled === true;
+    const error = new Error(String(event.message || (cancelled
+      ? "The Desktop Chat request was aborted."
+      : "Desktop Chat stream failed.")));
+    if (cancelled) error.name = "AbortError";
+    if (typeof event.code === "string" && event.code.trim()) error.code = event.code;
+    if (typeof event.cancelled === "boolean") error.cancelled = event.cancelled;
+    if (Number.isInteger(event.status) && event.status >= 100 && event.status <= 599) {
+      error.status = event.status;
     }
-    const error = new Error("The Desktop Chat request was aborted.");
-    error.name = "AbortError";
     return error;
   }
 
@@ -108,14 +124,16 @@
     }
   }
 
-  /** Start one typed stream and expose its ordered IPC bytes as a ReadableStream Response. */
+  /** 启动有序IPC流并在确认前后保留相同的终止原因。 / Start an ordered IPC stream and retain its terminal reason across acknowledgement. */
   async function startDesktopStream(mode, request, signal) {
+    if (signal?.aborted) throw createAbortError();
     const api = global.openxnetDesktop;
     const streamId = createStreamId();
     const conversationId = String(request.conversation_id || request.conversationId || "").trim();
     let controller;
     let expectedSequence = 1;
     let terminal = false;
+    let terminalFailure = null;
     const body = new ReadableStream({
       /** Capture the stream controller before any IPC event can arrive. */
       start(nextController) {
@@ -133,31 +151,40 @@
       action();
     }
 
-    /** Consume one ordered event belonging to this Renderer-owned stream. */
+    /** 保留首个终止错误，避免启动确认失败覆盖用户停止。 / Retain the first terminal error so acknowledgement failure cannot overwrite user Stop. */
+    function fail(error) {
+      finish(/** 同步保存错误并终止流读取。 / Save the error and terminate stream reads together. */ () => {
+        terminalFailure = error;
+        controller.error(error);
+      });
+    }
+
+    /** 消费本流有序事件并保留失败与主动取消的区别。 / Consume ordered events for this stream while distinguishing failure from explicit cancellation. */
     function handleStreamEvent(event) {
       if (!event || event.streamId !== streamId || terminal) return;
       if (event.sequence !== expectedSequence) {
-        finish(() => controller.error(new Error("Desktop Chat stream event sequence is invalid.")));
+        fail(new Error("Desktop Chat stream event sequence is invalid."));
         return;
       }
       expectedSequence += 1;
       if (event.type === "chunk") {
         controller.enqueue(decodeBase64Chunk(event.dataBase64));
       } else if (event.type === "complete") {
-        finish(() => controller.close());
+        if (event.cancelled === true) fail(createStreamError(event));
+        else finish(/** 正常完成时关闭读取。 / Close reads after normal completion. */ () => controller.close());
       } else if (event.type === "error") {
-        finish(() => controller.error(new Error(String(event.message || "Desktop Chat stream failed."))));
+        fail(createStreamError(event));
       }
     }
 
-    /** Propagate a browser AbortSignal across the typed cancellation boundary. */
+    /** 经类型化取消边界传递用户停止，并保留首个终止原因。 / Propagate user Stop across the typed cancellation boundary and retain the first terminal reason. */
     function handleAbort() {
       if (terminal) return;
       void api.abortApplicationChat({
         streamId,
         ...(conversationId ? { conversationId } : {}),
       }).catch(() => undefined);
-      finish(() => controller.error(createAbortError()));
+      fail(createAbortError());
     }
 
     unsubscribe = api.onApplicationChatStreamEvent(handleStreamEvent);
@@ -176,12 +203,13 @@
         },
       });
     } catch (error) {
-      finish(() => controller.error(error));
-      throw error;
+      const failure = terminalFailure || (signal?.aborted ? createAbortError() : error);
+      fail(failure);
+      throw failure;
     }
   }
 
-  /** Route one recognized request through typed IPC and retain HTTP for other profiles. */
+  /** 将固定聊天请求和只读恢复查询映射到类型化IPC。 / Map fixed chat requests and read-only recovery queries to typed IPC. */
   async function openxnetChatFetch(input, init = undefined) {
     let path;
     try {
@@ -195,6 +223,13 @@
 
     const method = resolveRequestMethod(input, init);
     const api = global.openxnetDesktop;
+    if (path === "/v1/chat/recovery-status") {
+      if (method !== "GET") throw new TypeError("Desktop recovery status requires GET.");
+      if (typeof api.getApplicationChatRecoveryStatus !== "function") throw new TypeError("Desktop recovery status is unavailable.");
+      const requestUrl = new URL(typeof Request !== "undefined" && input instanceof Request ? input.url : String(input), global.location.href);
+      if ([...requestUrl.searchParams.keys()].some(/** 拒绝未知查询参数。 / Reject query fields outside the contract. */ key => key !== "conversation_id") || requestUrl.searchParams.getAll("conversation_id").length !== 1) throw new TypeError("Desktop recovery status requires one conversation_id.");
+      return createCommandResponse(await api.getApplicationChatRecoveryStatus({ conversationId: requestUrl.searchParams.get("conversation_id") }));
+    }
     if (path === "/v1/models") {
       if (method !== "GET" && method !== "POST") return nativeFetch(input, init);
       return createCommandResponse(await api.listApplicationChatModels());
@@ -224,6 +259,7 @@
         ...(payload.approval_type ? { approvalType: payload.approval_type } : {}),
         ...(payload.approval_id ? { approvalId: payload.approval_id } : {}),
         ...(payload.trace_id ? { traceId: payload.trace_id } : {}),
+        ...(payload.conversationId !== undefined ? { conversationId: payload.conversationId } : {}),
       }));
     }
     return createCommandResponse(await api.resolveApplicationChatApproval({

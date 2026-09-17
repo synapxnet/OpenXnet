@@ -1,3 +1,26 @@
+<!--
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+决赛源码版本对应 / Finals source version correspondence.
+Author: maoyo | Department: 研发部 | Date: 2026-09-17
+Version: 1.3.0 | Security Level: INTERNAL
+__version__: 1.3.0 | __author__: maoyo | __copyright__: Copyright 2026 Synapxnet
+__maintainer__: maoyo | __email__: synapxnet@gmail.com
+-->
+
+# OpenXnet GOAI Finals V1.3.0
+
+Current source delivery is on `GOAI-Competition`, product version `1.3.0`, with AgentTeams Adapter `1.3.0-live.4`. This commit does not create a release tag or publish a GitHub binary release.
+
+See [V1.3.0 source delivery and verification](docs/GOAI-FINALS-V1.3.0-SOURCE-DELIVERY.md) for component versions, submission scope, passing checks, known limitations, and Live / Fixture evidence boundaries.
+
+The `sbom.cdx.json` inherited from the earlier release is a historical dependency inventory; it has not been regenerated for V1.3.0 and must not be presented as this version's validated SBOM. Current dependency versions are recorded in the committed lock files.
+
+## Archived release baseline
+
+The following section describes the earlier suite and its tag. Its version, base commit and SBOM count do not describe the V1.3.0 delivery above.
+
 # OpenXnet GOAI Competition Suite goai-v1.1.0
 
 ## Component

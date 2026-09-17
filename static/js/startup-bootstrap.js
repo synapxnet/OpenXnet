@@ -52,6 +52,7 @@
     } catch (error) {
       console.warn("Failed to persist bootstrap theme:", error);
     }
+    global.restoreOpenXnetSkin?.();
   }
 
   /** Return a serializable, non-secret startup measurement snapshot. */

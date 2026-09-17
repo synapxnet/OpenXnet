@@ -163,13 +163,14 @@ class QueryEngine:
         self._checkpoint_last_preview_len = 0
 
     async def _consume_live_guidance(self, stage: str, tool_name: str = "") -> List[Any]:
-        """Consume queued user guidance at safe checkpoints."""
+        """在当前会话安全检查点接收引导，不终止模型。 / Receive scoped guidance at safe checkpoints without aborting the model."""
         try:
             from py.kernel.guidance import get_guidance_bus
             items = get_guidance_bus().consume(
                 conversation_id=self.conversation_id,
                 turn_id=self.turn_id,
                 trace_id=tool_name or "",
+                stage=stage,
             )
             if items:
                 logger.info(f"[QueryEngine] Consumed {len(items)} live guidance item(s) at {stage}")

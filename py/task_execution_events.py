@@ -7,6 +7,8 @@ import asyncio
 from collections.abc import Mapping
 import json
 import os
+from py.conversation_automation import conversation_identity, project_automation
+from py.conversation_agent_transcript import AgentTranscript
 from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -165,6 +167,12 @@ def build_task_execution_checkpoint(
         for key in details_context_keys
         if context.get(key) is not None
     }
+    checkpoint_context["origin_conversation_id"] = conversation_identity(context.get("origin_conversation_id"))
+    if isinstance(context.get("automation"), dict):
+        checkpoint_context["automation"] = project_automation(context["automation"], 20)
+    if isinstance(context.get("agent_transcript"), dict):
+        # 只将已经清理且有界的公开消息同步到Core。 / Synchronize only sanitized bounded public messages into Core.
+        checkpoint_context["agent_transcript"] = AgentTranscript(task, _bounded_text(context.get("executor_session_id"), 128)).snapshot()
     details_patch = {
         "checkpoint_schema": TASK_EXECUTION_CHECKPOINT_SCHEMA,
         "current_iteration": context.get("current_iteration"),
@@ -212,6 +220,10 @@ def build_task_execution_checkpoint(
             "last_event": message,
             "last_error": error,
             "details_truncated": True,
+            "context": {
+                "origin_conversation_id": checkpoint_context.get("origin_conversation_id", ""),
+                **({"automation": project_automation(context["automation"], 5)} if isinstance(context.get("automation"), dict) else {}),
+            },
         }
     return checkpoint
 

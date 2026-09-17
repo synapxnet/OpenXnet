@@ -18,8 +18,12 @@ const requiredTests = [
   "tests/application_agent_runtime_renderer.test.cjs",
   "tests/application_memory_management_renderer.test.cjs",
   "tests/application_goai_competition_renderer.test.cjs",
+  "tests/application_competition_live_connection_renderer.test.cjs",
   "tests/application_staff_role_studio_renderer.test.cjs",
   "tests/application_enterprise_sandbox_collaboration_renderer.test.cjs",
+  "tests/application_enterprise_services_renderer.test.cjs",
+  "tests/enterprise_spatial_scene.test.cjs",
+  "tests/enterprise_spatial_preferences.test.cjs",
 ];
 
 // 检查每个固定测试入口是否随源码发布，缺失时阻断测试命令。

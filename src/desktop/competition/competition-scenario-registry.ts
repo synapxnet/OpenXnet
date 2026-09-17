@@ -3,6 +3,7 @@ import type {
   ApplicationCompetitionScenarioType,
 } from "../contracts/application-competition-runtime";
 import type { CompetitionToolName } from "./competition-tool-registry";
+import { bindCompetitionResourceVersions } from "./competition-resource-versions";
 
 /** 场景内一次固定工具调用。 */
 export interface CompetitionScenarioToolCall {
@@ -478,7 +479,7 @@ function buildFeatureDriftProfile(
           phase: "REPAIR",
           kind: "QUALITY_GATE",
           toolName: "dataops.dataset.validation.get",
-          resourceId: `dataset_risk_repaired_${scenario.targetRevision}`,
+          resourceId: `${scenario.assetUid}/backfill`,
           targetRevision: scenario.targetRevision,
           expectedResourceVersion: offsetResourceVersion(scenario.expectedResourceVersion, 1),
           arguments: { datasetUid: `dataset_risk_repaired_${scenario.targetRevision}` },
@@ -628,16 +629,16 @@ function buildFeatureDriftProfile(
   };
 }
 
-/** 解析场景配置；输入事件资源上下文，返回固定白名单中的编排定义。 */
+/** 解析场景配置并绑定内部调查版本；返回固定白名单计划。 / Resolve an allowlisted scenario profile and bind internal investigation versions. */
 export function getCompetitionScenarioProfile(
   scenario: ApplicationCompetitionScenarioContext,
 ): CompetitionScenarioProfile {
   switch (scenario.scenarioType) {
     case "recommendation-capacity":
-      return buildRecommendationCapacityProfile(scenario);
+      return bindCompetitionResourceVersions(buildRecommendationCapacityProfile(scenario), scenario.governedResourceVersions);
     case "quantitative-iteration":
-      return buildQuantitativeIterationProfile(scenario);
+      return bindCompetitionResourceVersions(buildQuantitativeIterationProfile(scenario), scenario.governedResourceVersions);
     case "feature-drift":
-      return buildFeatureDriftProfile(scenario);
+      return bindCompetitionResourceVersions(buildFeatureDriftProfile(scenario), scenario.governedResourceVersions);
   }
 }

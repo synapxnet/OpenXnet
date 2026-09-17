@@ -1,3 +1,5 @@
+import '../../../static/js/openxnet-conversation-model.js';
+
 function getHostApp() {
   return typeof window !== 'undefined' ? window.openxnetApp || null : null;
 }
@@ -559,75 +561,92 @@ function normalizeActivityTime(value) {
   return Number.isFinite(num) && num > 0 ? num : 0;
 }
 
+/** 使用共用模型展示真实活动；project authoritative activity through the shared model. */
 function buildActivityState(host, message, isLatest, isZh) {
-  if (!message || message.role !== 'assistant') {
-    return { visible: false, steps: [], signature: '' };
-  }
-  const now = Date.now();
-  const log = Array.isArray(message.activityLog) ? message.activityLog : [];
-  const hasRuntime = log.length > 0 || (!!host?.isTyping && isLatest);
-  if (!hasRuntime) {
-    return { visible: false, steps: [], signature: '' };
-  }
-  const startedAt = normalizeActivityTime(message.activityStartedAt)
-    || normalizeActivityTime(message.createdAt)
-    || normalizeActivityTime(message.id)
-    || now;
-  const endedAt = normalizeActivityTime(message.activityEndedAt);
-  const isActive = !!host?.isTyping && isLatest && !message.generationFinished;
-  const elapsedMs = (endedAt || now) - startedAt;
-  const fallbackStep = {
-    id: 'assistant-thinking',
-    kind: 'thinking',
-    status: isActive ? 'running' : 'done',
-    label: isActive ? (isZh ? '正在' : 'Now') : (isZh ? '已完成' : 'Done'),
-    title: isActive ? (isZh ? '思考下一步' : 'Thinking about the next step') : (isZh ? '完成回复' : 'Finished'),
-    startedAt,
-    updatedAt: now,
-    endedAt: isActive ? null : (endedAt || now),
-  };
-  const normalized = (log.length ? log : [fallbackStep]).map((step, index) => {
-    const stepStartedAt = normalizeActivityTime(step?.startedAt) || startedAt;
-    const stepEndedAt = normalizeActivityTime(step?.endedAt);
-    const status = String(step?.status || 'running');
-    const duration = stepEndedAt && stepEndedAt >= stepStartedAt ? formatDuration(stepEndedAt - stepStartedAt) : '';
-    return {
-      id: String(step?.id || `activity-${index}`),
-      kind: String(step?.kind || 'status'),
-      status,
-      label: String(step?.label || (status === 'running' ? (isZh ? '正在' : 'Now') : (isZh ? '已完成' : 'Done'))),
-      title: String(step?.title || '').trim(),
-      detail: String(step?.detail || '').trim(),
-      duration,
-      order: index,
-      running: status === 'running',
-    };
-  }).filter((step) => step.title || step.label);
-  const sorted = normalized.slice().sort((a, b) => {
-    if (a.kind === 'thinking' && b.kind !== 'thinking') return 1;
-    if (a.kind !== 'thinking' && b.kind === 'thinking') return -1;
-    return a.order - b.order;
-  }).slice(-8);
-  const signature = [
-    Math.floor(elapsedMs / 1000),
-    isActive ? 'active' : 'done',
-    ...sorted.map((step) => [step.id, step.status, step.label, step.title, step.detail, step.duration].join(':')),
-  ].join('|');
-  return {
-    visible: sorted.length > 0,
-    active: isActive || sorted.some((step) => step.running),
-    elapsedLabel: isZh ? `已处理 ${formatDuration(elapsedMs)}` : `Processed ${formatDuration(elapsedMs)}`,
-    steps: sorted,
-    signature,
-  };
+  return globalThis.OpenXnetConversationModel.projectMessageActivity(message, {
+    isZh, active: !!host?.isTyping && isLatest && !message?.generationFinished,
+  });
 }
 
-function normalizeLiveMessages(host) {
-  const filtered = (host?.messages || []).filter((message, index) => {
-    return !(message?.role === 'system' && index === 0);
+/** 仅使用消息自带身份，历史消息不追随当前角色；use message-owned identity without relabeling history. */
+function getMessageIdentity(message, role) {
+  return globalThis.OpenXnetConversationModel.normalizeIdentity(message?.identity, {
+    fallbackName: String(message?.agentName || (role === 'user' ? 'User' : 'Assistant')),
+    fallbackKind: role,
   });
+}
+
+/** 映射已经发送的附件，不使用输入框草稿；map sent attachments independently of composer drafts. */
+function getSentAttachments(message) {
+  return [...toArray(message?.fileLinks).map((item) => ({ ...item, kind: 'file' })),
+    ...toArray(message?.imageLinks).map((item) => ({ ...item, kind: 'image' }))]
+    .map((item, index) => ({
+      id: String(item.artifact_id || item.id || `attachment-${index}`),
+      name: String(item.name || item.originalName || 'Attachment'), kind: item.kind,
+      path: globalThis.OpenXnetConversationModel.normalizeIdentity({ image: String(item.path || '') }).image,
+    }));
+}
+
+/** 提取可见助手正文，排除嵌套工具块和隐藏推理；extract visible assistant text without nested tool blocks or hidden reasoning. */
+function getAssistantVisibleText(value) {
+  const raw = String(value || '');
+  const tokens = /```[^\n]*\n[\s\S]*?(?:```|$)|~~~[^\n]*\n[\s\S]*?(?:~~~|$)|`[^`\n]+`|<!--[\s\S]*?(?:-->|$)|<\/?[a-z][a-z0-9-]*(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
+  const stack = [];
+  let hiddenCount = 0;
+  let offset = 0;
+  let result = '';
+  for (const match of raw.matchAll(tokens)) {
+    if (!hiddenCount) result += raw.slice(offset, match.index);
+    const token = match[0];
+    offset = match.index + token.length;
+    if (!token.startsWith('<')) {
+      if (!hiddenCount) result += token;
+      continue;
+    }
+    if (token.startsWith('<!--')) continue;
+    const tag = /^<\/?([a-z][a-z0-9-]*)/i.exec(token)?.[1]?.toLowerCase() || '';
+    if (token.startsWith('</')) {
+      const index = stack.map((entry) => entry.tag).lastIndexOf(tag);
+      if (index >= 0) {
+        for (const entry of stack.splice(index)) if (entry.hidden) hiddenCount -= 1;
+      }
+      if (!hiddenCount && /^(?:p|div|li|pre|h[1-6]|blockquote|tr)$/.test(tag)) result += '\n';
+      continue;
+    }
+    const className = /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(token);
+    const classes = String(className?.[1] || className?.[2] || className?.[3] || '').split(/\s+/);
+    const hidden = /^(?:think|thought|analysis|reasoning|script|style|template)$/.test(tag)
+      || classes.some((name) => /^(?:highlight-block(?:-[\w-]+)?|approval-card)$/.test(name))
+      || /\shidden(?:\s|=|\/?>)/i.test(token)
+      || /\baria-hidden\s*=\s*["']?true(?:["'\s>])/i.test(token)
+      || /\bstyle\s*=\s*["'][^"']*(?:display\s*:\s*none|visibility\s*:\s*hidden)/i.test(token);
+    const selfClosing = /\/\s*>$/.test(token) || /^(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/.test(tag);
+    if (!hiddenCount && !hidden && /^(?:br|hr)$/.test(tag)) result += '\n';
+    if (!selfClosing) {
+      stack.push({ tag, hidden });
+      if (hidden) hiddenCount += 1;
+    }
+  }
+  if (!hiddenCount) result += raw.slice(offset);
+  /** 只解码文本实体，不再次解析成 HTML；decode text entities without reparsing executable HTML. */
+  const decodeEntity = (entity, code) => {
+    const normalized = code.toLowerCase();
+    const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+    if (Object.prototype.hasOwnProperty.call(named, normalized)) return named[normalized];
+    const number = normalized.startsWith('#x') ? parseInt(normalized.slice(2), 16) : parseInt(normalized.slice(1), 10);
+    return Number.isInteger(number) && number > 0 && number <= 0x10ffff && !(number >= 0xd800 && number <= 0xdfff)
+      ? String.fromCodePoint(number) : entity;
+  };
+  return result.replace(/&(amp|lt|gt|quot|apos|nbsp|#\d+|#x[0-9a-f]+);/gi, decodeEntity)
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** 保留消息原索引、身份、回执和附件；retain original indices, identity, receipts, and sent attachments. */
+function normalizeLiveMessages(host) {
+  const filtered = (host?.messages || []).map((message, sourceIndex) => ({ message, sourceIndex }))
+    .filter(({ message }) => message?.role !== 'system');
   const isZh = isCurrentLanguageZh(host);
-  return filtered.map((message, index) => {
+  return filtered.map(({ message, sourceIndex }, index) => {
     const role = message?.role === 'assistant' ? 'assistant' : 'user';
     const isLatest = index === filtered.length - 1;
     const activity = buildActivityState(host, message, isLatest, isZh);
@@ -649,9 +668,15 @@ function normalizeLiveMessages(host) {
     return {
       id: String(message?.id || `live-${index}`),
       role,
-      text: role === 'user' ? stripHtml(content) : '',
+      sourceIndex,
+      conversationId: String(message?.conversationId || host?.conversationId || ''),
+      identity: getMessageIdentity(message, role),
+      attachments: getSentAttachments(message),
+      memoryContext: globalThis.OpenXnetConversationModel.normalizeMemoryContext(toArray(message?.memoryContext)
+        .filter((receipt) => String(receipt?.conversationId || '') === String(message?.conversationId || host?.conversationId || ''))),
+      text: role === 'user' ? stripHtml(content) : getAssistantVisibleText(content),
       html: role === 'assistant'
-        ? formatAssistantHtml(host, renderContent, index, messageKey, renderStateKey)
+        ? formatAssistantHtml(host, renderContent, sourceIndex, messageKey, renderStateKey)
         : '',
       typing: role === 'assistant' && !String(content || '').trim() && !!host?.isTyping && isLatest,
       time: getMessageTimeLabel(message),
@@ -666,6 +691,7 @@ function getEmptyStatePrompt(isZh) {
     : 'Send your first message to start chatting with the assistant.';
 }
 
+/** 展示角色记忆与原生记忆各自配置；expose role and native memory controls independently. */
 function getSettingsState(host, isZh) {
   if (!host) {
     return {
@@ -677,6 +703,8 @@ function getSettingsState(host, isZh) {
       systemPrompt: '',
       memoryEnabled: false,
       memoryAvailable: false,
+      nativeMemoryEnabled: true,
+      nativeMemoryAvailable: false,
       interpreterEnabled: false,
       asrEnabled: false,
       webSearchEnabled: false,
@@ -731,6 +759,8 @@ function getSettingsState(host, isZh) {
     systemPrompt: String(host.system_prompt || '').trim(),
     memoryEnabled: !!memorySettings.is_memory,
     memoryAvailable: typeof memorySettings.is_memory === 'boolean',
+    nativeMemoryEnabled: memorySettings.synapxnetV3Enabled !== false,
+    nativeMemoryAvailable: typeof host.autoSaveSettings === 'function',
     interpreterEnabled: !!codeSettings.enabled,
     asrEnabled: !!asrSettings.enabled,
     webSearchEnabled: !!webSearchSettings.enabled,
@@ -751,6 +781,9 @@ function getSettingsState(host, isZh) {
     roleCardAvatarBackground: roleCardState.selectedAvatarBackground,
     roleCards: roleCardState.cards,
     isElectron: !!host.isElectron,
+    completionNotificationsEnabled: host.systemSettings?.completionNotificationsEnabled !== false,
+    completionNotificationSound: host.systemSettings?.completionNotificationSound === true,
+    completionPreferencesAvailable: typeof window.electronAPI?.saveSystemSettings === 'function' && typeof window.openxnetDesktop?.publishCompletionNotice === 'function',
     // —— 新增：权限模式 + 上下文进度 + custom 服务商每日积分 ——
     workspace: buildWorkspaceState(host, isZh),
     permission: buildPermissionState(host, isZh),
@@ -796,6 +829,7 @@ function buildWorkspaceState(host, isZh) {
     projects,
     git: gitEnabled ? {
       enabled: true,
+      canSwitch: typeof host?.switchGitBranch === 'function',
       branch: String(gitInfo.branch || gitInfo.currentBranch || 'main'),
       branches: Array.isArray(gitInfo.branches) ? gitInfo.branches : [],
       dirty: !!gitInfo.dirty,
@@ -805,21 +839,65 @@ function buildWorkspaceState(host, isZh) {
   };
 }
 
-function buildPermissionState(host, isZh) {
-  const current = getActivePermissionMode(host);
-  const hostOptions = getHostPermissionOptions(host);
-  const options = (hostOptions.length ? hostOptions : [
-    { value: 'default', label: isZh ? '默认只读模式' : 'Default read-only mode' },
-    { value: 'plan', label: isZh ? '计划模式' : 'Plan' },
-    { value: 'acceptEdits', label: isZh ? '接受编辑模式' : 'Accept edit mode' },
-    { value: 'bypassPermissions', label: isZh ? '最高权限模式' : 'All permissions mode' },
-  ]).sort(sortPermissionOptions).map((item) => decoratePermissionOption(item, isZh));
-  if (current && !options.some((item) => item.id === current)) {
-    options.unshift(decoratePermissionOption({ value: current, label: getPermissionModeLabel(host, current, isZh) }, isZh));
-  }
-  return { current, options };
+const pendingPermissionChanges = new WeakMap();
+const uncertainPermissionScopes = new WeakMap();
+
+/** 读取当前引擎及其真实权限字段。 / Read the current engine and its actual permission settings field. */
+function permissionEngine(host) {
+  const engine = String(host?.CLISettings?.engine || 'local').trim().toLowerCase();
+  const keys = { ds: 'dsSettings', cc: 'ccSettings', oc: 'ocSettings', qc: 'qcSettings', local: 'localEnvSettings' };
+  return { id: engine, key: keys[engine] || 'localEnvSettings' };
 }
 
+/** 将保存与失败确认绑定到原引擎和工作区。 / Bind saves and uncertain outcomes to their original engine and workspace. */
+function permissionScopeKey(host) {
+  return JSON.stringify([permissionEngine(host).id, getWorkspaceKey(host?.CLISettings?.cc_path)]);
+}
+
+/** 保留未确认状态，让用户能重新保存当前模式。 / Retain uncertainty so the current mode can be explicitly saved again. */
+function markPermissionUncertain(host, scope, uncertain) {
+  let scopes = uncertainPermissionScopes.get(host);
+  if (!scopes) { scopes = new Set(); uncertainPermissionScopes.set(host, scopes); }
+  if (uncertain) scopes.add(scope); else scopes.delete(scope);
+}
+
+/** 使用现有引擎的模式值补全没有提供选项的宿主。 / Use existing engine mode values when the host does not provide options. */
+function permissionOptions(host, isZh) {
+  const hostOptions = getHostPermissionOptions(host);
+  if (hostOptions.length) return hostOptions;
+  const engine = permissionEngine(host).id;
+  return [
+    { value: 'default', label: isZh ? '默认只读模式' : 'Default read-only mode' },
+    { value: 'plan', label: isZh ? '计划模式' : 'Plan' },
+    { value: ['cc', 'oc'].includes(engine) ? 'acceptEdits' : engine === 'qc' ? 'auto-edit' : 'auto-approve', label: isZh ? '接受编辑模式' : 'Accept edit mode' },
+    { value: ['cc', 'oc'].includes(engine) ? 'bypassPermissions' : 'yolo', label: isZh ? '最高权限模式' : 'All permissions mode' },
+    { value: 'cowork', label: isZh ? 'Cowork 模式' : 'Cowork mode' },
+  ];
+}
+
+/** 展示已确认的权限与适用范围，不依赖工作区是否打开。 / Show confirmed permissions and their scope independently of workspace loading. */
+function buildPermissionState(host, isZh) {
+  const pending = host ? pendingPermissionChanges.get(host) : null;
+  const engine = permissionEngine(host).id;
+  const scope = permissionScopeKey(host);
+  const current = pending?.scope === scope ? pending.previousMode : getActivePermissionMode(host);
+  const uncertain = !!host && !!uncertainPermissionScopes.get(host)?.has(scope);
+  const available = !!host && typeof host.autoSaveSettings === 'function';
+  const options = permissionOptions(host, isZh).sort(sortPermissionOptions).map((item) => decoratePermissionOption(item, isZh, engine));
+  if (current && !options.some((item) => item.id === current)) {
+    options.unshift({ ...decoratePermissionOption({ value: current, label: getPermissionModeLabel(host, current, isZh) }, isZh, engine), disabled: true });
+  }
+  const engineName = ({ local: isZh ? '本地环境' : 'Local', ds: isZh ? 'Docker 沙箱' : 'Docker Sandbox', cc: 'Claude Code', oc: 'Codex', qc: 'Qwen Code' })[engine] || engine;
+  let scopeHint = !available
+    ? (isZh ? '当前仅显示已保存模式，权限设置暂不可保存。' : 'Showing the saved mode; permission settings cannot currently be saved.')
+    : isZh
+      ? `适用于${engineName}的受控工具；${host.CLISettings?.enabled ? '代码智能已开启。' : '保存不会自动开启代码智能。'}`
+      : `Applies to governed tools in ${engineName}; ${host.CLISettings?.enabled ? 'code intelligence is enabled.' : 'saving does not enable code intelligence.'}`;
+  if (uncertain) scopeHint += isZh ? ' 上次保存结果尚未确认，请重新选择当前模式保存。' : ' The last save is unconfirmed. Select the current mode again to save it.';
+  return { current, options, available, pending: !!pending, engine, scopeHint, uncertain };
+}
+
+/** 保持已有权限模式的显示顺序。 / Retain the established permission mode ordering. */
 function sortPermissionOptions(left, right) {
   const order = {
     default: 0,
@@ -838,6 +916,7 @@ function sortPermissionOptions(left, right) {
   return leftOrder - rightOrder;
 }
 
+/** 只读取宿主显式提供的权限选项。 / Read only permission options explicitly provided by the host. */
 function getHostPermissionOptions(host) {
   if (!host || typeof host.getCliPermissionModeOptions !== 'function') return [];
   try {
@@ -852,6 +931,7 @@ function getHostPermissionOptions(host) {
   }
 }
 
+/** 优先使用宿主模式名称，保留未知模式原值。 / Prefer host mode names and preserve unknown mode values. */
 function getPermissionModeLabel(host, mode, isZh) {
   try {
     if (host && typeof host.getPermissionModeLabel === 'function') {
@@ -875,6 +955,7 @@ function getPermissionModeLabel(host, mode, isZh) {
   return fallback[id] || id || fallback.default;
 }
 
+/** 读取真正活动引擎的已配置权限。 / Read configured permissions from the actual active engine. */
 function getActivePermissionMode(host) {
   try {
     if (host && typeof host.getActiveCliPermissionMode === 'function') {
@@ -883,18 +964,11 @@ function getActivePermissionMode(host) {
   } catch (error) {
     // noop
   }
-  const engine = String(host?.CLISettings?.engine || 'local').trim().toLowerCase();
-  const map = {
-    ds: host?.dsSettings,
-    cc: host?.ccSettings,
-    oc: host?.ocSettings,
-    qc: host?.qcSettings,
-    local: host?.localEnvSettings,
-  };
-  return String(map[engine]?.permissionMode || host?.CLISettings?.permissionMode || 'default').trim() || 'default';
+  return String(host?.[permissionEngine(host).key]?.permissionMode || host?.CLISettings?.permissionMode || 'default').trim() || 'default';
 }
 
-function decoratePermissionOption(item, isZh) {
+/** 用真实引擎语义说明模式，不扩大它的适用范围。 / Describe modes using actual engine semantics without expanding their scope. */
+function decoratePermissionOption(item, isZh, engine = 'local') {
   const id = String(item?.value || item?.id || 'default').trim() || 'default';
   const normalized = id === 'acceptEdits' || id === 'auto-approve' || id === 'auto-edit'
     ? 'accept'
@@ -909,11 +983,13 @@ function decoratePermissionOption(item, isZh) {
     cowork: 'fa-solid fa-people-arrows',
   };
   const descMap = {
-    plan: isZh ? '只规划不执行，适合先审阅方案' : 'Plan only and review before execution',
-    default: isZh ? '执行工具前会保持确认' : 'Keep confirmation before tool execution',
-    accept: isZh ? '自动接受编辑类操作，敏感操作仍确认' : 'Auto-accept edit operations, keep sensitive prompts',
-    bypass: isZh ? '直接放行工具操作，请确认风险后使用' : 'Allow tool operations directly; use with care',
-    cowork: isZh ? '协作模式，适合多人/多智能体流程' : 'Collaboration mode for multi-agent workflows',
+    plan: isZh ? '先规划和审阅方案，代码工具以只读能力为主' : 'Plan and review first; code tools primarily use read-only capabilities',
+    default: isZh ? '只读工具可用，敏感操作按策略确认' : 'Read-only tools remain available; sensitive actions follow approval policy',
+    accept: engine === 'oc'
+      ? (isZh ? '自动执行工作区编辑与命令，保留沙箱边界' : 'Automate workspace edits and commands within sandbox boundaries')
+      : (isZh ? '自动接受编辑类操作，其他敏感操作仍确认' : 'Auto-accept edits while retaining prompts for other sensitive actions'),
+    bypass: isZh ? '直接放行当前引擎的工具操作，请审阅后选择' : 'Allow current-engine tool operations directly; review before selecting',
+    cowork: isZh ? '多智能体协作，并使用当前引擎的直接放行权限' : 'Multi-agent collaboration with the current engine’s direct tool permissions',
   };
   return {
     id,
@@ -923,33 +999,24 @@ function decoratePermissionOption(item, isZh) {
   };
 }
 
+/** 区分服务用量与字符估算，未知上限保持未知；separate provider usage from estimates and preserve unknown limits. */
 function buildContextWindowState(host, isZh) {
   const settings = host?.settings || {};
-  // 1) 配置上限：优先用 max_input_tokens / context_window；缺省 1M
-  const limit = Number(settings.max_input_tokens || settings.context_window || settings.contextLimit || 1_000_000);
-  // 2) 已用估算：消息总字符数 / 1.8（粗略 zh 平均 token 比）
-  const messages = Array.isArray(host?.messages) ? host.messages : [];
-  let charCount = 0;
-  messages.forEach((m) => {
-    charCount += String(m?.pure_content || m?.content || '').length;
-  });
-  const used = Math.round(charCount / 1.8);
-  const ratio = limit > 0 ? Math.min(1, used / limit) : 0;
-  // OpenXnet 自动压缩阈值约 92% — 接近时提示
-  const warn = ratio >= 0.85;
-  const critical = ratio >= 0.92;
+  const configured = Number(settings.max_input_tokens || settings.context_window || settings.contextLimit || 0);
+  const limit = Number.isFinite(configured) && configured > 0 ? configured : null;
+  const messages = toArray(host?.messages);
+  const latest = messages[messages.length - 1];
+  const measured = latest?.contextUsage;
+  const actual = measured?.actual === true && measured?.source === 'provider' && Number.isFinite(measured.promptTokens) && measured.promptTokens >= 0;
+  const used = actual ? measured.promptTokens : Math.round(messages.reduce((sum, item) => sum + String(item?.pure_content || item?.content || '').length, 0) / 1.8);
+  const ratio = limit ? Math.min(1, used / limit) : 0;
+  const qualifier = actual ? (isZh ? '上次请求实际输入' : 'Last request input') : (isZh ? '估算' : 'Estimated');
   return {
-    used,
-    limit,
-    ratio,
-    percent: Math.round(ratio * 100),
-    warn,
-    critical,
-    autoCompactAt: 0.92,
-    label: isZh ? `${formatTokens(used)} / ${formatTokens(limit)}` : `${formatTokens(used)} / ${formatTokens(limit)}`,
-    summary: isZh
-      ? (critical ? '即将自动压缩' : warn ? '上下文较满，注意压缩' : '上下文充足')
-      : (critical ? 'About to auto-compact' : warn ? 'Context filling up' : 'Plenty of room'),
+    used, limit, ratio, percent: limit ? Math.round(ratio * 100) : null,
+    actual, estimated: !actual, source: actual ? 'provider' : 'characters',
+    warn: !!limit && ratio >= 0.85, critical: !!limit && ratio >= 0.92,
+    label: `${qualifier} ${formatTokens(used)} / ${limit ? formatTokens(limit) : (isZh ? '上限未知' : 'unknown limit')}`,
+    summary: isZh ? (actual ? '服务返回的输入 token 数' : '按消息字符估算，包含工具结果时可能偏差较大') : (actual ? 'Input tokens reported by the provider' : 'Estimated from message characters; tool output may affect accuracy'),
   };
 }
 
@@ -1087,15 +1154,74 @@ function getSnapshot() {
     conversations,
     historyQuery: String(host?.prototypeChatHistoryQuery || ''),
     attachments,
+    automations: getConversationAutomations(host),
+    recovery: typeof host?.getConversationRecoveryState === 'function' ? host.getConversationRecoveryState() : { available: false, pending: false, error: '', reason: '' },
+    guidance: typeof host?.getLiveGuidanceState === 'function' ? host.getLiveGuidanceState() : { available: false, items: [], error: '', notice: '', loading: false, sending: false },
+    connection: getConversationConnectionState(host),
   };
 }
 
+/** 连接提示仅保留公开短文本，去除凭据、隐藏区和URL查询参数。 / Keep only short public connection text without credentials, hidden sections or URL query parameters. */
+function connectionPublicText(value, maximum = 1000) {
+  if (typeof value !== 'string') return '';
+  return getAssistantVisibleText(value)
+    .replace(/\bhttps?:\/\/[^\s<>"']+/gi, /** 去除URL中的认证和查询。 / Remove URL authentication and query data. */ (url) => url.split(/[?#]/)[0].replace(/\/\/[^/@]+@/, '//'))
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(/(["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|passwd|secret|authorization)["']?\s*[:=]\s*)(?:["'][^"'\r\n]*["']|[^\s,;\r\n}]+)/gi, '$1[redacted]')
+    .replace(/\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{16,})\b/g, '[redacted]')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, maximum);
+}
+
+/** 投影当前请求的有限连接状态，不从设备在线信号推断服务健康。 / Project bounded connection state for the current request without inferring service health from device connectivity. */
+function getConversationConnectionState(host) {
+  const idle = { state: 'idle', conversationId: String(host?.conversationId || ''), requestId: '', messageId: '', attempt: 0, maxAttempts: 5, message: '', detail: '', canCheck: false, canContinue: false };
+  if (typeof host?.getConversationConnectionState !== 'function') return idle;
+  const state = host.getConversationConnectionState();
+  if (!state || String(state.conversationId || '') !== idle.conversationId || !['idle', 'offline', 'interrupted', 'checking', 'reachable', 'failed'].includes(state.state)
+    || (state.workspacePath !== undefined && getWorkspaceKey(state.workspacePath) !== getWorkspaceKey(host.CLISettings?.cc_path))) return idle;
+  const maxAttempts = Number.isInteger(state.maxAttempts) && state.maxAttempts >= 1 && state.maxAttempts <= 5 ? state.maxAttempts : 5;
+  const recovery = host.getConversationRecoveryState?.();
+  const messageId = typeof state.messageId === 'string' ? state.messageId : recovery?.requestId === state.requestId ? String(recovery.messageId || '') : '';
+  return { state: state.state, conversationId: idle.conversationId, requestId: typeof state.requestId === 'string' ? state.requestId : '',
+    messageId: (host.messages || []).some(/** 锚点必须属于当前助手回复。 / The anchor must belong to the current assistant reply. */ (message) => message.role === 'assistant' && String(message.id) === messageId && (!message.conversationId || String(message.conversationId) === idle.conversationId)) ? messageId : '',
+    workspacePath: String(host.CLISettings?.cc_path || ''),
+    kind: ['offline', 'http', 'timeout', 'stream', 'transport', 'auth', 'quota', 'application'].includes(state.kind) ? state.kind : '',
+    httpStatus: Number.isInteger(state.httpStatus) && state.httpStatus >= 100 && state.httpStatus <= 599 ? state.httpStatus : null,
+    attempt: Number.isInteger(state.attempt) && state.attempt >= 0 && state.attempt <= maxAttempts ? state.attempt : 0, maxAttempts,
+    message: connectionPublicText(state.message, 400), detail: connectionPublicText(state.detail, 1600),
+    canCheck: state.canCheck === true && typeof host.checkConversationConnection === 'function' && state.state !== 'checking',
+    canContinue: state.canContinue === true && recovery?.available === true && recovery?.pending !== true && recovery.requestId === state.requestId && recovery.conversationId === state.conversationId,
+    continueReason: recovery?.requestId === state.requestId && recovery?.conversationId === state.conversationId ? connectionPublicText(recovery.reason, 400) : '',
+    networkOnline: typeof state.networkOnline === 'boolean' ? state.networkOnline : null, checkedAt: Number.isFinite(state.checkedAt) ? state.checkedAt : null };
+}
+
+const connectionChecks = new WeakMap();
+/** 显式检查原会话状态，只调用只读宿主入口并拒绝迟到跨范围结果。 / Explicitly check the original conversation through the read-only host entry and reject late cross-scope results. */
+async function checkConversationConnection(reference) {
+  const host = getHostApp(); const state = getConversationConnectionState(host);
+  const scope = JSON.stringify([state.conversationId, state.requestId, getWorkspaceKey(host?.CLISettings?.cc_path)]);
+  if (!host || !state.canCheck || reference?.conversationId !== state.conversationId || reference?.requestId !== state.requestId || getWorkspaceKey(reference?.workspacePath) !== getWorkspaceKey(host.CLISettings?.cc_path)) return false;
+  let checks = connectionChecks.get(host); if (!checks) { checks = new Set(); connectionChecks.set(host, checks); }
+  if (checks.has(scope)) return false;
+  checks.add(scope);
+  try {
+    await host.checkConversationConnection(state.conversationId, state.requestId);
+    const current = getConversationConnectionState(host);
+    if (host !== getHostApp() || scope !== JSON.stringify([current.conversationId, current.requestId, getWorkspaceKey(host.CLISettings?.cc_path)])) return false;
+    return current;
+  } catch (error) { throw new Error(isCurrentLanguageZh(host) ? '状态检查未完成，请稍后重试。' : 'The state check did not complete. Please retry.'); }
+  finally { checks.delete(scope); }
+}
+
+/** 只返回宿主实际接受状态；return only the host's actual acceptance result. */
 async function sendMessage(text) {
   const host = getHostApp();
-  if (!host) return false;
+  if (!host || typeof host.handleSendOrGuidance !== 'function') return false;
+  if (!host.isSending && !host.isTyping && (!host.mainAgent || host.mainAgent === 'openxnet-model') && !String(host.settings?.model || '').trim()) {
+    throw new Error(isCurrentLanguageZh(host) ? '请先选择模型' : 'Select a model first');
+  }
   host.userInput = String(text || '');
-  await host.handleSendOrGuidance();
-  return true;
+  return await host.handleSendOrGuidance() === true;
 }
 
 async function saveHostSettings(host) {
@@ -1301,6 +1427,23 @@ async function toggleMemory() {
   }
 }
 
+/** 独立保存原生记忆开关，失败回滚；persist the native memory flag independently and roll back on failure. */
+async function toggleNativeMemory() {
+  const host = getHostApp();
+  if (!host || typeof host.autoSaveSettings !== 'function') return false;
+  if (!host.memorySettings) host.memorySettings = {};
+  const previous = host.memorySettings.synapxnetV3Enabled;
+  const next = previous === false;
+  host.memorySettings.synapxnetV3Enabled = next;
+  try {
+    await host.autoSaveSettings();
+    return true;
+  } catch (error) {
+    if (host.memorySettings.synapxnetV3Enabled === next) host.memorySettings.synapxnetV3Enabled = previous;
+    throw error;
+  }
+}
+
 async function setTemperature(value) {
   const host = getHostApp();
   if (!host) return;
@@ -1400,6 +1543,20 @@ async function openTablePet() {
   await host.startVRM();
 }
 
+/** 打开既有身份配置入口；open the existing identity configuration entry. */
+function openIdentityConfig() {
+  openRoleCardPanel();
+}
+
+/** 将选中文件绑定到当前稳定角色ID；bind a selected file to the currently selected stable role ID. */
+async function importRoleAvatar(file) {
+  const host = getHostApp();
+  const id = String(host?.memorySettings?.selectedMemory || '').trim();
+  if (!id || !toArray(host?.memories).some((item) => String(item?.id || '') === id)) throw new Error('请先选择有效角色 / Select a valid role first.');
+  if (typeof host.importChatRoleAvatar !== 'function') throw new Error('头像存储不可用 / Avatar storage unavailable.');
+  return host.importChatRoleAvatar(id, file);
+}
+
 function openRoleCardPanel() {
   const host = getHostApp();
   if (!host) return;
@@ -1466,8 +1623,8 @@ async function loadConversation(id) {
 
 async function deleteConversation(id) {
   const host = getHostApp();
-  if (!host || typeof host.confirmDeleteConversation !== 'function') return;
-  await host.confirmDeleteConversation(id);
+  if (!host || !id || typeof host.confirmDeleteConversation !== 'function') return false;
+  return await host.confirmDeleteConversation(id) === true;
 }
 
 function setHistoryQuery(value) {
@@ -1536,32 +1693,333 @@ function removeAttachment(item) {
   }
 }
 
+/** 单独停止当前回复，不把草稿作为停止请求提交。 / Stop the current reply independently without submitting its draft. */
+function stopResponse() {
+  const host = getHostApp();
+  if (!host || typeof host.stopGenerate !== 'function' || (!host.isSending && !host.isTyping)) return false;
+  host.stopGenerate(); return true;
+}
+
+/** 在聊天内刷新已有引导队列，宿主统一限制频率与范围。 / Refresh guidance only inside chat, with host-controlled throttling and scope. */
+async function refreshGuidance(force = false) {
+  const host = getHostApp();
+  if (!host || host.activeMenu !== 'chat' || !host.conversationId || typeof host.refreshLiveGuidanceStatus !== 'function') return false;
+  return !!(await host.refreshLiveGuidanceStatus(true, force));
+}
+
+/** 卸载时释放宿主引导轮询，保留真实缓存与在途写入。 / Release guidance polling on unmount while preserving actual cache and in-flight writes. */
+function suspendGuidanceRefresh() { getHostApp()?.stopLiveGuidancePolling?.(); }
+
+/** 编辑或撤回只通过已有原子接口，不能改写另一会话。 / Edit or withdraw through the existing atomic API without changing another conversation. */
+async function updateGuidance(reference, action, text) {
+  const host = getHostApp();
+  if (!host || typeof host.updateLiveGuidance !== 'function' || reference?.scope !== host.getLiveGuidanceState?.().scope) throw new Error('引导会话已变化或接口不可用 / Guidance conversation changed or its interface is unavailable.');
+  return host.updateLiveGuidance(reference, action, text);
+}
+
+/** 明确恢复原会话，不借用发送入口覆盖草稿。 / Explicitly recover the original conversation without overwriting the draft through the send entry point. */
+async function resumeConversationRecovery(reference) {
+  const host = getHostApp();
+  const state = host?.getConversationRecoveryState?.();
+  if (!state?.available || state.pending || typeof host.resumeInterruptedConversation !== 'function'
+    || reference?.conversationId !== state.conversationId || reference?.requestId !== state.requestId
+    || getWorkspaceKey(reference?.workspacePath) !== getWorkspaceKey(host.CLISettings?.cc_path)) return false;
+  return await host.resumeInterruptedConversation(state.conversationId, state.requestId) === true;
+}
+
+/** 只重试持久化，不触发新模型或工具执行。 / Retry persistence only, without starting a model or tool execution. */
+async function retryConversationSave() {
+  const host = getHostApp();
+  if (typeof host?.retryConversationCheckpoint !== 'function') return false;
+  return await host.retryConversationCheckpoint() === true;
+}
+
+const completionPreferenceSaves = new WeakSet();
+/** 复用原生系统设置保存完成提醒，只在明确持久化确认后更新勾选状态。 / Save completion preferences through native system settings and update checkboxes only after confirmed persistence. */
+async function setCompletionPreference(field, enabled) {
+  const host = getHostApp();
+  if (!host || !['completionNotificationsEnabled', 'completionNotificationSound'].includes(field) || typeof enabled !== 'boolean' || typeof window.electronAPI?.saveSystemSettings !== 'function') return false;
+  if (completionPreferenceSaves.has(host)) throw new Error('完成提醒设置正在保存 / Completion preferences are being saved.');
+  completionPreferenceSaves.add(host);
+  try {
+    const settings = { ...(host.systemSettings || {}), completionNotificationsEnabled: host.systemSettings?.completionNotificationsEnabled !== false, completionNotificationSound: host.systemSettings?.completionNotificationSound === true, [field]: enabled };
+    const saved = await window.electronAPI.saveSystemSettings(settings);
+    if (!saved?.settings || saved.settings[field] !== enabled) throw new Error('完成提醒设置未获保存确认 / Completion preference saving was not confirmed.');
+    host.systemSettings = { ...(host.systemSettings || {}), [field]: enabled };
+    return true;
+  } finally { completionPreferenceSaves.delete(host); }
+}
+
+/** 将文件操作绑定到当前会话、步骤和已有回执。 / Bind file operations to the current conversation, step and existing receipt. */
+function resolveConversationFile(reference) {
+  const host = getHostApp();
+  if (!host || !reference || String(reference.conversationId || '').trim() !== String(host.conversationId || '').trim()
+    || getWorkspaceKey(reference.workspacePath) !== getWorkspaceKey(host.CLISettings?.cc_path)) throw new Error('文件所属会话或工作区已变化 / The file conversation or workspace has changed.');
+  const message = normalizeLiveMessages(host).find((item) => item.id === reference.messageId);
+  const step = message?.activity?.steps?.find((item) => item.id === reference.stepId);
+  const file = step?.fileChanges?.find((item) => item.id === reference.fileId && item.path === reference.path);
+  if (!file) throw new Error('此文件不属于所选步骤的回执 / This file is not part of the selected step receipt.');
+  return { workspacePath: String(host.CLISettings?.cc_path || ''), path: file.path };
+}
+
+/** 读取绑定当前消息与子任务的真实会话记录。 / Read the actual transcript bound to the current message and child task. */
+async function readSubagentTranscript(messageId, stepId) {
+  const host = getHostApp();
+  const conversationId = String(host?.conversationId || '').trim();
+  const workspace = getWorkspaceKey(host?.CLISettings?.cc_path);
+  /** 仅从当前会话已有步骤解析任务身份。 / Resolve task identity only from an existing step in the current conversation. */
+  const resolve = () => {
+    if (!host || host !== getHostApp() || conversationId !== String(host.conversationId || '').trim() || workspace !== getWorkspaceKey(host.CLISettings?.cc_path)) throw new Error('会话或工作区已变化 / Conversation or workspace changed.');
+    const message = normalizeLiveMessages(host).find((item) => item.id === messageId && item.conversationId === conversationId);
+    const step = message?.activity?.steps?.find((item) => item.id === stepId && item.kind === 'subagent');
+    if (!step?.taskId) throw new Error('当前步骤没有可读取的子任务 / No readable child task is attached to this step.');
+    return String(step.taskId);
+  };
+  const taskId = resolve();
+  if (typeof window.electronAPI?.readConversationSubagentTranscript !== 'function') throw new Error('当前环境不能读取子任务会话 / Child transcripts are unavailable in this environment.');
+  const result = await window.electronAPI.readConversationSubagentTranscript({ taskId, conversationId });
+  if (resolve() !== taskId || String(result?.conversationId || '') !== conversationId) throw new Error('子任务会话范围已变化 / Child transcript scope changed.');
+  return result?.transcript || null;
+}
+
+const automationCaches = new WeakMap();
+/** 隔离会话与工作区内的自动任务缓存。 / Isolate automation caches by conversation and workspace. */
+function automationScope(host) { return JSON.stringify([String(host?.conversationId || '').trim(), getWorkspaceKey(host?.CLISettings?.cc_path)]); }
+/** 保留一个活动范围，旧范围的迟到读取不得合并。 / Keep one active scope so late reads cannot merge across scopes. */
+function automationCache(host) {
+  const scope = automationScope(host);
+  let cache = automationCaches.get(host);
+  if (!cache || cache.scope !== scope) { cache = { scope, tasks: [], receipts: [], mutations: new Set(), coveredRefs: new Set(), authoritative: false, loaded: false, pending: false, lastAttempt: 0, error: '', generation: 0 }; automationCaches.set(host, cache); }
+  return cache;
+}
+/** 投影有明确归属的自动任务并保留真实运行历史。 / Project explicitly owned automation tasks and their actual run history. */
+function normalizeAutomation(task, host) {
+  const details = task?.details || {};
+  const context = task?.context || details.context || {};
+  const automation = task?.automation || context.automation;
+  const origin = String(task?.originConversationId || context.origin_conversation_id || '').trim();
+  const workspace = task?.workspacePath || task?.workspace_dir || context.workspace_dir || '';
+  if (!automation || !origin || origin !== String(host?.conversationId || '').trim() || (workspace && getWorkspaceKey(workspace) !== getWorkspaceKey(host?.CLISettings?.cc_path))) return null;
+  const id = String(task?.id || task?.core_task_id || task?.task_id || task?.taskId || '').trim();
+  if (!id) return null;
+  const legacyId = String(task?.legacyTaskId || task?.legacy_task_id || task?.taskId || task?.task_id || id);
+  return { id, legacyId, originConversationId: origin, scope: automationScope(host),
+    title: String(task.title || details.title || ''), description: String(task.description || details.description || ''),
+    state: String(automation.state || 'unknown'), status: String(task.status || details.status || 'unknown'),
+    scheduleType: String(task.scheduleType || task.schedule_type || details.schedule_type || ''),
+    scheduleExpression: String(task.scheduleExpression || task.schedule_expression || details.schedule_expression || ''),
+    nextRunAt: String(task.nextRunAt || task.next_run_at || details.next_run_at || ''),
+    updatedAt: String(task.updatedAt || task.updated_at || details.updated_at || ''),
+    completionCondition: String(automation.completion_condition || ''), notificationPolicy: String(automation.notification_policy || 'changes_only'),
+    runs: toArray(automation.runs).slice(-50).map((run) => ({ id: String(run.id || ''), outcome: String(run.outcome || 'unknown'), summary: String(run.summary || ''), evidence: toArray(run.evidence).map((value) => typeof value === 'string' ? value : JSON.stringify(value)), finishedAt: String(run.finished_at || ''), notify: run.notify === true, truncated: run.truncated === true })) };
+}
+/** 只读取已有数据，不在高频快照中访问任务接口。 / Read existing data without making task requests during high-frequency snapshots. */
+function getConversationAutomations(host) {
+  if (!host || host.activeMenu !== 'chat' || !host.conversationId) return { tasks: [], error: '', loading: false, canManage: false };
+  const cache = automationCache(host);
+  const refs = toArray(host.messages).filter((message) => !message.conversationId || String(message.conversationId) === String(host.conversationId)).flatMap((message) => toArray(message.taskRefs));
+  const tasks = [];
+  // 只合并读取后新收到的回执，已删除任务不能被旧创建回执复活。 / Merge only receipts received after the last read so old creation receipts cannot resurrect deleted tasks.
+  for (const raw of [...(cache.authoritative ? [] : toArray(host.taskList)), ...cache.tasks, ...refs.filter((ref) => !cache.coveredRefs.has(JSON.stringify(ref))), ...cache.receipts]) {
+    const task = normalizeAutomation(raw, host);
+    if (!task) continue;
+    const index = tasks.findIndex((item) => item.id === task.id || item.legacyId === task.legacyId || item.id === task.legacyId || item.legacyId === task.id);
+    if (index < 0) tasks.push(task); else tasks[index] = { ...tasks[index], ...task, id: tasks[index].id !== tasks[index].legacyId && task.id === task.legacyId ? tasks[index].id : task.id };
+  }
+  return { tasks: tasks.map((task) => ({ ...task, mutationPending: cache.mutations.has(task.legacyId) })), error: cache.error, loading: cache.pending, canManage: typeof window.openxnetChatFetch === 'function', canOpenCenter: typeof host.openTaskCenter === 'function' };
+}
+/** 离开聊天或卸载时使未完成的任务读取失效。 / Invalidate unfinished task reads when leaving chat or unmounting. */
+function suspendAutomationRefresh() {
+  const host = getHostApp();
+  const cache = host && automationCaches.get(host);
+  if (cache) { cache.generation += 1; cache.pending = false; cache.loaded = false; }
+}
+/** 仅在聊天内以五秒间隔刷新真实任务，拒绝迟到结果。 / Refresh actual tasks only in chat at five-second intervals and reject stale results. */
+async function refreshAutomations({ open = false, force = false } = {}) {
+  const host = getHostApp();
+  if (!host || host.activeMenu !== 'chat' || !host.conversationId) { suspendAutomationRefresh(); return false; }
+  const cache = automationCache(host);
+  const now = Date.now();
+  if (cache.pending || (!force && cache.loaded && ((!open && !getConversationAutomations(host).tasks.length) || now - cache.lastAttempt < 5000))) return false;
+  cache.pending = true; cache.loaded = true; cache.lastAttempt = now;
+  const generation = ++cache.generation;
+  const readRefs = toArray(host.messages).flatMap((message) => toArray(message.taskRefs)).map((ref) => JSON.stringify(ref));
+  /** 检查当前界面仍属于发起读取的范围。 / Verify the interface still owns the requesting scope. */
+  const current = () => host === getHostApp() && host.activeMenu === 'chat' && automationCaches.get(host) === cache && automationScope(host) === cache.scope && cache.generation === generation;
+  try {
+    const desktop = window.openxnetDesktop;
+    const workspacePath = String(host.CLISettings?.cc_path || '').trim();
+    let result;
+    if (typeof desktop?.listTasks === 'function') {
+      result = await desktop.listTasks(workspacePath ? { workspacePath } : {});
+      if (!current()) return false;
+      if (Array.isArray(result?.tasks)) cache.tasks = result.tasks;
+      if (workspacePath && typeof desktop.refreshTaskExecutions === 'function') result = await desktop.refreshTaskExecutions({ workspacePath });
+    } else if (typeof window.openxnetChatFetch === 'function') {
+      const response = await window.openxnetChatFetch('/v1/tasks/list');
+      if (!response.ok) throw new Error(`任务读取失败 / Task read failed (${response.status}).`);
+      result = await response.json();
+    } else return false;
+    if (!current()) return false;
+    if (result?.error || !Array.isArray(result?.tasks)) throw new Error(String(result?.error || '任务返回格式无效 / Invalid task response.'));
+    if (result.workspace_path && getWorkspaceKey(result.workspace_path) !== getWorkspaceKey(workspacePath)) throw new Error('任务工作区不匹配 / Task workspace mismatch.');
+    cache.tasks = result.tasks; cache.receipts = []; cache.error = ''; cache.authoritative = true; cache.coveredRefs = new Set(readRefs);
+    return true;
+  } catch (error) { if (current()) cache.error = error?.message || '任务读取失败 / Task read failed.'; return false; }
+  finally { if (current()) cache.pending = false; }
+}
+/** 从当前可见任务身份解析受控操作，不接受任意任务标识。 / Resolve controlled operations from visible tasks instead of accepting arbitrary task IDs. */
+function resolveConversationAutomation(reference) {
+  const host = getHostApp();
+  if (!host || host.activeMenu !== 'chat' || !reference || reference.scope !== automationScope(host)) throw new Error('自动任务所属会话已变化 / Automation conversation changed.');
+  const task = getConversationAutomations(host).tasks.find((item) => item.id === reference.id && item.legacyId === reference.legacyId);
+  if (!task) throw new Error('当前会话没有此自动任务 / This automation does not belong to the current conversation.');
+  return { host, task };
+}
+/** 通过既有受控工具暂停、恢复或结束任务，不乐观修改状态。 / Pause, resume or complete through the controlled tool without optimistic state changes. */
+async function updateConversationAutomation(reference, action) {
+  const { host, task } = resolveConversationAutomation(reference);
+  if (!['pause', 'resume', 'complete'].includes(action) || typeof window.openxnetChatFetch !== 'function') throw new Error('自动任务操作不可用 / Automation action unavailable.');
+  const cache = automationCache(host);
+  if (cache.mutations.has(task.legacyId)) throw new Error('此自动任务正在确认操作 / This automation already has an action pending.');
+  cache.mutations.add(task.legacyId);
+  try {
+    const response = await window.openxnetChatFetch('/execute_tool_manually', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_name: 'update_automation_task', tool_params: { task_id: task.legacyId, action }, conversationId: String(host.conversationId), approval_type: 'once' }) });
+    const result = await response.json();
+    resolveConversationAutomation(reference);
+    if (['approval_required', 'awaiting_approval'].includes(result?.status) || ['approval_required', 'awaiting_approval'].includes(result?.type)) return { success: false, awaitingApproval: true };
+    if (!response.ok || result?.success !== true || ['error', 'failed', 'rejected'].includes(result?.status)) throw new Error(typeof result?.result === 'string' ? result.result : String(result?.error || '自动任务操作失败 / Automation action failed.'));
+    cache.generation += 1; cache.pending = false;
+    const updated = normalizeAutomation(result.taskRef, host);
+    if (updated) { cache.receipts = cache.receipts.filter((receipt) => normalizeAutomation(receipt, host)?.legacyId !== updated.legacyId); cache.receipts.push(result.taskRef); }
+    // 读取下一次快照时保持刚收到的真实状态；后续正常刷新会重新核对。 / Retain the actual receipt in the next snapshot; normal refresh reconciles it later.
+    cache.lastAttempt = Date.now();
+    return { success: true };
+  } finally { cache.mutations.delete(task.legacyId); }
+}
+/** 打开既有任务中心并定位实际任务。 / Open the existing task center at the actual task. */
+async function openAutomationTaskCenter(reference) {
+  const { host, task } = resolveConversationAutomation(reference);
+  if (typeof host.openTaskCenter !== 'function') return false;
+  host.openTaskCenter();
+  suspendAutomationRefresh();
+  if (typeof host.fetchTasks === 'function') await host.fetchTasks();
+  if (automationScope(host) !== reference.scope) return false;
+  if (typeof host.fetchTaskDetail === 'function') await host.fetchTaskDetail(task.id);
+  return true;
+}
+
+const selectedConversationFiles = new Map();
+/** 以完整回执身份隔离原生单文件授权。 / Isolate native single-file grants using the complete receipt identity. */
+function conversationFileKey(reference) {
+  return JSON.stringify([reference.conversationId, reference.workspacePath, reference.messageId, reference.stepId, reference.fileId, reference.path]);
+}
+
+/** 仅复用本桥接实际收到的原生文件授权。 / Reuse only native file grants actually received by this bridge. */
+function conversationFileRequest(reference, selected = false) {
+  const request = resolveConversationFile(reference);
+  if (!selected) return request;
+  const grant = selectedConversationFiles.get(conversationFileKey(reference));
+  if (!grant) throw new Error('原生文件授权已失效 / The native file grant is no longer available.');
+  return { ...request, path: grant.path, grantId: grant.grantId };
+}
+
+/** 只暴露本机实际提供的文件能力。 / Expose only file capabilities actually provided by the desktop. */
+function conversationFileCapabilities() {
+  const api = typeof window !== 'undefined' ? window.electronAPI : null;
+  return { read: typeof api?.readConversationFile === 'function', actions: typeof api?.actOnConversationFile === 'function', editors: typeof api?.listConversationFileEditors === 'function', select: typeof api?.selectConversationFile === 'function' };
+}
+
+/** 明确请求读取受工作区边界约束的当前文件。 / Explicitly read the current file within the workspace boundary. */
+async function readConversationFile(reference, selected = false) {
+  const request = conversationFileRequest(reference, selected);
+  if (!conversationFileCapabilities().read) throw new Error('当前环境不能读取本机文件 / Local file reading is unavailable.');
+  const result = await window.electronAPI.readConversationFile(request);
+  resolveConversationFile(reference);
+  return result;
+}
+
+/** 通过原生对话框明确选择单个文件，保留独立来源。 / Explicitly select a single file through the native dialog and retain its distinct source. */
+async function selectConversationFile(reference) {
+  resolveConversationFile(reference);
+  if (!conversationFileCapabilities().select) throw new Error('当前环境没有原生文件选择 / Native file selection is unavailable.');
+  const result = await window.electronAPI.selectConversationFile({ path: reference.path });
+  resolveConversationFile(reference);
+  if (!result?.canceled) {
+    if (typeof result?.grantId !== 'string' || typeof result?.path !== 'string') throw new Error('原生文件授权无效 / Invalid native file grant.');
+    selectedConversationFiles.set(conversationFileKey(reference), { grantId: result.grantId, path: result.path });
+    while (selectedConversationFiles.size > 32) selectedConversationFiles.delete(selectedConversationFiles.keys().next().value);
+  }
+  return result;
+}
+
+/** 查询实际安装的编辑器，不创建固定占位选项。 / Query installed editors without inventing placeholder options. */
+async function listConversationFileEditors(reference) {
+  resolveConversationFile(reference);
+  if (!conversationFileCapabilities().editors) return [];
+  const editors = await window.electronAPI.listConversationFileEditors();
+  resolveConversationFile(reference);
+  return toArray(editors).filter((item) => item && typeof item.id === 'string' && typeof item.label === 'string');
+}
+
+/** 仅对已选回执调用原生文件动作，不拼接命令。 / Invoke native file actions only for selected receipts without constructing commands. */
+async function actOnConversationFile(reference, action, editorId = '', selected = false) {
+  const request = conversationFileRequest(reference, selected);
+  if (!['open-default', 'reveal', 'save-as', 'open-editor'].includes(action)) throw new Error('不支持的文件操作 / Unsupported file operation.');
+  if (!conversationFileCapabilities().actions) throw new Error('当前环境没有本机文件操作 / Native file actions are unavailable.');
+  return window.electronAPI.actOnConversationFile({ ...request, action, ...(action === 'open-editor' ? { editorId: String(editorId) } : {}) });
+}
+
+/** 保存明确选择的权限，不启用 CLI，失败恢复原值。 / Save explicitly selected permissions without enabling CLI, restoring prior values on failure. */
 async function setPermissionMode(mode) {
   const host = getHostApp();
-  if (!host) return false;
-  const next = String(mode || 'default').trim() || 'default';
-  if (!host.CLISettings) host.CLISettings = {};
-  if (host.CLISettings.cc_path) {
-    host.CLISettings.enabled = true;
+  if (!host || typeof host.autoSaveSettings !== 'function') return false;
+  const isZh = isCurrentLanguageZh(host);
+  const next = String(mode || '').trim();
+  if (!permissionOptions(host, isZh).some((option) => option.value === next)) throw new Error(isZh ? '当前引擎不支持此权限模式。' : 'This permission mode is not supported by the current engine.');
+  if (pendingPermissionChanges.has(host)) throw new Error(isZh ? '权限模式正在保存，请稍候。' : 'A permission change is being saved. Please wait.');
+  const previousMode = getActivePermissionMode(host);
+  const scope = permissionScopeKey(host);
+  const wasUncertain = !!uncertainPermissionScopes.get(host)?.has(scope);
+  if (next === previousMode && !wasUncertain) return true;
+  const engine = permissionEngine(host);
+  const previous = ['CLISettings', engine.key].map((key) => {
+    /** 仅保存目标字段的原状态，保留其他设置。 / Snapshot target fields only while preserving unrelated settings. */
+    const source = host[key];
+    const target = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+    return { key, source, target, hadMode: Object.prototype.hasOwnProperty.call(target, 'permissionMode'), mode: target.permissionMode };
+  });
+  pendingPermissionChanges.set(host, { previousMode, engine: engine.id, scope });
+  for (const entry of previous) { host[entry.key] = entry.target; entry.target.permissionMode = next; }
+  try {
+    const result = await host.autoSaveSettings();
+    if (result === false || result?.success === false) throw new Error(isZh ? '权限模式保存被拒绝。' : 'Permission settings were rejected.');
+    markPermissionUncertain(host, scope, false);
+    return true;
+  } catch (error) {
+    for (const entry of previous) {
+      const sameScope = permissionScopeKey(host) === scope;
+      const current = host[entry.key];
+      const target = current === entry.target || sameScope ? current : null;
+      if (!target || target.permissionMode !== next || (entry.key === 'CLISettings' && !sameScope)) continue;
+      if (entry.hadMode) target.permissionMode = entry.mode; else delete target.permissionMode;
+      if (entry.source !== entry.target && !Object.keys(target).length) {
+        if (entry.source === undefined) delete host[entry.key]; else host[entry.key] = entry.source;
+      }
+    }
+    try {
+      const restored = await host.autoSaveSettings();
+      if (restored === false || restored?.success === false) throw new Error('Permission rollback rejected');
+      markPermissionUncertain(host, scope, false);
+    } catch {
+      markPermissionUncertain(host, scope, true);
+      throw new Error(isZh ? '权限保存失败，界面已恢复原模式；请重试以确认运行时设置。' : 'Permission saving failed. The previous mode is shown; retry to confirm runtime settings.');
+    }
+    if (wasUncertain && next === previousMode) return true;
+    throw error;
+  } finally {
+    pendingPermissionChanges.delete(host);
   }
-  host.CLISettings.permissionMode = next;
-  if (typeof host.setActiveCliPermissionMode === 'function') {
-    await Promise.resolve(host.setActiveCliPermissionMode(next));
-  } else {
-    const engine = String(host.CLISettings.engine || 'local').trim().toLowerCase();
-    const map = {
-      ds: 'dsSettings',
-      cc: 'ccSettings',
-      oc: 'ocSettings',
-      qc: 'qcSettings',
-      local: 'localEnvSettings',
-    };
-    const key = map[engine] || 'localEnvSettings';
-    if (!host[key]) host[key] = {};
-    host[key].permissionMode = next;
-  }
-  await saveHostSettings(host);
-  return true;
 }
 
 async function renameConversation(id, newTitle) {
@@ -1570,22 +2028,10 @@ async function renameConversation(id, newTitle) {
   const title = String(newTitle || '').trim();
   if (!title) return false;
   if (typeof host.renameConversationById === 'function') {
-    await host.renameConversationById(id, title);
-    return true;
+    return await host.renameConversationById(id, title) === true;
   }
   if (typeof host.renameConversation === 'function') {
-    await host.renameConversation(id, title);
-    return true;
-  }
-  // 兜底：直接改 conversations 数组
-  const list = Array.isArray(host.conversations) ? host.conversations : [];
-  const item = list.find((c) => String(c?.id || '') === String(id));
-  if (item) {
-    item.title = title;
-    if (typeof host.persistConversations === 'function') {
-      try { await host.persistConversations(); } catch (e) { /* ignore */ }
-    }
-    return true;
+    return await host.renameConversation(id, title) === true;
   }
   return false;
 }
@@ -1594,23 +2040,10 @@ async function archiveConversation(id) {
   const host = getHostApp();
   if (!host || !id) return false;
   if (typeof host.archiveConversationToMemory === 'function') {
-    await host.archiveConversationToMemory(id);
-    return true;
+    return await host.archiveConversationToMemory(id) === true;
   }
   if (typeof host.archiveConversation === 'function') {
-    await host.archiveConversation(id);
-    return true;
-  }
-  // 兜底：把 archived 标记加上
-  const list = Array.isArray(host.conversations) ? host.conversations : [];
-  const item = list.find((c) => String(c?.id || '') === String(id));
-  if (item) {
-    item.archived = true;
-    item.archivedAt = new Date().toISOString();
-    if (typeof host.showNotification === 'function') {
-      host.showNotification('对话已归档为永久记忆', 'success');
-    }
-    return true;
+    return await host.archiveConversation(id) === true;
   }
   return false;
 }
@@ -1625,17 +2058,10 @@ async function copyConversationId(id) {
   }
 }
 
-function setGitBranch(branch) {
+async function setGitBranch(branch) {
   const host = getHostApp();
-  if (!host || !branch) return;
-  if (typeof host.switchGitBranch === 'function') {
-    host.switchGitBranch(branch);
-    return;
-  }
-  if (host.gitInfo) {
-    host.gitInfo.branch = branch;
-    host.gitInfo.currentBranch = branch;
-  }
+  if (!host || !branch || typeof host.switchGitBranch !== 'function') return false;
+  return await host.switchGitBranch(branch) === true;
 }
 
 function openSubscriptionCenter() {
@@ -1663,10 +2089,19 @@ async function refreshCredits() {
   return true;
 }
 
+/** 提供只投影/显式操作的聊天桥；expose projections and explicit chat actions. */
 export function createChatBridge() {
   return {
     snapshot: getSnapshot,
     sendMessage,
+    checkConversationConnection,
+    stopResponse,
+    refreshGuidance,
+    suspendGuidanceRefresh,
+    updateGuidance,
+    resumeConversationRecovery,
+    retryConversationSave,
+    setCompletionPreference,
     startNewChat,
     openHistory,
     openModelPicker,
@@ -1678,6 +2113,7 @@ export function createChatBridge() {
     toggleInterpreter,
     toggleAsr,
     toggleMemory,
+    toggleNativeMemory,
     toggleWebSearch,
     toggleBrowserControl,
     toggleTts,
@@ -1685,6 +2121,8 @@ export function createChatBridge() {
     triggerScreenshot,
     openTablePet,
     openRoleCardPanel,
+    openIdentityConfig,
+    importRoleAvatar,
     selectRoleCard,
     disableRoleCard,
     setTemperature,
@@ -1697,6 +2135,16 @@ export function createChatBridge() {
     selectProject,
     handlePaste,
     removeAttachment,
+    conversationFileCapabilities,
+    readConversationFile,
+    selectConversationFile,
+    listConversationFileEditors,
+    actOnConversationFile,
+    readSubagentTranscript,
+    refreshAutomations,
+    suspendAutomationRefresh,
+    updateConversationAutomation,
+    openAutomationTaskCenter,
     setPermissionMode,
     openSubscriptionCenter,
     refreshCredits,

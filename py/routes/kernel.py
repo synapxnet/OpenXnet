@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -27,7 +27,7 @@ from py.kernel.config_intent import (
 from py.kernel.conversation_state import build_conversation_state
 from py.kernel.event_bus import get_kernel_event_bus
 from py.kernel.executor import get_kernel_executor
-from py.kernel.guidance import get_guidance_bus
+from py.kernel.guidance import GuidanceError, get_guidance_bus, guidance_identity
 from py.kernel.planner import build_kernel_plan
 from py.kernel.policy import get_policy_gate
 from py.kernel.runtime import apply_runtime_mode_profile, kernel_mode_profile, normalize_runtime_mode
@@ -47,14 +47,35 @@ _trace_retry_handler: Optional[Callable[[Dict[str, Any], Dict[str, Any], Dict[st
 _plan_step_execute_handler: Optional[Callable[[Dict[str, Any], Dict[str, Any], Dict[str, Any]], Any]] = None
 
 
-class GuidanceRequest(BaseModel):
-    text: str = Field(default="")
-    conversation_id: str = Field(default="")
-    conversationId: str = Field(default="")
-    turn_id: str = Field(default="")
-    trace_id: str = Field(default="")
-    mode: str = Field(default="soft")
-    priority: int = Field(default=0)
+class GuidanceScopeRequest(BaseModel):
+    """验证写入会话、实例与幂等身份。 / Validate write conversation, runtime, and idempotency identities."""
+    model_config = {"extra": "forbid", "populate_by_name": True}
+    conversation_id: str = Field(default="", max_length=512)
+    conversationId: str = Field(default="", max_length=512)
+    runtime_id: str = Field(alias="runtimeId", min_length=1, max_length=512)
+    request_id: str = Field(alias="requestId", min_length=1, max_length=512)
+
+
+class GuidanceRequest(GuidanceScopeRequest):
+    """验证一条完整实时引导，不允许隐式全局投递。 / Validate a complete guidance item without implicit global delivery."""
+    text: str = Field(min_length=1, max_length=16_000)
+    turn_id: str = Field(default="", max_length=512)
+    trace_id: str = Field(default="", max_length=512)
+    mode: str = Field(default="soft", max_length=32)
+    priority: int = Field(default=0, ge=-100, le=100, strict=True)
+
+
+class GuidanceCancelRequest(GuidanceScopeRequest):
+    """撤回请求只能定位同会话当前修订。 / Let cancellation target only the current revision in the same conversation."""
+    guidance_id: str = Field(alias="guidanceId", min_length=1, max_length=512)
+    expected_revision: int = Field(alias="expectedRevision", ge=1, le=9_007_199_254_740_991, strict=True)
+
+
+class GuidanceEditRequest(GuidanceCancelRequest):
+    """编辑请求携带完整替换内容。 / Carry complete replacement content in an edit request."""
+    text: str = Field(min_length=1, max_length=16_000)
+    mode: str = Field(default="soft", max_length=32)
+    priority: int = Field(default=0, ge=-100, le=100, strict=True)
 
 
 class SkillLifecycleTaskRequest(BaseModel):
@@ -2266,14 +2287,13 @@ async def kernel_skill_use_record(skill_id: str, req: SkillUseRecordRequest):
 
 @router.post("/guidance")
 async def add_live_guidance(req: GuidanceRequest):
-    item = get_guidance_bus().add(
-        text=req.text,
-        conversation_id=req.conversation_id or req.conversationId,
-        turn_id=req.turn_id,
-        trace_id=req.trace_id,
-        mode=req.mode,
-        priority=req.priority,
-    )
+    """原子排队，拒绝跨实例重放与重复身份冲突。 / Queue atomically while rejecting old-runtime replay and idempotency conflicts."""
+    try:
+        item = get_guidance_bus().add(text=req.text, conversation_id=_guidance_scope(req), turn_id=req.turn_id,
+                                      trace_id=req.trace_id, mode=req.mode, priority=req.priority,
+                                      request_id=req.request_id, runtime_id=req.runtime_id)
+    except GuidanceError as error:
+        _raise_guidance_error(error)
     settings = await _load_settings()
     workspace = settings.get("CLISettings", {}).get("cc_path", "") if isinstance(settings, dict) else ""
     get_kernel_audit(workspace).append(
@@ -2282,15 +2302,56 @@ async def add_live_guidance(req: GuidanceRequest):
         actor="user",
         workspace_dir=workspace,
     )
-    return {"ok": True, "guidance": item.to_dict(), "queue": get_guidance_bus().status()}
+    return {"ok": True, "guidance": item.to_dict(), "runtime_id": get_guidance_bus().runtime_id,
+            "queue": get_guidance_bus().status(item.conversation_id)}
 
 
 @router.get("/guidance")
-async def list_live_guidance(conversation_id: str = ""):
-    return {
-        "pending": get_guidance_bus().pending(conversation_id),
-        "status": get_guidance_bus().status(),
-    }
+async def list_live_guidance(conversation_id: str = "", runtime_id: str = ""):
+    """查询精确会话的真实待接收与终态记录。 / Query actual pending and terminal records for an exact conversation."""
+    try:
+        return get_guidance_bus().snapshot(conversation_id, runtime_id)
+    except GuidanceError as error:
+        _raise_guidance_error(error)
+
+
+def _guidance_scope(req: GuidanceScopeRequest) -> str:
+    """两种会话身份别名同时存在时必须一致。 / Require both conversation aliases to match when supplied together."""
+    if req.conversation_id and req.conversationId and req.conversation_id != req.conversationId:
+        raise GuidanceError("guidance_invalid_identity", "Conversation identity aliases do not match.", 422)
+    return guidance_identity(req.conversation_id or req.conversationId)
+
+
+def _raise_guidance_error(error: GuidanceError) -> None:
+    """保留同作用域冲突详情，公共接口使用真实 HTTP 状态。 / Preserve same-scope conflict details with the actual public HTTP status."""
+    detail = {"ok": False, "runtime_id": get_guidance_bus().runtime_id,
+              "error": {"code": error.code, "message": str(error)}}
+    if error.guidance is not None:
+        detail["guidance"] = error.guidance
+    raise HTTPException(status_code=error.status_code, detail=detail) from error
+
+
+@router.post("/guidance/edit")
+async def edit_live_guidance(req: GuidanceEditRequest):
+    """只替换尚未接收的准确修订，已接收返回冲突。 / Replace only an unconsumed exact revision and conflict after consumption."""
+    try:
+        item = get_guidance_bus().mutate(conversation_id=_guidance_scope(req), guidance_id=req.guidance_id,
+            request_id=req.request_id, runtime_id=req.runtime_id, expected_revision=req.expected_revision,
+            action="edit", text=req.text, mode=req.mode, priority=req.priority)
+        return {"ok": True, "guidance": item.to_dict(), "runtime_id": get_guidance_bus().runtime_id}
+    except GuidanceError as error:
+        _raise_guidance_error(error)
+
+
+@router.post("/guidance/cancel")
+async def cancel_live_guidance(req: GuidanceCancelRequest):
+    """撤回只改队列记录，不触发正在执行请求的 abort。 / Cancel only the queued record without aborting the running request."""
+    try:
+        item = get_guidance_bus().mutate(conversation_id=_guidance_scope(req), guidance_id=req.guidance_id,
+            request_id=req.request_id, runtime_id=req.runtime_id, expected_revision=req.expected_revision, action="cancel")
+        return {"ok": True, "guidance": item.to_dict(), "runtime_id": get_guidance_bus().runtime_id}
+    except GuidanceError as error:
+        _raise_guidance_error(error)
 
 
 @router.get("/audit")

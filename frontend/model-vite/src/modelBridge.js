@@ -780,10 +780,17 @@ function setDialogField(field, value) {
 
 async function confirmAddDialog() {
   const host = getHostApp();
-  if (!host) return false;
+  if (!host || !String(host.newProviderTemp?.vendor || '').trim()) return false;
   if (typeof host.confirmAddProvider === 'function') {
-    await host.confirmAddProvider();
-    return true;
+    const draft = { ...host.newProviderTemp };
+    try {
+      await host.confirmAddProvider();
+      return host.showAddDialog === false;
+    } catch (error) {
+      host.newProviderTemp = draft;
+      host.showAddDialog = true;
+      throw error;
+    }
   }
   return false;
 }

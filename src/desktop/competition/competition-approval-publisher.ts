@@ -7,6 +7,8 @@ export interface HttpCompetitionApprovalPublisherOptions {
   readonly fetchResource?: typeof fetch;
   readonly now?: () => Date;
   readonly ttlMs?: number;
+  /** Live 网关代管真实签发凭据。 / The Live gateway owns the actual signing credential. */
+  readonly gatewayMode?: boolean;
 }
 
 /** 将本地人工审批发布为服务器可内省的短期、精确范围证明。 */
@@ -29,13 +31,14 @@ export class HttpCompetitionApprovalPublisher {
     }
     const token = (await this.options.resolveIssuerToken()).trim();
     if (token.length < 32) throw new Error("Competition approval issuer identity is not configured.");
+    if (this.options.gatewayMode && !/^oxlive_[a-f0-9]{64}$/u.test(token)) throw new Error("Competition Live access is invalid.");
     const expiresAt = new Date(Date.parse(approval.decidedAt) + this.ttlMs);
     const now = this.now();
     if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= now || expiresAt.getTime() > now.getTime() + 30 * 60 * 1_000) {
       throw new Error("Competition approval has expired or exceeds its lifetime budget.");
     }
     const endpoint = this.requireEndpoint(await this.options.resolveEndpoint());
-    const url = new URL(`api/v1/approvals/${encodeURIComponent(approval.approvalId)}`, endpoint);
+    const url = new URL(`api/v1/${this.options.gatewayMode ? "live/" : ""}approvals/${encodeURIComponent(approval.approvalId)}`, endpoint);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3_000);
     try {

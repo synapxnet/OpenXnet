@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openxnet.synapxnet.com/skills/goai-change-execute/1.1.0/output.schema.json",
+  "title": "GOAI Change Execute Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "decision", "summary", "confidence", "requestedToolNames", "evidenceIds"],
+  "properties": {
+    "schema": { "const": "goai.skill.change-execute.output.v1.1" },
+    "decision": { "enum": ["REQUEST_APPROVAL", "HALT"] },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 16384 },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "requestedToolNames": { "type": "array", "maxItems": 0 },
+    "evidenceIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+    }
+  }
+}

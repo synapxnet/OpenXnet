@@ -2,6 +2,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenXnet</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./libs/three/build/three.module.js",
+        "three/addons/": "./libs/three/examples/jsm/"
+      }
+    }
+  </script>
   <script>
     window.normalizeOpenXnetThemeForDom = function normalizeOpenXnetThemeForDom(theme) {
       const normalized = String(theme || 'party').trim().toLowerCase();
@@ -23,7 +31,9 @@
       document.documentElement.setAttribute('data-theme-choice', theme);
     })();
   </script>
-  <script src="js/startup-bootstrap.js"></script>
+  <script src="js/openxnet-skins.js?v=20260908-skins1"></script>
+  <script src="js/openxnet-skin-workbench.js?v=20260908-skins1"></script>
+  <script src="js/startup-bootstrap.js?v=20260908-skins1"></script>
   <style>
     html, body {
       background: #0b1220;
@@ -212,13 +222,13 @@
   <link rel="stylesheet" href="css/uiplan-animations.css?v=20260510-avatar-ring-thick">
   <link rel="stylesheet" href="css/openxnet-uiplan-adapter.css?v=20260515-theme-runtime3">
   <link rel="stylesheet" href="css/access-ui-from-h.css?v=20260510-access-dark-dialog-fix">
-  <link rel="stylesheet" href="chat-vite/openxnet-chat.css?v=20260515-chat-stream-smooth">
-  <link rel="stylesheet" href="role-vite/openxnet-role.css?v=20260513-role-name-center">
-  <link rel="stylesheet" href="model-vite/openxnet-model.css?v=20260512-provider-scroll">
-  <link rel="stylesheet" href="toolkit-vite/openxnet-toolkit.css?v=20260513-toolkit-overview-scrollhide">
-  <link rel="stylesheet" href="skills-vite/openxnet-skills.css?v=20260510-avatar-ring-thick">
+  <link rel="stylesheet" href="chat-vite/openxnet-chat.css?v=20260914-conversation1">
+  <link rel="stylesheet" href="role-vite/openxnet-role.css?v=20260908-ui-actions1">
+  <link rel="stylesheet" href="model-vite/openxnet-model.css?v=20260908-ui-actions1">
+  <link rel="stylesheet" href="toolkit-vite/openxnet-toolkit.css?v=20260908-ui-actions1">
+  <link rel="stylesheet" href="skills-vite/openxnet-skills.css?v=20260914-employee-skills1">
   <link rel="stylesheet" href="browser-vite/openxnet-browser.css?v=20260510-avatar-ring-thick">
-  <link rel="stylesheet" href="ops-vite/openxnet-ops.css?v=20260901-memory-v3">
+  <link rel="stylesheet" href="ops-vite/openxnet-ops.css?v=20260913-memory-context1">
   <link rel="stylesheet" href="css/vite-ui.css?v=20260513-role-name-center">
   <link rel="stylesheet" href="css/dialog-rebuild.css?v=20260511-tour-readonly">
   <link rel="stylesheet" href="css/deploy-rebuild.css?v=20260511-deploy-no-double-scroll">
@@ -232,8 +242,22 @@
   <link rel="stylesheet" href="css/theme-runtime-overrides.css?v=20260731-brand-mask3">
   <link rel="stylesheet" href="css/competition-workbench.css?v=20260808-goai2">
   <link rel="stylesheet" href="css/competition-workbench-v2.css?v=20260808-kimi-k3-4">
+  <link rel="stylesheet" href="css/competition-runtime-config.css?v=20260917-runtime-config1">
   <link rel="stylesheet" href="css/enterprise-team-templates.css?v=20260803-team1">
   <link rel="stylesheet" href="css/staff-role-studio-compact.css?v=20260804-kimi15">
+  <link rel="stylesheet" href="css/openxnet-employee-experience.css?v=20260914-employee-skills1">
+  <link rel="stylesheet" href="css/openxnet-workbench-shell.css?v=20260908-ui-actions1">
+  <link rel="stylesheet" href="css/openxnet-workbench-surfaces.css?v=20260908-ui-actions1">
+  <link rel="stylesheet" href="css/enterprise-sandbox-studio.css?v=20260908-skins1">
+  <link rel="stylesheet" href="css/openxnet-enterprise-chat-experience.css?v=20260914-conversation1">
+  <link rel="stylesheet" href="css/enterprise-spatial-experience.css?v=20260914-spatial1">
+  <link rel="stylesheet" href="css/openxnet-skin-surfaces.css?v=20260908-ui-actions1">
+  <link rel="stylesheet" href="css/openxnet-ops-workspaces.css?v=20260908-ui-actions1">
+  <link rel="stylesheet" href="css/openxnet-worldops-entry.css?v=20260913-local1">
+  <link rel="stylesheet" href="css/openxnet-enterprise-workspaces.css?v=20260908-ui-actions1">
+  <link rel="stylesheet" href="css/openxnet-skin-workbench.css?v=20260908-skins1">
+  <link rel="stylesheet" href="css/enterprise-skill-workbench.css?v=20260914-employee-skills1">
+  <link rel="stylesheet" href="css/openxnet-narrow-shell.css?v=20260914-employee-skills1">
   <script src="js/neuro-toast.js"></script>
   <script src="js/runtime-loader.js"></script>
   <link rel="icon" href="source/icon.png" type="image/png">
@@ -630,7 +654,7 @@ function updateElement(el, rawMarkdown, formatFn) {
       </section></div>
     </div>
 
-  <div id="app" class="openxnet-redesign-app" data-template-sha256="a0c0f0e3ec02210a3f39cdcbd4d2c18bb6380efaaddcd5f67ca5e845a0a1fc1e"></div>
+  <div id="app" class="openxnet-redesign-app" data-template-sha256="b62208bccecb6625c9a8a2994c1afc61798a422702682463ec05e85661f09238"></div>
   <!-- 引入Vue和Element Plus -->
   <script>window.openxnetStartup?.mark('vue-runtime-start');</script>
   <script src="libs/vue.global.prod.js"></script><script src="js/openxnet-render.js"></script>
@@ -640,10 +664,15 @@ function updateElement(el, rawMarkdown, formatFn) {
   <script src="js/access_legal_documents.js"></script>
   <script>window.openxnetStartup?.mark('legacy-state-start');</script>
   <script src="js/desktop-chat-transport.js?v=20260726-typed-chat"></script>
-  <script src="js/vue_data.js?v=20260512-sandbox-bodies"></script>
-    <script src="js/vue_methods.js?v=20260512-sandbox-bodies"></script>
+  <script src="js/vue_data.js?v=20260914-conversation1"></script>
+    <script src="js/vue_methods.js?v=20260914-conversation1"></script>
+  <script src="js/openxnet-conversation-model.js?v=20260914-conversation1"></script>
+  <script src="js/openxnet-employee-experience.js?v=20260914-employee-skills1"></script>
+  <script src="js/openxnet-employee-bootstrap.js?v=20260914-employee-skills1"></script>
+  <script src="js/openxnet-enterprise-chat-experience.js?v=20260914-conversation1"></script>
+  <script src="js/openxnet-enterprise-chat-bootstrap.js?v=20260914-conversation1"></script>
   <script>window.openxnetStartup?.mark('legacy-state-ready');</script>
-  <script src="js/renderer.js?v=20260515-default-theme"></script>
+  <script src="js/renderer.js?v=20260908-skins1"></script>
   <!-- Vite surfaces and Enterprise 3D load on first menu activation. -->
 
 

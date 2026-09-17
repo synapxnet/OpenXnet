@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { execFileSync } = require("node:child_process");
 const { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
+const { version: releaseVersion } = require("../package.json");
 
 const { app, BrowserWindow } = require("electron");
 const { LocalUiGateway } = require("../build-ts/desktop");
@@ -1157,7 +1158,7 @@ async function run() {
     }
     const publicManifest = {
       schema: "openxnet.goai-live-replay-videos.v1",
-      version: "1.2.0",
+      version: releaseVersion,
       environmentClaim: "goai-staging",
       replayDisclosure: "终态为真实 Live 快照；待审批和执行中画面由同一 Incident 的审计事件与工具回执时间线重建。",
       failureIncidentId: selection.failure,

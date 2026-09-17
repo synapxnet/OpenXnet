@@ -1,808 +1,160 @@
+<!--
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+用途：技能发现与管理主界面。 Purpose: Skill discovery and management workbench.
+Author: maoyo | Department: 研发部 | Date: 2026-09-14
+Version: 1.0.0 | Security Level: INTERNAL
+__version__: 1.0.0 | __author__: maoyo | __copyright__: Copyright 2026 Synapxnet
+__maintainer__: maoyo | __email__: synapxnet@gmail.com
+-->
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { createSkillsBridge } from './skillsBridge';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { createSkillsBridge } from './skillsBridge.js';
+import { SKILL_GROUPS, filterSkills, metadataLabel, resolveBundles } from './skillsModel.js';
+import SkillDetail from './SkillDetail.vue';
+import SkillManagement from './SkillManagement.vue';
+import './skillsWorkbench.css';
 
 const bridge = createSkillsBridge();
-const snapshot = ref(bridge.snapshot());
-let refreshTimer = null;
-
-function refreshSnapshot() {
-  snapshot.value = bridge.snapshot();
+const state = ref(bridge.snapshot());
+const category = ref('all');
+const location = ref('all');
+const busy = ref('');
+const error = ref('');
+const workbench = ref(null);
+let timer = null;
+/** 获取当前语言。 Read the current language. */
+const isZh = computed(() => state.value.isZh);
+/** 把旧入口映射为发现视图。 Map the legacy library entry to discovery. */
+const view = computed(() => state.value.activeTab === 'library' ? 'discover' : state.value.activeTab);
+/** 筛选真实目录，已安装页支持位置过滤。 Filter the real catalog and installation locations. */
+const visibleSkills = computed(() => filterSkills(state.value.library.items, { query: state.value.query, category: category.value, location: view.value === 'installed' ? location.value : 'all' }));
+/** 仅显示当前集合中被明确选择的技能。 Show only the explicitly selected skill in the current collection. */
+const selected = computed(() => (view.value === 'bundles' ? state.value.library.items : visibleSkills.value).some((skill) => skill.id === state.value.preview.activeId) ? state.value.preview.current : null);
+/** 解析套组真实安装成员。 Resolve actual package members for each bundle. */
+const bundles = computed(() => resolveBundles(state.value.library.items));
+/** 生成紧凑导航，管理入口保持可达。 Provide compact navigation with reachable management actions. */
+const tabs = computed(() => [
+  ['discover', isZh.value ? '发现技能' : 'Discover', 'fa-solid fa-compass'],
+  ['installed', isZh.value ? '已安装' : 'Installed', 'fa-solid fa-layer-group'],
+  ['bundles', isZh.value ? '技能套组' : 'Bundles', 'fa-solid fa-cubes-stacked'],
+  ['transform', isZh.value ? '导入' : 'Import', 'fa-solid fa-arrow-down-to-bracket'],
+  ['crystal', isZh.value ? '技能结晶' : 'Crystal', 'fa-regular fa-gem'],
+  ['lifecycle', isZh.value ? '生命周期' : 'Lifecycle', 'fa-solid fa-code-branch'],
+]);
+/** 刷新宿主快照，当前选择不会回退为其他条目。 Refresh the host snapshot without substituting another selection. */
+function refresh() { state.value = bridge.snapshot(); }
+/** 统一等待与错误展示，防止重复管理提交。 Handle pending actions and errors without duplicate management submissions. */
+async function run(key, action) {
+  if (busy.value) return;
+  busy.value = key; error.value = '';
+  try { const pending = action(); refresh(); await pending; }
+  catch (failure) { error.value = failure?.message || String(failure); }
+  finally { busy.value = ''; refresh(); }
 }
-
-function handleTab(tabId) {
-  bridge.openTab(tabId);
-  refreshSnapshot();
+/** 切换主视图，丢弃过期详情。 Change the main view and discard stale details. */
+async function openView(next) {
+  bridge.clearPreview(); category.value = 'all'; location.value = 'all'; error.value = '';
+  try { await bridge.openTab(next === 'discover' ? 'library' : next); }
+  catch (failure) { error.value = failure.message; }
+  refresh();
 }
-
-function handleFilter(value) {
-  bridge.setLibraryFilter(value);
-  refreshSnapshot();
-}
-
-function handleQuery(event) {
-  bridge.setLibraryQuery(event.target.value);
-  refreshSnapshot();
-}
-
-function handlePreviewSkill(id) {
-  bridge.previewSkill(id);
-  refreshSnapshot();
-}
-
-function handleRefreshSkills() {
-  bridge.refreshSkills();
-  refreshSnapshot();
-}
-
-function handleOpenSkillsFolder() {
-  bridge.openSkillsFolder();
-}
-
-function handleGithubUrl(event) {
-  bridge.setGithubUrl(event.target.value);
-  refreshSnapshot();
-}
-
-function handleInstallGithub() {
-  bridge.installFromGithub();
-  refreshSnapshot();
-}
-
-function handleZipInput(event) {
-  const files = event.target.files;
-  if (files && files.length > 0) {
-    bridge.uploadSkillZip(files[0]);
+/** 修改类别并关闭不再对应的详情。 Change category and clear details outside the new filter. */
+function setCategory(next) { category.value = next; bridge.clearPreview(); refresh(); }
+/** 修改安装位置并清理选择。 Change installation location and clear selection. */
+function setLocation(event) { location.value = event.target.value; bridge.clearPreview(); refresh(); }
+/** 搜索不替代选中项。 Search without substituting the selected skill. */
+function search(event) { bridge.setQuery(event.target.value); refresh(); }
+/** 支持快速切换；乱序请求由宿主选择代次隔离。 Allow rapid selection with host generation guards for out-of-order requests. */
+async function preview(id, source) {
+  error.value = '';
+  try {
+    const pending = bridge.previewSkill(id, source); refresh();
+    if (!source) {
+      await nextTick();
+      workbench.value?.scrollTo({ top: 0, behavior: 'auto' });
+      workbench.value?.scrollIntoView({ block: 'start', behavior: 'auto' });
+    }
+    await pending;
   }
-  event.target.value = '';
+  catch (failure) { error.value = failure.message; }
+  finally { refresh(); }
 }
-
-function handleCrystalField(field, event) {
-  const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
-  bridge.setCrystalField(field, value);
-  refreshSnapshot();
-}
-
-function handleSeedExample() {
-  bridge.seedCrystalExample();
-  refreshSnapshot();
-}
-
-function handleCrystallize() {
-  bridge.crystallizeSkill();
-  refreshSnapshot();
-}
-
-function handleSleepCycle() {
-  bridge.runSleepCycle();
-  refreshSnapshot();
-}
-
-const isZh = computed(() => snapshot.value.isZh);
-const activeTab = computed(() => snapshot.value.activeTab || 'library');
-const tabs = computed(() => snapshot.value.tabs || []);
-const library = computed(() => snapshot.value.library || { items: [], preview: {} });
-const transform = computed(() => snapshot.value.transform || { cards: [] });
-const crystal = computed(() => snapshot.value.crystal || { draft: {}, lifecycle: {} });
-
-onMounted(() => {
-  refreshSnapshot();
-  refreshTimer = window.setInterval(refreshSnapshot, 400);
-});
-
-onBeforeUnmount(() => {
-  if (refreshTimer) {
-    window.clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
-});
+/** 关闭详情并使在途读取失效。 Close details and invalidate pending reads. */
+function closeDetail() { bridge.clearPreview(); refresh(); }
+/** 执行既有安装或移除接口。 Delegate installation and removal to existing actions. */
+function manage(action, id) { return run(`${action}:${id}`, () => bridge.manageSkill(action, id)); }
+/** 从子组件调用已存在的管理动作。 Delegate management component commands to existing host actions. */
+function command(method, ...args) { return run(method, () => bridge.invoke(method, ...args)); }
+/** 跳转企业工作区或岗位设置。 Navigate to enterprise workspace or employee settings. */
+function enterprise(tab) { return run('enterprise', () => bridge.openEnterprise(tab)); }
+/** 更新结晶字段后立即刷新预览。 Refresh the crystal preview after field edits. */
+function crystalField(field, value) { bridge.setCrystalField(field, value); refresh(); }
+/** 记录导入地址，输入本身不安装。 Record the import URL without installing on input. */
+function githubUrl(value) { bridge.setGithubUrl(value); refresh(); }
+/** 开始轻量快照同步；不访问外部服务。 Start lightweight host synchronization without external service access. */
+function mount() { refresh(); timer = window.setInterval(refresh, 400); }
+/** 结束定时同步。 Stop snapshot synchronization. */
+function unmount() { if (timer) window.clearInterval(timer); }
+/** 从企业入口返回时重置视图筛选，保留明确详情。 Reset filters on entry from enterprise while retaining explicit details. */
+function enterFromHost(menu) { if (menu === 'skills') { category.value = 'all'; location.value = 'all'; } }
+/** 观察宿主页面入口。 Observe the host page entry. */
+watch(() => state.value.activeMenu, enterFromHost);
+onMounted(mount);
+onBeforeUnmount(unmount);
 </script>
 
 <template>
-  <div class="ox-vite-skills-shell">
-    <div class="ox-vite-skills-header">
-      <div>
-        <h1>{{ isZh ? '技能中心' : 'Skills Center' }}</h1>
-        <p>{{ isZh ? '技能仓库、技能转化和技能结晶的统一入口。' : 'One place for the skill library, transformations, and crystallization.' }}</p>
+  <main ref="workbench" class="oxsk-workbench" :class="{ 'oxsk-workbench--detail': selected }" :aria-busy="!!busy">
+    <header class="oxsk-header">
+      <div class="oxsk-title"><span class="oxsk-mark"><i class="fa-solid fa-shapes" aria-hidden="true"></i></span><div><h1>{{ isZh ? '技能工作台' : 'Skill workbench' }}</h1><p>{{ isZh ? '让方法成为员工可复用的能力' : 'Turn methods into reusable employee capabilities' }}</p></div></div>
+      <div class="oxsk-actions">
+        <button class="oxsk-button" :disabled="!!busy" @click="command('openSkillsFolder')"><i class="fa-regular fa-folder-open"></i>{{ isZh ? '技能目录' : 'Folder' }}</button>
+        <button class="oxsk-button oxsk-button--primary" :disabled="!!busy" @click="enterprise('enterprise-skills')"><i class="fa-solid fa-building"></i>{{ isZh ? '企业启用' : 'Enterprise' }}</button>
       </div>
-      <div class="ox-vite-skills-header__actions">
-        <button type="button" class="ox-vite-skills-primary-btn" @click="handleOpenSkillsFolder">
-          <i class="fa-regular fa-folder-open"></i>
-          <span>{{ isZh ? '打开技能目录' : 'Open skills folder' }}</span>
-        </button>
-        <button type="button" class="ox-vite-skills-secondary-btn" @click="handleRefreshSkills">
-          <i class="fa-solid fa-rotate-right"></i>
-          <span>{{ isZh ? '刷新技能' : 'Refresh skills' }}</span>
-        </button>
+    </header>
+    <nav class="oxsk-tabs" :aria-label="isZh ? '技能视图' : 'Skill views'">
+      <button v-for="tab in tabs" :key="tab[0]" :class="{ 'is-active': view === tab[0] }" :aria-current="view === tab[0] ? 'page' : undefined" @click="openView(tab[0])"><i :class="tab[2]"></i>{{ tab[1] }}</button>
+      <button class="oxsk-refresh" :disabled="!!busy || state.library.loading" :title="isZh ? '刷新全局与工作区技能' : 'Refresh global and workspace skills'" @click="command('handleRefreshSkills')"><i class="fa-solid fa-rotate-right" :class="{ 'fa-spin': state.library.loading }"></i><span class="oxsk-sr-only">{{ isZh ? '刷新' : 'Refresh' }}</span></button>
+    </nav>
+    <p v-if="error || state.library.error" class="oxsk-alert" role="alert"><i class="fa-solid fa-circle-exclamation"></i>{{ error || state.library.error }}</p>
+    <p v-if="!state.available" class="oxsk-alert" role="status">{{ isZh ? '正在等待应用连接，技能操作暂不可用。' : 'Waiting for the application connection. Skill actions are unavailable.' }}</p>
+
+    <template v-if="['discover', 'installed', 'bundles'].includes(view)">
+      <section v-if="view === 'discover' && !selected" class="oxsk-intro">
+        <div><span class="oxsk-eyebrow">OPENXNET CAPABILITIES</span><h2>{{ isZh ? '从一个任务，找到合适的方法' : 'Find the right method for your next task' }}</h2><p>{{ isZh ? '浏览本机与工作区的真实技能，查看用途，再决定如何配给员工。' : 'Explore real local and workspace skills, understand their purpose, then configure your employees.' }}</p></div>
+        <div class="oxsk-intro-art" aria-hidden="true"><i class="fa-solid fa-diagram-project"></i><span></span><span></span></div>
+      </section>
+      <div v-if="view !== 'bundles' && !selected" class="oxsk-toolbar">
+        <label class="oxsk-search"><i class="fa-solid fa-magnifying-glass"></i><input :value="state.query" :placeholder="isZh ? '搜索名称、用途或技能 ID' : 'Search name, purpose or skill ID'" :aria-label="isZh ? '搜索技能' : 'Search skills'" @input="search" /></label>
+        <label v-if="view === 'installed'" class="oxsk-inline-field"><span>{{ isZh ? '安装范围' : 'Location' }}</span><select :value="location" @change="setLocation"><option value="all">{{ isZh ? '所有位置' : 'All locations' }}</option><option value="global">{{ isZh ? '本机全局' : 'Global' }}</option><option value="project">{{ isZh ? '当前工作区' : 'Workspace' }}</option></select></label>
+        <span class="oxsk-count">{{ visibleSkills.length }} {{ isZh ? '个技能' : 'skills' }}</span>
       </div>
-    </div>
-
-    <div class="ox-vite-skills-tabs">
-      <button
-        v-for="tab in tabs"
-        :key="tab.id"
-        type="button"
-        class="ox-vite-skills-tab"
-        :class="{ active: activeTab === tab.id }"
-        @click="handleTab(tab.id)"
-      >
-        <i :class="tab.icon"></i>
-        <span>{{ tab.label }}</span>
-      </button>
-    </div>
-
-    <template v-if="activeTab === 'library'">
-      <div class="ox-vite-skills-library-toolbar">
-        <div class="ox-vite-skills-filter-pills">
-          <button type="button" class="ox-vite-skills-filter-pill" :class="{ active: snapshot.filter === 'all' }" @click="handleFilter('all')">{{ isZh ? '全部' : 'All' }}</button>
-          <button type="button" class="ox-vite-skills-filter-pill" :class="{ active: snapshot.filter === 'featured' }" @click="handleFilter('featured')">{{ isZh ? '推荐' : 'Featured' }}</button>
-          <button type="button" class="ox-vite-skills-filter-pill" :class="{ active: snapshot.filter === 'installed' }" @click="handleFilter('installed')">{{ isZh ? '已安装' : 'Installed' }}</button>
-          <button type="button" class="ox-vite-skills-filter-pill" :class="{ active: snapshot.filter === 'custom' }" @click="handleFilter('custom')">{{ isZh ? '自定义' : 'Custom' }}</button>
-        </div>
-        <label class="ox-vite-skills-search">
-          <i class="fa-solid fa-magnifying-glass"></i>
-          <input :value="snapshot.query" type="text" :placeholder="isZh ? '搜索技能...' : 'Search skills...'" @input="handleQuery" />
-        </label>
-      </div>
-
-      <div class="ox-vite-skills-library-layout">
-        <section class="ox-vite-skills-grid">
-          <article v-for="skill in library.items" :key="skill.id" class="ox-vite-skills-card">
-            <div class="ox-vite-skills-card__head">
-              <div class="ox-vite-skills-card__icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
-              <div class="ox-vite-skills-card__copy">
-                <div class="ox-vite-skills-card__name">{{ skill.name }}</div>
-                <div class="ox-vite-skills-card__alias">{{ skill.alias }}</div>
-              </div>
-              <span class="ox-vite-skills-card__version">v{{ skill.version }}</span>
-            </div>
-            <p class="ox-vite-skills-card__desc">{{ skill.description }}</p>
-            <div class="ox-vite-skills-chip-wrap">
-              <span v-for="tag in skill.tags" :key="tag" class="ox-vite-skills-chip">{{ tag }}</span>
-            </div>
-            <div class="ox-vite-skills-card__footer">
-              <span class="ox-vite-skills-card__status" :class="{ installed: skill.installed }">
-                <i :class="skill.installed ? 'fa-solid fa-circle-check' : 'fa-regular fa-circle'"></i>
-                <span>{{ skill.installed ? (isZh ? '已安装' : 'Installed') : (isZh ? '未安装' : 'Not installed') }}</span>
-              </span>
-              <button type="button" class="ox-vite-skills-secondary-btn" @click="handlePreviewSkill(skill.id)">
-                <i class="fa-solid fa-eye"></i>
-                <span>{{ isZh ? '预览' : 'Preview' }}</span>
+      <div v-if="view !== 'bundles' && !selected" class="oxsk-categories" :aria-label="isZh ? '能力类别' : 'Capability categories'"><button v-for="group in SKILL_GROUPS" :key="group.id" :class="{ 'is-active': category === group.id }" :aria-pressed="category === group.id" @click="setCategory(group.id)"><i :class="group.icon"></i>{{ isZh ? group.zh : group.en }}</button></div>
+      <div v-if="view === 'installed'" class="oxsk-location-note"><i class="fa-solid fa-folder-tree"></i><span>{{ state.workspacePath || (isZh ? '未选择工作区；可以管理本机全局技能。' : 'No workspace selected. Global skills remain available.') }}</span></div>
+      <div class="oxsk-content" :class="{ 'has-detail': selected }">
+        <section v-if="view !== 'bundles'" class="oxsk-catalog" :aria-busy="state.library.loading">
+          <div v-if="selected" class="oxsk-toolbar oxsk-toolbar--detail"><label class="oxsk-search"><i class="fa-solid fa-magnifying-glass"></i><input :value="state.query" :placeholder="isZh ? '搜索技能' : 'Search skills'" :aria-label="isZh ? '搜索技能' : 'Search skills'" @input="search" /></label><label class="oxsk-inline-field"><select :value="category" :aria-label="isZh ? '能力类别' : 'Capability category'" @change="setCategory($event.target.value)"><option v-for="group in SKILL_GROUPS" :key="group.id" :value="group.id">{{ isZh ? group.zh : group.en }}</option></select></label><label v-if="view === 'installed'" class="oxsk-inline-field"><select :value="location" :aria-label="isZh ? '安装范围' : 'Installation location'" @change="setLocation"><option value="all">{{ isZh ? '所有位置' : 'All locations' }}</option><option value="global">{{ isZh ? '本机全局' : 'Global' }}</option><option value="project">{{ isZh ? '当前工作区' : 'Workspace' }}</option></select></label></div>
+          <div v-if="!visibleSkills.length" class="oxsk-empty"><i class="fa-solid fa-box-open"></i><h3>{{ state.library.loading ? (isZh ? '正在读取技能' : 'Loading skills') : (isZh ? '这里还没有匹配的技能' : 'No matching skills') }}</h3><p>{{ isZh ? '调整筛选，或从已有仓库和 ZIP 技能包导入。' : 'Adjust the filters or import a repository or ZIP package.' }}</p><button class="oxsk-button" @click="openView('transform')">{{ isZh ? '导入技能' : 'Import skills' }}</button></div>
+          <div v-else class="oxsk-grid">
+            <article v-for="skill in visibleSkills" :key="skill.id" class="oxsk-card" :class="{ 'is-selected': selected?.id === skill.id }">
+              <button class="oxsk-card-main" :aria-label="(isZh ? '查看技能：' : 'View skill: ') + skill.name" @click="preview(skill.id)">
+                <div class="oxsk-card-top"><span class="oxsk-icon" :data-group="skill.group"><i :class="skill.icon"></i></span><span class="oxsk-card-group">{{ skill.groupLabel }}</span><i class="fa-solid fa-arrow-up-right-from-square oxsk-card-arrow" aria-hidden="true"></i></div>
+                <h3>{{ skill.name }}</h3><span class="oxsk-id">{{ skill.alias }}</span><p>{{ skill.description || (isZh ? '该技能暂未提供用途说明。' : 'No purpose description provided.') }}</p>
               </button>
-            </div>
-          </article>
-        </section>
-
-        <aside class="ox-vite-skills-preview">
-          <div v-if="library.preview.current" class="ox-vite-skills-preview__head">
-            <div class="ox-vite-skills-preview__icon"><i class="fa-solid fa-gem"></i></div>
-            <div>
-              <h2>{{ library.preview.current.name }}</h2>
-              <p>{{ library.preview.current.previewSummary || library.preview.current.description }}</p>
-            </div>
-          </div>
-          <div v-if="library.preview.current" class="ox-vite-skills-chip-wrap">
-            <span v-for="item in library.preview.current.previewHighlights" :key="item" class="ox-vite-skills-chip">{{ item }}</span>
-          </div>
-          <div v-if="library.preview.renderedContent" class="ox-vite-skills-preview__content markdown-body" v-html="library.preview.renderedContent"></div>
-          <div v-else class="ox-vite-skills-preview__empty">{{ library.preview.emptyText }}</div>
-        </aside>
-      </div>
-    </template>
-
-    <template v-else-if="activeTab === 'transform'">
-      <div class="ox-vite-skills-transform-grid">
-        <section class="ox-vite-skills-transform-card">
-          <div class="ox-vite-skills-transform-card__head">
-            <i class="fa-brands fa-github"></i>
-            <div>
-              <h2>{{ isZh ? 'GitHub 仓库' : 'GitHub Repository' }}</h2>
-              <p>{{ isZh ? '从 GitHub 仓库直接安装技能。' : 'Install a skill directly from a GitHub repository.' }}</p>
-            </div>
-          </div>
-          <label class="ox-vite-skills-field">
-            <span>GitHub URL</span>
-            <input :value="transform.githubUrl" type="text" placeholder="https://github.com/owner/repo" @input="handleGithubUrl" />
-          </label>
-          <div class="ox-vite-skills-transform-actions">
-            <button type="button" class="ox-vite-skills-primary-btn" @click="handleInstallGithub">
-              <i class="fa-solid fa-download"></i>
-              <span>{{ isZh ? '下载并安装' : 'Download and install' }}</span>
-            </button>
-          </div>
-        </section>
-
-        <section class="ox-vite-skills-transform-card">
-          <div class="ox-vite-skills-transform-card__head">
-            <i class="fa-solid fa-file-zipper"></i>
-            <div>
-              <h2>{{ isZh ? 'ZIP 技能包' : 'ZIP Skill Package' }}</h2>
-              <p>{{ isZh ? '上传 ZIP 技能包到全局技能目录。' : 'Upload a ZIP skill package into the global skills directory.' }}</p>
-            </div>
-          </div>
-          <label class="ox-vite-skills-upload-zone">
-            <input type="file" accept=".zip" hidden @change="handleZipInput" />
-            <i class="fa-solid fa-cloud-arrow-up"></i>
-            <span>{{ isZh ? '点击选择 ZIP 技能包' : 'Click to choose a ZIP skill package' }}</span>
-            <small>{{ transform.workspacePath ? transform.workspacePath : (isZh ? '当前未选择工作区' : 'No workspace selected') }}</small>
-          </label>
-        </section>
-      </div>
-    </template>
-
-    <template v-else>
-      <div class="ox-vite-skills-crystal-layout">
-        <section class="ox-vite-skills-crystal-main">
-          <div class="ox-vite-skills-crystal-head">
-            <div>
-              <h2>{{ isZh ? '技能结晶' : 'Skill Crystal' }}</h2>
-              <p>{{ isZh ? '把高成功率工作流结晶为标准化技能。' : 'Crystallize high-signal workflows into standardized reusable skills.' }}</p>
-            </div>
-            <div class="ox-vite-skills-crystal-actions">
-              <button type="button" class="ox-vite-skills-secondary-btn" @click="handleSeedExample">
-                <i class="fa-solid fa-wand-magic-sparkles"></i>
-                <span>{{ isZh ? '填充示例' : 'Seed example' }}</span>
-              </button>
-              <button type="button" class="ox-vite-skills-secondary-btn" @click="handleSleepCycle">
-                <i class="fa-solid fa-moon"></i>
-                <span>{{ isZh ? '运行睡眠周期' : 'Run sleep cycle' }}</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="ox-vite-skills-crystal-stats">
-            <article v-for="state in crystal.lifecycleStates" :key="state.value" class="ox-vite-skills-crystal-stat">
-              <span>{{ state.label }}</span>
-              <strong>{{ crystal.lifecycle.counts[state.value] || 0 }}</strong>
+              <footer><span class="oxsk-location"><i class="fa-solid fa-circle-check"></i>{{ skill.isGlobal && skill.isProject ? (isZh ? '本机 + 工作区' : 'Global + workspace') : skill.isGlobal ? (isZh ? '本机全局' : 'Global') : (isZh ? '当前工作区' : 'Workspace') }}</span><span>{{ skill.version ? `v${skill.version}` : metadataLabel(skill.lifecycleStatus, isZh) }}</span></footer>
             </article>
           </div>
-
-          <div class="ox-vite-skills-crystal-form">
-            <label class="ox-vite-skills-field">
-              <span>{{ isZh ? '来源' : 'Source' }}</span>
-              <select :value="crystal.draft.source" @change="handleCrystalField('source', $event)">
-                <option v-for="option in crystal.sourceOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-              </select>
-            </label>
-            <label class="ox-vite-skills-field">
-              <span>{{ isZh ? '技能名称' : 'Skill Name' }}</span>
-              <input :value="crystal.draft.name" type="text" @input="handleCrystalField('name', $event)" />
-            </label>
-            <label class="ox-vite-skills-field">
-              <span>{{ isZh ? '技能 ID' : 'Skill ID' }}</span>
-              <input :value="crystal.draft.id" type="text" @input="handleCrystalField('id', $event)" />
-            </label>
-            <label class="ox-vite-skills-field ox-vite-skills-field--full">
-              <span>{{ isZh ? '描述' : 'Description' }}</span>
-              <textarea :value="crystal.draft.description" rows="3" @input="handleCrystalField('description', $event)"></textarea>
-            </label>
-            <label class="ox-vite-skills-field ox-vite-skills-field--full">
-              <span>{{ isZh ? '触发场景' : 'Trigger Context' }}</span>
-              <textarea :value="crystal.draft.trigger" rows="4" @input="handleCrystalField('trigger', $event)"></textarea>
-            </label>
-            <label class="ox-vite-skills-field ox-vite-skills-field--full">
-              <span>{{ isZh ? '工作流步骤' : 'Workflow' }}</span>
-              <textarea :value="crystal.draft.workflow" rows="4" @input="handleCrystalField('workflow', $event)"></textarea>
-            </label>
-            <label class="ox-vite-skills-field ox-vite-skills-field--full">
-              <span>{{ isZh ? 'Guardrails / 备注' : 'Guardrails / Notes' }}</span>
-              <textarea :value="crystal.draft.notes" rows="3" @input="handleCrystalField('notes', $event)"></textarea>
-            </label>
-            <label class="ox-vite-skills-checkbox">
-              <input :checked="crystal.draft.syncToWorkspace" type="checkbox" @change="handleCrystalField('syncToWorkspace', $event)" />
-              <span>{{ isZh ? '同步到当前工作区' : 'Sync to current workspace' }}</span>
-            </label>
-          </div>
-
-          <div class="ox-vite-skills-transform-actions">
-            <button type="button" class="ox-vite-skills-primary-btn" @click="handleCrystallize">
-              <i class="fa-solid fa-gem"></i>
-              <span>{{ isZh ? '生成技能' : 'Create skill' }}</span>
-            </button>
-          </div>
         </section>
-
-        <aside class="ox-vite-skills-crystal-preview">
-          <h3>SKILL.md</h3>
-          <div class="ox-vite-skills-crystal-preview__content markdown-body">
-            <pre>{{ crystal.preview }}</pre>
-          </div>
-        </aside>
+        <section v-else class="oxsk-bundles">
+          <div class="oxsk-section-heading"><h2>{{ isZh ? '把能力配成一条工作流' : 'Connect capabilities into a workflow' }}</h2><p>{{ isZh ? '套组是配套建议，逐项查看真实技能。选择套组不会安装或执行任务。' : 'Bundles suggest related packages. Review each real skill; choosing a bundle does not install or execute it.' }}</p></div>
+          <article v-for="bundle in bundles" :key="bundle.id" class="oxsk-bundle"><span class="oxsk-icon"><i :class="bundle.icon"></i></span><div class="oxsk-bundle-body"><h3>{{ isZh ? bundle.zh : bundle.en }}</h3><p>{{ isZh ? bundle.descriptionZh : bundle.descriptionEn }}</p><div class="oxsk-bundle-members"><button v-for="member in bundle.members" :key="member.id" :disabled="!member.skill" @click="preview(member.id)"><i :class="member.skill ? 'fa-solid fa-circle-check' : 'fa-regular fa-circle'"></i><span>{{ member.skill?.name || member.id }}</span><small>{{ member.skill ? (isZh ? '查看' : 'View') : (isZh ? '未在本机找到' : 'Not found locally') }}</small></button></div><p class="oxsk-bundle-starter"><i class="fa-regular fa-comment-dots"></i>{{ isZh ? bundle.starterZh : bundle.starterEn }}</p></div></article>
+        </section>
+        <SkillDetail v-if="selected" :key="selected.id" :skill="selected" :preview="state.preview" :is-zh="isZh" :workspace-path="state.workspacePath" :employees="state.employees" :busy="!!busy" @close="closeDetail" @manage="manage" @preview="preview" @enterprise="enterprise" />
       </div>
+      <footer class="oxsk-library-footer"><span>{{ isZh ? '发现内容来自当前技能目录。更多技能可通过外部市场查看。' : 'Discovery uses your current catalog. Browse the external market for more skills.' }}</span><a href="https://www.agentparty.top/skills.html" target="_blank" rel="noopener noreferrer">{{ isZh ? '技能市场' : 'Skill market' }} <i class="fa-solid fa-arrow-up-right-from-square"></i></a><a href="https://github.com/openxnet/openxnet.github.io/blob/main/skills.json" target="_blank" rel="noopener noreferrer">{{ isZh ? '提交技能' : 'Submit a skill' }}</a></footer>
     </template>
-  </div>
+    <SkillManagement v-else :view="view" :state="state" :busy="!!busy" @command="command" @field="crystalField" @github="githubUrl" @enterprise="enterprise" />
+  </main>
 </template>
-
-<style>
-#openxnet-vite-skills-root {
-  display: block;
-  height: 100%;
-  min-height: 0;
-}
-
-.ox-vite-skills-shell,
-.ox-vite-skills-shell * {
-  box-sizing: border-box;
-}
-
-.ox-vite-skills-shell {
-  height: auto;
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: 18px 0 16px;
-  background: transparent;
-  color: var(--ox-text-primary);
-  overflow: visible;
-}
-
-.ox-vite-skills-header {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 0 24px 16px;
-}
-
-.ox-vite-skills-header h1 {
-  margin: 0;
-  font-size: 36px;
-  line-height: 1.1;
-}
-
-.ox-vite-skills-header p {
-  margin: 10px 0 0;
-  color: #64748b;
-  font-size: 16px;
-}
-
-.ox-vite-skills-header__actions,
-.ox-vite-skills-transform-actions,
-.ox-vite-skills-crystal-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ox-vite-skills-tabs {
-  flex: 0 0 auto;
-  display: flex;
-  gap: 8px;
-  padding: 0 24px 18px;
-}
-
-.ox-vite-skills-tab,
-.ox-vite-skills-filter-pill,
-.ox-vite-skills-primary-btn,
-.ox-vite-skills-secondary-btn {
-  min-height: 38px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 16px;
-  border-radius: 12px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.ox-vite-skills-tab,
-.ox-vite-skills-filter-pill,
-.ox-vite-skills-secondary-btn {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: #ffffff;
-  color: #64748b;
-}
-
-.ox-vite-skills-tab.active,
-.ox-vite-skills-filter-pill.active {
-  border-color: rgba(91, 163, 197, 0.18);
-  background: rgba(91, 163, 197, 0.08);
-  color: #1e293b;
-  font-weight: 600;
-}
-
-.ox-vite-skills-primary-btn {
-  border: 0;
-  background: linear-gradient(135deg, #5ba3c5, #7bb8d4);
-  color: #ffffff;
-}
-
-.ox-vite-skills-library-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 24px 16px;
-}
-
-.ox-vite-skills-filter-pills,
-.ox-vite-skills-chip-wrap {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.ox-vite-skills-search {
-  position: relative;
-  width: 300px;
-}
-
-.ox-vite-skills-search i {
-  position: absolute;
-  top: 50%;
-  left: 14px;
-  transform: translateY(-50%);
-  color: #94a3b8;
-  font-size: 12px;
-}
-
-.ox-vite-skills-search input,
-.ox-vite-skills-field input,
-.ox-vite-skills-field select,
-.ox-vite-skills-field textarea {
-  width: 100%;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 14px;
-  background: #f4f5f9;
-  color: #1e293b;
-  font: inherit;
-}
-
-.ox-vite-skills-search input {
-  min-height: 40px;
-  padding: 0 14px 0 36px;
-}
-
-.ox-vite-skills-library-layout,
-.ox-vite-skills-crystal-layout {
-  flex: 0 0 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  grid-template-rows: minmax(0, 1fr);
-  gap: 18px;
-  padding: 0 24px 0;
-  overflow: visible;
-  align-items: stretch;
-}
-
-.ox-vite-skills-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  align-content: start;
-  align-items: start;
-  min-height: 0;
-  height: auto;
-  max-height: none;
-  overflow: visible;
-  padding-right: 0;
-  align-self: stretch;
-}
-
-.ox-vite-skills-card,
-.ox-vite-skills-preview,
-.ox-vite-skills-transform-card,
-.ox-vite-skills-crystal-main,
-.ox-vite-skills-crystal-preview {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
-}
-
-.ox-vite-skills-card {
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.ox-vite-skills-card__head {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.ox-vite-skills-card__icon,
-.ox-vite-skills-preview__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(91, 163, 197, 0.08);
-  color: #5ba3c5;
-}
-
-.ox-vite-skills-card__copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.ox-vite-skills-card__name {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.ox-vite-skills-card__alias {
-  margin-top: 4px;
-  color: #94a3b8;
-  font-size: 12px;
-}
-
-.ox-vite-skills-card__version {
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.12);
-  color: #64748b;
-  font-size: 11px;
-}
-
-.ox-vite-skills-card__desc {
-  margin: 0;
-  color: #64748b;
-  line-height: 1.6;
-  font-size: 14px;
-}
-
-.ox-vite-skills-chip {
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(91, 163, 197, 0.08);
-  color: #64748b;
-  font-size: 12px;
-}
-
-.ox-vite-skills-card__footer {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.ox-vite-skills-card__status {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #94a3b8;
-  font-size: 13px;
-}
-
-.ox-vite-skills-card__status.installed {
-  color: #15803d;
-}
-
-.ox-vite-skills-preview {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  height: auto;
-  max-height: none;
-  overflow: visible;
-  align-self: stretch;
-}
-
-.ox-vite-skills-preview__head {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.ox-vite-skills-preview__head h2 {
-  margin: 0;
-  font-size: 22px;
-}
-
-.ox-vite-skills-preview__head p {
-  margin: 8px 0 0;
-  color: #64748b;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.ox-vite-skills-preview__content,
-.ox-vite-skills-preview__empty {
-  padding: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 16px;
-  background: #f8fafc;
-}
-
-.ox-vite-skills-preview__empty {
-  color: #64748b;
-  line-height: 1.6;
-}
-
-.ox-vite-skills-transform-grid {
-  flex: 0 0 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
-  gap: 18px;
-  padding: 0 24px;
-  align-items: start;
-  overflow: visible;
-}
-
-.ox-vite-skills-transform-card,
-.ox-vite-skills-crystal-main,
-.ox-vite-skills-crystal-preview {
-  padding: 22px;
-}
-
-.ox-vite-skills-transform-card__head,
-.ox-vite-skills-crystal-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  margin-bottom: 18px;
-}
-
-.ox-vite-skills-transform-card__head i {
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(91, 163, 197, 0.08);
-  color: #5ba3c5;
-  font-size: 18px;
-}
-
-.ox-vite-skills-transform-card__head h2,
-.ox-vite-skills-crystal-head h2 {
-  margin: 0;
-  font-size: 26px;
-}
-
-.ox-vite-skills-transform-card__head p,
-.ox-vite-skills-crystal-head p {
-  margin: 8px 0 0;
-  color: #64748b;
-  line-height: 1.6;
-}
-
-.ox-vite-skills-upload-zone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 220px;
-  padding: 24px;
-  border: 1px dashed rgba(91, 163, 197, 0.3);
-  border-radius: 18px;
-  background: rgba(91, 163, 197, 0.03);
-  color: #64748b;
-  text-align: center;
-  cursor: pointer;
-}
-
-.ox-vite-skills-upload-zone i {
-  font-size: 28px;
-  color: #5ba3c5;
-}
-
-.ox-vite-skills-crystal-main,
-.ox-vite-skills-crystal-preview {
-  min-height: 0;
-  height: auto;
-  overflow: visible;
-}
-
-.ox-vite-skills-crystal-stats {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 18px;
-}
-
-.ox-vite-skills-crystal-stat {
-  padding: 12px 14px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 16px;
-  background: #f8fafc;
-}
-
-.ox-vite-skills-crystal-stat span {
-  display: block;
-  color: #94a3b8;
-  font-size: 12px;
-}
-
-.ox-vite-skills-crystal-stat strong {
-  display: block;
-  margin-top: 6px;
-  font-size: 18px;
-}
-
-.ox-vite-skills-crystal-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.ox-vite-skills-field,
-.ox-vite-skills-checkbox {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.ox-vite-skills-field--full {
-  grid-column: 1 / -1;
-}
-
-.ox-vite-skills-field span {
-  font-size: 13px;
-  font-weight: 600;
-  color: #475569;
-}
-
-.ox-vite-skills-field input,
-.ox-vite-skills-field select {
-  min-height: 42px;
-  padding: 0 14px;
-}
-
-.ox-vite-skills-field textarea {
-  min-height: 100px;
-  padding: 12px 14px;
-  resize: vertical;
-  line-height: 1.6;
-}
-
-.ox-vite-skills-checkbox {
-  grid-column: 1 / -1;
-  flex-direction: row;
-  align-items: center;
-}
-
-.ox-vite-skills-crystal-preview__content {
-  height: 100%;
-  overflow: auto;
-  padding: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 16px;
-  background: #f8fafc;
-}
-
-.ox-vite-skills-crystal-preview__content pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-@media (max-width: 1180px) {
-  .ox-vite-skills-library-layout,
-  .ox-vite-skills-crystal-layout,
-  .ox-vite-skills-transform-grid,
-  .ox-vite-skills-crystal-form,
-  .ox-vite-skills-crystal-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .ox-vite-skills-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .ox-vite-skills-header,
-  .ox-vite-skills-library-toolbar,
-  .ox-vite-skills-crystal-head {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .ox-vite-skills-search {
-    width: 100%;
-  }
-}
-</style>

@@ -208,10 +208,11 @@ function getMemoryEditor(host, isZh) {
   };
 }
 
-function getVoiceSnapshot(host, roles, isZh) {
+function getVoiceSnapshot(host, isZh) {
   const tts = host?.ttsSettings || {};
+  const engine = String(tts.engine || 'edgetts');
   const allVoices = Array.isArray(host?.edgettsvoices) ? host.edgettsvoices : [];
-  const voiceOptions = allVoices
+  const edgeVoiceOptions = allVoices
     .filter((voice) => {
       const languageMatch = !tts.edgettsLanguage || voice.language === tts.edgettsLanguage;
       const genderMatch = !tts.edgettsGender || voice.gender === tts.edgettsGender;
@@ -222,30 +223,44 @@ function getVoiceSnapshot(host, roles, isZh) {
       value: voice.name,
       label: `${voice.name} · ${voice.language} · ${voice.gender}`,
     }));
+  const voiceOptions = engine === 'systemtts'
+    ? (host?.systemVoices || []).map(voice => ({ value: voice.id, label: voice.name || voice.id }))
+    : engine === 'openai'
+      ? (host?.openaiVoices || []).map(value => ({ value, label: value }))
+      : edgeVoiceOptions;
+  const voiceField = engine === 'systemtts' ? 'systemVoiceName' : engine === 'openai' ? 'openaiVoice' : 'edgettsVoice';
+  const rateField = engine === 'systemtts' ? 'systemRate' : engine === 'openai' ? 'openaiSpeed' : 'edgettsRate';
 
   return {
+    engine,
+    voiceField,
+    rateField,
+    rateMin: engine === 'systemtts' ? 50 : 0.5,
+    rateMax: engine === 'systemtts' ? 400 : 2,
+    rateStep: engine === 'systemtts' ? 10 : 0.1,
     providers: [
       { id: 'edgetts', label: 'Edge TTS', active: String(tts.engine || 'edgetts') === 'edgetts' },
       { id: 'openai', label: 'OpenAI TTS', active: String(tts.engine || '') === 'openai' },
-      { id: 'system', label: isZh ? '系统语音' : 'System Voice', active: String(tts.engine || '') === 'system' },
+      { id: 'systemtts', label: isZh ? '系统语音' : 'System Voice', active: String(tts.engine || '') === 'systemtts' },
     ],
-    rows: roles.slice(0, 4).map((role, index) => ({
-      id: role.id || `voice-${index}`,
-      name: role.name,
-      model: String(tts.edgettsVoice || 'XiaoyiNeural'),
-      tone: [
-        isZh ? '温暖女声' : 'Warm',
-        isZh ? '沉稳男声' : 'Calm',
-        isZh ? '清新女声' : 'Fresh',
-        isZh ? '磁性男声' : 'Deep',
-      ][index % 4],
-      speed: `${Number(tts.edgettsRate || 1).toFixed(1)}x`,
-      pitch: ['+0', '-2', '+1', '+0'][index % 4],
-    })),
+    rows: Object.entries(tts.newtts || {}).filter(([, profile]) => profile && typeof profile === 'object').map(([name, profile]) => {
+      const settings = { ...tts, ...profile };
+      const engine = String(settings.engine || 'edgetts');
+      const tone = engine === 'openai' ? settings.openaiVoice : engine === 'systemtts' ? settings.systemVoiceName : engine === 'edgetts' ? settings.edgettsVoice : settings.voice;
+      const rate = engine === 'openai' ? settings.openaiSpeed : engine === 'edgetts' ? settings.edgettsRate : settings.speed;
+      return {
+        id: name,
+        name,
+        model: engine,
+        tone: String(tone || '—'),
+        speed: Number.isFinite(Number(rate)) && Number(rate) > 0 ? `${Number(rate).toFixed(1)}x` : '—',
+        pitch: settings.edgettsPitch === undefined || engine !== 'edgetts' ? '—' : String(settings.edgettsPitch),
+      };
+    }),
     selectedLanguage: String(tts.edgettsLanguage || 'zh-CN'),
     selectedGender: String(tts.edgettsGender || 'Female'),
-    selectedVoice: String(tts.edgettsVoice || ''),
-    selectedRate: Number(tts.edgettsRate || 1),
+    selectedVoice: String(tts[voiceField] || ''),
+    selectedRate: Number(tts[rateField] || (engine === 'systemtts' ? 200 : 1)),
     sampleText: String(tts.SampleText || (isZh ? 'openxnet链接一切！' : 'OpenXnet connects everything.')),
     voiceOptions,
   };
@@ -338,7 +353,7 @@ function createSnapshot() {
     ],
     roles,
     memory: getMemoryEditor(host, isZh),
-    voice: getVoiceSnapshot(host, roles, isZh),
+    voice: getVoiceSnapshot(host, isZh),
     appearance: getAppearanceSnapshot(host, roles, isZh),
     behavior: getBehaviorSnapshot(host, isZh),
     vision: getVisionSnapshot(host, isZh),
@@ -445,18 +460,33 @@ async function updateMemoryProvider(value) {
 async function updateTtsField(field, value) {
   const host = getHostApp();
   if (!host || !host.ttsSettings) return;
-  host.ttsSettings[field] = value;
+  host.ttsSettings[field] = ['edgettsRate', 'openaiSpeed', 'systemRate'].includes(field) ? Number(value) : value;
   if (field === 'edgettsLanguage') host.edgettsLanguage = value;
   if (field === 'edgettsGender') host.edgettsGender = value;
   await safeAutoSave(host);
 }
 
-async function playVoiceSample() {
+/** Select an existing synthesis engine and refresh the matching voice catalog. */
+async function selectVoiceEngine(engine) {
+  const host = getHostApp();
+  if (!host?.ttsSettings || !['edgetts', 'openai', 'systemtts'].includes(engine)) return;
+  host.ttsSettings.engine = engine;
+  await safeAutoSave(host);
+  if (engine === 'systemtts' && typeof host.fetchSystemVoices === 'function') {
+    await host.fetchSystemVoices();
+  } else if (engine !== 'systemtts' && typeof host.fetchTetosVoices === 'function') {
+    await host.fetchTetosVoices(engine);
+  }
+}
+
+/** Preview the global voice or a saved named profile through the existing host contract. */
+async function playVoiceSample(voiceId = 'default') {
   const host = getHostApp();
   if (!host || typeof host.ClickToListen !== 'function') return;
-  const sample = host.ttsSettings?.SampleText || 'openxnet链接一切！';
-  const voice = host.ttsSettings?.edgettsVoice || 'default';
-  await host.ClickToListen(sample, voice);
+  const profile = voiceId === 'default' ? host.ttsSettings : host.ttsSettings?.newtts?.[voiceId];
+  if (!profile) return;
+  const sample = profile.SampleText || host.ttsSettings?.SampleText || 'openxnet链接一切！';
+  await host.ClickToListen(sample, voiceId);
 }
 
 async function openVrmUpload() {
@@ -488,7 +518,11 @@ async function toggleBehaviorRule(index) {
 async function openBehaviorEditor() {
   const host = getHostApp();
   if (!host) return;
-  host.showBehaviorDialog = true;
+  if (typeof host.openBehaviorDialog === 'function') {
+    host.openBehaviorDialog(-1);
+  } else {
+    notify(host, isCurrentLanguageZh(host) ? '行为编辑器暂时不可用，请重新打开角色设置。' : 'The behavior editor is unavailable. Reopen Role Settings.', 'error');
+  }
 }
 
 async function updateVisionField(field, value) {
@@ -522,6 +556,7 @@ export function createRoleBridge() {
     updateMemorySetting,
     updateMemoryProvider,
     updateTtsField,
+    selectVoiceEngine,
     playVoiceSample,
     openVrmUpload,
     updateVrmField,

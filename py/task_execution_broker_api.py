@@ -211,13 +211,18 @@ class TaskExecutionBrokerApi:
     ) -> Any:
         """Broker one authenticated task turn as typed execution-session events."""
 
-        await self._validate_session_context(
+        _, _, task = await self._validate_session_context(
             schema=req.schema_,
             expected_schema=TASK_EXECUTION_TURN_SCHEMA,
             session_id=req.sessionId,
             task_id=req.taskId,
             workspace_path=req.workspacePath,
         )
+        # 身份仅来自已验证的任务；identity comes only from the verified task.
+        fastapi_request.state.openxnet_task_scope = {
+            "task_id": str(task.task_id), "session_id": req.sessionId,
+            "origin_conversation_id": str((task.context or {}).get("origin_conversation_id") or ""),
+        }
         try:
             messages = normalize_session_messages(req.messages)
             max_tokens = normalize_session_max_tokens(req.maxTokens)

@@ -223,14 +223,42 @@ function normalizeDetails(value: unknown): Record<string, unknown> {
     };
     const reducedPayload = JSON.stringify(reduced);
     if (Buffer.byteLength(reducedPayload, "utf8") > MAX_APPLICATION_TASK_DETAILS_BYTES) {
-      return { summary: boundedText(value.summary, 8_192), details_truncated: true };
+      // 大型旧执行历史不能抹掉有界的会话归属与公开协作记录。 / Large legacy execution history must not erase bounded conversation ownership and public collaboration records.
+      const originalContext = isRecord(value.context) ? value.context : {};
+      const context: Record<string, unknown> = {};
+      if (typeof originalContext.origin_conversation_id === "string" && originalContext.origin_conversation_id.length <= 512) context.origin_conversation_id = originalContext.origin_conversation_id;
+      const automation = summarizeConversationAutomation(originalContext.automation);
+      if (automation) {
+        const runs = automation.runs as unknown[];
+        while (runs.length && Buffer.byteLength(JSON.stringify(automation), "utf8") > 64 * 1024) { runs.shift(); automation.history_truncated = true; }
+        context.automation = automation;
+      }
+      const transcript = originalContext.agent_transcript;
+      if (isRecord(transcript) && transcript.schema === "openxnet.agent-transcript.v1" && Buffer.byteLength(JSON.stringify(transcript), "utf8") <= 96 * 1024) context.agent_transcript = transcript;
+      return { summary: boundedText(value.summary, 8_192), context, details_truncated: true };
     }
     return JSON.parse(reducedPayload) as Record<string, unknown>;
   }
   return JSON.parse(payload) as Record<string, unknown>;
 }
 
-/** Reduce full execution details to the fields needed by task list surfaces. */
+/** 仅投影会话自动任务的有界公共状态与真实运行回执。 / Project only bounded public automation state and actual run receipts. */
+function summarizeConversationAutomation(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value) || !["active", "paused", "completed"].includes(String(value.state))) return undefined;
+  const summary: Record<string, unknown> = { state: value.state };
+  for (const [field, maximum] of [["notification_policy", 32], ["completion_policy", 32], ["completion_condition", 2_000], ["last_outcome", 32], ["last_observation_key", 512], ["last_run_id", 128]] as const) {
+    if (typeof value[field] === "string") summary[field] = boundedText(value[field], maximum);
+  }
+  summary.runs = Array.isArray(value.runs) ? value.runs.slice(-50).filter(isRecord).map(/** 保留公开回执字段，排除任意运行配置。 / Retain public receipt fields while excluding arbitrary runtime settings. */ row => ({
+    id: boundedText(row.id, 128), outcome: boundedText(row.outcome, 32), summary: boundedText(row.summary, 512),
+    evidence: Array.isArray(row.evidence) ? row.evidence.slice(0, 5).filter(/** 证据只能是实际文本。 / Evidence must be actual text. */ item => typeof item === "string").map(/** 限制每条证据的列表预览。 / Bound each evidence item in list previews. */ item => boundedText(item, 256)) : [],
+    finished_at: boundedText(row.finished_at, 64), notify: row.notify === true,
+    truncated: typeof row.summary === "string" && row.summary.length > 512 || Array.isArray(row.evidence) && (row.evidence.length > 5 || row.evidence.some(/** 标明缩短的证据预览。 / Mark shortened evidence previews. */ item => typeof item === "string" && item.length > 256)),
+  })) : [];
+  return summary;
+}
+
+/** 将详情缩减为列表字段，同时保留会话归属与有限自动任务状态。 / Reduce details for task lists while retaining conversation ownership and bounded automation state. */
 function summarizeDetails(value: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const summaryKeys = [
     "summary", "last_event", "last_error", "last_result_preview", "is_resumable",
@@ -251,12 +279,15 @@ function summarizeDetails(value: Readonly<Record<string, unknown>>): Record<stri
     if (value[key] !== undefined) summary[key] = value[key];
   }
   const context = isRecord(value.context) ? value.context : {};
+  const automation = summarizeConversationAutomation(context.automation);
   summary.context = {
     created_from: context.created_from,
     priority: context.priority,
     core_task_id: context.core_task_id,
     input_artifact_ids: context.input_artifact_ids,
     output_artifact_ids: context.output_artifact_ids,
+    ...(typeof context.origin_conversation_id === "string" && context.origin_conversation_id.length <= 512 ? { origin_conversation_id: context.origin_conversation_id } : {}),
+    ...(automation ? { automation } : {}),
   };
   return normalizeDetails(summary);
 }

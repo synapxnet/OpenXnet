@@ -1,5 +1,18 @@
 import { DESKTOP_CORE_CHANNELS } from "../contracts/channels";
 import {
+  APPLICATION_COMPETITION_LIVE_CONNECTION_CHANNELS,
+  type ApplicationCompetitionLiveConnectionRequest,
+  type ApplicationCompetitionLiveConnectionResult,
+  type ApplicationCompetitionLiveConnectionSaveRequest,
+} from "../contracts/application-competition-live-connection";
+import {
+  APPLICATION_COMPETITION_CONNECTION_CHANNELS,
+  type ApplicationCompetitionConnectionRequest,
+  type ApplicationCompetitionConnectionResult,
+  type ApplicationCompetitionConnectionSaveRequest,
+} from "../contracts/application-competition-connection";
+import { COMPLETION_NOTICE_CHANNELS, type CompletionNotice, type CompletionNoticeTarget, type CompletionNoticeListener, type CompletionNoticeNavigateListener, type CompletionNoticeResult, type CompletionNoticeSnapshot, type PublishCompletionNoticeRequest } from "../contracts/completion-notice";
+import {
   APPLICATION_AUTH_CHANNELS,
   type ApplicationAuthSnapshot,
   type SaveApplicationAuthSessionRequest,
@@ -168,6 +181,7 @@ import {
   type ApplicationSkillContentResult,
   type ApplicationSkillDirectoryResult,
   type ApplicationSkillIdRequest,
+  type ApplicationSkillContentRequest,
   type ApplicationSkillMlopsUploadResult,
   type ApplicationSkillMutationResult,
   type ApplicationSkillWriteResult,
@@ -273,6 +287,7 @@ import {
   type ApplicationChatStreamListener,
   type CompleteApplicationChatRequest,
   type ExecuteApplicationChatToolRequest,
+  type GetApplicationChatRecoveryStatusRequest,
   type ResolveApplicationChatApprovalRequest,
   type StartApplicationChatStreamRequest,
 } from "../contracts/application-chat";
@@ -347,6 +362,11 @@ import {
   type SaveApplicationProvidersRequest,
   type ValidateApplicationProviderRequest,
 } from "../contracts/application-providers";
+import {
+  APPLICATION_OLLAMA_RUNTIME_CHANNELS,
+  type ApplicationOllamaDiscoveryRequest,
+  type ApplicationOllamaDiscoveryResult,
+} from "../contracts/application-ollama-runtime";
 import {
   APPLICATION_AGENT_RUNTIME_CHANNELS,
   type ApplicationA2aInspectionResult,
@@ -1187,8 +1207,8 @@ export function exposeDesktopCore(options: ExposeDesktopCoreOptions): void {
     return ipcRenderer.invoke<ApplicationSkillCatalog>(APPLICATION_SKILL_RUNTIME_CHANNELS.list);
   }
 
-  /** 读取一个技能 Markdown；输入稳定 ID，返回有界 UTF-8 内容。 */
-  function getApplicationSkillContent(request: ApplicationSkillIdRequest): Promise<ApplicationSkillContentResult> {
+  /** 读取指定来源的正文且不接收本机路径。 Read source-specific content without accepting local paths. */
+  function getApplicationSkillContent(request: ApplicationSkillContentRequest): Promise<ApplicationSkillContentResult> {
     return ipcRenderer.invoke<ApplicationSkillContentResult>(APPLICATION_SKILL_RUNTIME_CHANNELS.content, request);
   }
 
@@ -1413,6 +1433,46 @@ export function exposeDesktopCore(options: ExposeDesktopCoreOptions): void {
       APPLICATION_ENTERPRISE_RUNTIME_CHANNELS.checkAllXnetServices,
       request,
     );
+  }
+
+  /** 读取脱敏接入状态，不回传访问码。 / Read redacted connection status without returning an access code. */
+  function getApplicationCompetitionConnection(): Promise<ApplicationCompetitionConnectionResult> {
+    return ipcRenderer.invoke<ApplicationCompetitionConnectionResult>(APPLICATION_COMPETITION_CONNECTION_CHANNELS.get);
+  }
+
+  /** 检查服务身份及授权，不绑定或保存。 / Check service identity and authorization without binding or saving. */
+  function testApplicationCompetitionConnection(request: ApplicationCompetitionConnectionRequest): Promise<ApplicationCompetitionConnectionResult> {
+    return ipcRenderer.invoke<ApplicationCompetitionConnectionResult>(APPLICATION_COMPETITION_CONNECTION_CHANNELS.test, request);
+  }
+
+  /** 通过 Main 验证并加密保存接入。 / Validate and encrypt the connection through Main. */
+  function saveApplicationCompetitionConnection(request: ApplicationCompetitionConnectionSaveRequest): Promise<ApplicationCompetitionConnectionResult> {
+    return ipcRenderer.invoke<ApplicationCompetitionConnectionResult>(APPLICATION_COMPETITION_CONNECTION_CHANNELS.save, request);
+  }
+
+  /** 清除本机保存项，不撤销服务器授权。 / Clear the local saved entry without revoking server authorization. */
+  function clearApplicationCompetitionConnection(): Promise<ApplicationCompetitionConnectionResult> {
+    return ipcRenderer.invoke<ApplicationCompetitionConnectionResult>(APPLICATION_COMPETITION_CONNECTION_CHANNELS.clear);
+  }
+
+  /** 读取脱敏 Live 接入状态。 / Read redacted Live connection status. */
+  function getApplicationCompetitionLiveConnection(): Promise<ApplicationCompetitionLiveConnectionResult> {
+    return ipcRenderer.invoke<ApplicationCompetitionLiveConnectionResult>(APPLICATION_COMPETITION_LIVE_CONNECTION_CHANNELS.get);
+  }
+
+  /** 只读检测 Live 接入，不写业务。 / Check Live access without business writes. */
+  function testApplicationCompetitionLiveConnection(request: ApplicationCompetitionLiveConnectionRequest): Promise<ApplicationCompetitionLiveConnectionResult> {
+    return ipcRenderer.invoke<ApplicationCompetitionLiveConnectionResult>(APPLICATION_COMPETITION_LIVE_CONNECTION_CHANNELS.test, request);
+  }
+
+  /** 复核授权后由 Main 加密保存。 / Revalidate authorization and let Main encrypt persistence. */
+  function saveApplicationCompetitionLiveConnection(request: ApplicationCompetitionLiveConnectionSaveRequest): Promise<ApplicationCompetitionLiveConnectionResult> {
+    return ipcRenderer.invoke<ApplicationCompetitionLiveConnectionResult>(APPLICATION_COMPETITION_LIVE_CONNECTION_CHANNELS.save, request);
+  }
+
+  /** 清除本机 Live 接入，不撤销服务器授权。 / Clear local Live access without revoking server authorization. */
+  function clearApplicationCompetitionLiveConnection(): Promise<ApplicationCompetitionLiveConnectionResult> {
+    return ipcRenderer.invoke<ApplicationCompetitionLiveConnectionResult>(APPLICATION_COMPETITION_LIVE_CONNECTION_CHANNELS.clear);
   }
 
   /** 读取企业用量面板；输入分组和数量，返回 Main SQLite 聚合，不启动 Python。 */
@@ -1666,6 +1726,46 @@ export function exposeDesktopCore(options: ExposeDesktopCoreOptions): void {
   /** Cancel one local chat stream and its provider conversation. */
   function abortApplicationChat(request: AbortApplicationChatRequest): Promise<ApplicationChatResponse> {
     return ipcRenderer.invoke<ApplicationChatResponse>(APPLICATION_CHAT_CHANNELS.abort, request);
+  }
+
+  /** 通过私有Main边界核对原会话执行状态。 / Check original conversation execution through the private Main boundary. */
+  function getApplicationChatRecoveryStatus(request: GetApplicationChatRecoveryStatusRequest): Promise<ApplicationChatResponse> {
+    return ipcRenderer.invoke<ApplicationChatResponse>(APPLICATION_CHAT_CHANNELS.recoveryStatus, request);
+  }
+
+  /** 仅向Main提交有界真实结果。 / Submit bounded actual results to Main only. */
+  function publishCompletionNotice(request: PublishCompletionNoticeRequest): Promise<CompletionNoticeResult> {
+    return ipcRenderer.invoke<CompletionNoticeResult>(COMPLETION_NOTICE_CHANNELS.publish, request);
+  }
+
+  /** 读取快照不触发系统提醒。 / Read snapshots without triggering system alerts. */
+  function getCompletionNoticeSnapshot(): Promise<CompletionNoticeSnapshot> {
+    return ipcRenderer.invoke<CompletionNoticeSnapshot>(COMPLETION_NOTICE_CHANNELS.snapshot);
+  }
+
+  /** 通过已登记结果身份打开原位置。 / Open the original location by registered result identity. */
+  function openCompletionNotice(request: { readonly resultId: string }): Promise<boolean> {
+    return ipcRenderer.invoke<boolean>(COMPLETION_NOTICE_CHANNELS.open, request);
+  }
+
+  /** 订阅有限公开结果且不暴露原生事件。 / Subscribe to bounded public results without exposing native events. */
+  function onCompletionNotice(listener: CompletionNoticeListener): () => void {
+    if (typeof listener !== "function") throw new TypeError("Completion notice listener must be a function.");
+    /** 转发Main公开结果。 / Forward Main public results. */
+    function handleNotice(_event: unknown, notice: CompletionNotice): void { listener(notice); }
+    ipcRenderer.on(COMPLETION_NOTICE_CHANNELS.notice, handleNotice);
+    /** 释放同一个事件监听。 / Release the exact event listener. */
+    return function unsubscribe(): void { ipcRenderer.removeListener(COMPLETION_NOTICE_CHANNELS.notice, handleNotice); };
+  }
+
+  /** 订阅用户点击后的身份导航。 / Subscribe to identity navigation after user clicks. */
+  function onCompletionNoticeNavigate(listener: CompletionNoticeNavigateListener): () => void {
+    if (typeof listener !== "function") throw new TypeError("Completion navigation listener must be a function.");
+    /** 转发Main验证后的导航身份。 / Forward Main-validated navigation identities. */
+    function handleNavigate(_event: unknown, notice: CompletionNoticeTarget): void { listener(notice); }
+    ipcRenderer.on(COMPLETION_NOTICE_CHANNELS.navigate, handleNavigate);
+    /** 释放同一个导航监听。 / Release the exact navigation listener. */
+    return function unsubscribe(): void { ipcRenderer.removeListener(COMPLETION_NOTICE_CHANNELS.navigate, handleNavigate); };
   }
 
   /** Execute one explicitly requested provider tool. */
@@ -2012,6 +2112,16 @@ export function exposeDesktopCore(options: ExposeDesktopCoreOptions): void {
   ): Promise<ApplicationProviderEmbeddingProbeResult> {
     return ipcRenderer.invoke<ApplicationProviderEmbeddingProbeResult>(
       APPLICATION_PROVIDER_CHANNELS.probeEmbedding,
+      request,
+    );
+  }
+
+  /** 自动发现本机 Ollama 及其模型；仅访问 Main 白名单回环地址，不返回密钥或路径。 */
+  function discoverApplicationOllama(
+    request?: ApplicationOllamaDiscoveryRequest,
+  ): Promise<ApplicationOllamaDiscoveryResult> {
+    return ipcRenderer.invoke<ApplicationOllamaDiscoveryResult>(
+      APPLICATION_OLLAMA_RUNTIME_CHANNELS.discover,
       request,
     );
   }
@@ -2407,6 +2517,14 @@ export function exposeDesktopCore(options: ExposeDesktopCoreOptions): void {
     saveApplicationEnterpriseXnetService,
     checkApplicationEnterpriseXnetService,
     checkAllApplicationEnterpriseXnetServices,
+    getApplicationCompetitionConnection,
+    testApplicationCompetitionConnection,
+    saveApplicationCompetitionConnection,
+    clearApplicationCompetitionConnection,
+    getApplicationCompetitionLiveConnection,
+    testApplicationCompetitionLiveConnection,
+    saveApplicationCompetitionLiveConnection,
+    clearApplicationCompetitionLiveConnection,
     loadApplicationEnterpriseUsageDashboard,
     loadApplicationEnterpriseNeuroDashboard,
     searchApplicationEnterpriseNeuroSymbols,
@@ -2437,6 +2555,12 @@ export function exposeDesktopCore(options: ExposeDesktopCoreOptions): void {
     completeApplicationChat,
     listApplicationChatModels,
     abortApplicationChat,
+    getApplicationChatRecoveryStatus,
+    publishCompletionNotice,
+    getCompletionNoticeSnapshot,
+    openCompletionNotice,
+    onCompletionNotice,
+    onCompletionNoticeNavigate,
     executeApplicationChatTool,
     resolveApplicationChatApproval,
     onApplicationChatStreamEvent,
@@ -2475,6 +2599,7 @@ export function exposeDesktopCore(options: ExposeDesktopCoreOptions): void {
     saveApplicationProviders,
     validateApplicationProvider,
     probeApplicationProviderEmbedding,
+    discoverApplicationOllama,
     createApplicationAgent,
     removeApplicationAgent,
     inspectApplicationA2a,

@@ -478,7 +478,7 @@ export class ApplicationArtifactService {
     }
   }
 
-  /** Insert or refresh one file discovered through compatibility reconciliation. */
+  /** Reconcile file availability while preserving display metadata already owned by Core. */
   private upsertReconciledArtifact(input: {
     readonly storageName: string;
     readonly originalName: string;
@@ -493,12 +493,12 @@ export class ApplicationArtifactService {
     }
     const status: ApplicationArtifactStatus = input.available ? "available" : "missing";
     const extension = getExtension(input.storageName);
-    const mimeType = resolveMimeType(extension, input.kind);
+    const originalName = existing?.original_name ?? input.originalName;
+    const kind = existing?.media_kind ?? input.kind;
+    const mimeType = resolveMimeType(extension, kind);
     const updatedAt = this.now().toISOString();
     if (existing !== null) {
-      const changed = existing.original_name !== input.originalName
-        || existing.media_kind !== input.kind
-        || existing.mime_type !== mimeType
+      const changed = existing.mime_type !== mimeType
         || Number(existing.size_bytes) !== input.sizeBytes
         || existing.status !== status;
       if (changed) {
@@ -509,8 +509,8 @@ export class ApplicationArtifactService {
               status = ?, updated_at = ?, deleted_at = NULL
           WHERE artifact_id = ?
         `).run(
-          input.originalName,
-          input.kind,
+          originalName,
+          kind,
           mimeType,
           input.sizeBytes,
           status,
@@ -529,8 +529,8 @@ export class ApplicationArtifactService {
     `).run(
       artifactId,
       input.storageName,
-      input.originalName,
-      input.kind,
+      originalName,
+      kind,
       mimeType,
       input.sizeBytes,
       status,

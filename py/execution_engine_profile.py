@@ -51,11 +51,13 @@ def create_execution_engine_application(
         """Reject every non-loopback, unknown, unauthenticated, or wrong-method request."""
 
         path = str(request.url.path or "")
-        if path not in EXECUTION_ENGINE_ALLOWED_PATHS or request.url.query:
+        is_recovery = path == "/v1/chat/recovery-status"
+        valid_recovery_query = is_recovery and [key for key, _ in request.query_params.multi_items()] == ["conversation_id"]
+        if path not in EXECUTION_ENGINE_ALLOWED_PATHS or (request.url.query and not valid_recovery_query):
             return _error_response(404, "Not Found")
         if not _is_allowed_host(str(request.headers.get("host") or "")):
             return _error_response(403, "Execution Engine host is not allowed.")
-        expected_method = "GET" if path == EXECUTION_ENGINE_HEALTH_PATH else "POST"
+        expected_method = "GET" if path == EXECUTION_ENGINE_HEALTH_PATH or is_recovery else "POST"
         if request.method != expected_method:
             return _error_response(405, "Execution Engine method is not allowed.")
         if not _is_authorized(

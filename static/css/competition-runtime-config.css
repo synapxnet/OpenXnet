@@ -1,0 +1,145 @@
+/*
+ * -*- coding: utf-8 -*-
+ * Copyright (C) 2026 Synapxnet. All rights reserved.
+ * This file is Synapxnet Proprietary and Confidential. It is strictly
+ * forbidden to copy, distribute, or use without explicit authorization.
+ * 协同配置与接入引导样式 / Collaboration configuration and setup guidance styles.
+ * Author: maoyo | Department: 研发部 | Date: 2026-09-17
+ * Version: 1.3.0 | Security Level: INTERNAL | Maintainer: maoyo
+ * Email: synapxnet@gmail.com
+ */
+.competition-runtime-config-page { display: flex; flex-direction: column; gap: 18px; padding: 24px; min-height: 100%; color: var(--ox-text-primary, #172033); background: var(--ox-bg-base, #f7f9fc); min-width: 0; }
+.competition-runtime-config-page, .competition-runtime-config-page * { box-sizing: border-box; }
+.competition-runtime-config__read-error { margin: 0; color: var(--ox-danger, #b64836); line-height: 1.6; }
+.competition-runtime-config__mode-note { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-left: 3px solid var(--ox-accent, #0083b9); color: var(--ox-text-primary); background: color-mix(in srgb, var(--ox-accent, #0083b9) 7%, var(--ox-bg-surface, #fff)); line-height: 1.6; }
+.competition-runtime-config__mode-note i { margin-top: 5px; color: var(--ox-accent, #0083b9); }
+.competition-runtime-config__deployment { padding: 14px 0; border-top: 1px solid var(--ox-border, #e5e9f0); min-width: 0; }
+.competition-runtime-config__deployment summary { cursor: pointer; font-weight: 600; color: var(--ox-accent, #0083b9); }
+.competition-runtime-config__deployment p { color: var(--ox-text-secondary); line-height: 1.65; }
+.competition-runtime-config__deployment dl { margin: 12px 0; display: grid; gap: 12px; }
+.competition-runtime-config__deployment dl > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; }
+.competition-runtime-config__deployment dt { font-weight: 600; }
+.competition-runtime-config__deployment dd { margin: 0; min-width: 0; display: grid; gap: 4px; color: var(--ox-text-secondary); line-height: 1.55; }
+.competition-runtime-config__deployment code { overflow-wrap: anywhere; font-size: 12px; color: var(--ox-text-primary); }
+.competition-runtime-config__deployment summary:focus-visible, .competition-runtime-config__tabs button:focus-visible { outline: 2px solid var(--ox-accent, #0083b9); outline-offset: 3px; }
+@media (max-width: 700px) { .competition-runtime-config__deployment dl > div { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+.competition-runtime-config__hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 24px; border: 1px solid var(--ox-border, #e5e9f0); border-radius: 16px; background: var(--ox-bg-surface, #fff); box-shadow: 0 8px 28px rgba(26, 39, 60, .06); }
+.competition-runtime-config__hero h2 { margin: 5px 0 7px; font-size: 26px; line-height: 1.2; }
+.competition-runtime-config__hero p, .competition-runtime-config__section-head p { margin: 0; color: var(--ox-text-secondary, #627087); line-height: 1.65; }
+.competition-runtime-config__actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.competition-runtime-config__notice { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--ox-accent, #4767d8) 20%, transparent); border-radius: 10px; color: var(--ox-text-secondary, #627087); background: color-mix(in srgb, var(--ox-accent, #4767d8) 7%, var(--ox-bg-surface, #fff)); }
+.competition-runtime-config__notice i { color: var(--ox-accent, #4767d8); }
+.competition-runtime-config__howto { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 10px; padding: 14px; border: 1px solid color-mix(in srgb, var(--ox-accent, #4767d8) 20%, var(--ox-border, #e5e9f0)); border-radius: 12px; background: color-mix(in srgb, var(--ox-accent, #4767d8) 5%, var(--ox-bg-surface, #fff)); }
+.competition-runtime-config__howto > i { margin-top: 2px; color: var(--ox-accent, #4767d8); }
+.competition-runtime-config__howto strong { font-size: 14px; }
+.competition-runtime-config__howto p { margin: 4px 0 10px; color: var(--ox-text-secondary, #627087); font-size: 12px; line-height: 1.6; }
+.competition-runtime-config__steps { display: grid; gap: 8px; margin: 0; padding-left: 22px; font-size: 12px; color: var(--ox-text-primary, #172033); line-height: 1.55; }
+.competition-runtime-config__steps li { padding-left: 3px; }
+.competition-runtime-config__steps li::marker { color: var(--ox-accent, #4767d8); font-weight: 700; }
+.competition-runtime-config__steps code { display: block; width: fit-content; max-width: 100%; margin: 5px 0; padding: 6px 9px; border: 1px solid var(--ox-border, #e5e9f0); border-radius: 7px; background: var(--ox-bg-surface, #fff); overflow-wrap: anywhere; white-space: normal; font-size: 11px; }
+.competition-runtime-config__steps .ox-btn { min-height: 0; padding: 0; font-size: 11px; }
+.competition-runtime-config__howto .ox-btn--link { border: 0; border-radius: 3px; background: transparent; color: var(--ox-accent, #0083b9); font-family: inherit; font-weight: 600; cursor: pointer; line-height: 1.6; text-align: left; }
+.competition-runtime-config__howto .ox-btn--link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.competition-runtime-config__howto .ox-btn--link:focus-visible { outline: 2px solid var(--ox-accent, #0083b9); outline-offset: 3px; }
+.competition-runtime-config__howto .competition-runtime-config__footnote { margin: 11px 0 0; padding-top: 9px; border-top: 1px solid var(--ox-border, #e5e9f0); color: var(--ox-text-muted, #8b95a7); font-size: 11px; }
+.competition-runtime-config__tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.competition-runtime-config__tabs button { display: grid; grid-template-columns: 28px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 9px; align-items: center; text-align: left; padding: 14px 16px; border: 1px solid var(--ox-border, #e5e9f0); border-radius: 12px; color: var(--ox-text-secondary, #627087); background: var(--ox-bg-surface, #fff); cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, background .18s ease, color .18s ease; }
+.competition-runtime-config__tabs button i { grid-row: 1 / span 2; font-size: 17px; color: var(--ox-accent, #4767d8); }
+.competition-runtime-config__tabs button span { font-weight: 700; color: var(--ox-text-primary, #172033); }
+.competition-runtime-config__tabs button small { margin-top: 2px; font-size: 11px; color: var(--ox-text-muted, #8b95a7); }
+.competition-runtime-config__tabs button:hover, .competition-runtime-config__tabs button.is-active { border-color: var(--ox-accent, #4767d8); background: color-mix(in srgb, var(--ox-accent, #4767d8) 7%, var(--ox-bg-surface, #fff)); box-shadow: 0 4px 14px color-mix(in srgb, var(--ox-accent, #4767d8) 14%, transparent); }
+.competition-runtime-config__tabs button.is-active span, .competition-runtime-config__tabs button.is-active small { color: var(--ox-accent, #4767d8); }
+.competition-runtime-config__section { display: flex; flex-direction: column; gap: 16px; padding: 20px; border: 1px solid var(--ox-border, #e5e9f0); border-radius: 16px; background: var(--ox-bg-surface, #fff); box-shadow: 0 7px 22px rgba(26, 39, 60, .04); scroll-margin-top: 18px; }
+.competition-runtime-config__section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.competition-runtime-config__section-head h3 { margin: 5px 0 5px; font-size: 18px; }
+.competition-runtime-config__platform-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.competition-runtime-config__platform-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--ox-border, #e5e9f0); border-radius: 12px; background: var(--ox-bg-surface-hover, #f3f6fa); }
+.competition-runtime-config__platform-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; color: var(--ox-accent, #4767d8); background: color-mix(in srgb, var(--ox-accent, #4767d8) 11%, transparent); }
+.competition-runtime-config__platform-copy { display: grid; gap: 4px; min-width: 0; }
+.competition-runtime-config__platform-copy strong { font-size: 15px; }
+.competition-runtime-config__platform-copy span { font-size: 12px; color: var(--ox-text-secondary, #627087); }
+.competition-runtime-config__platform-copy small { overflow: hidden; color: var(--ox-text-muted, #8b95a7); text-overflow: ellipsis; white-space: nowrap; }
+.competition-runtime-config__status-stack { display: flex; flex-wrap: wrap; gap: 6px; }
+.competition-runtime-config__status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 999px; font-size: 11px; color: var(--ox-text-muted, #8b95a7); background: var(--ox-bg-surface, #fff); }
+.competition-runtime-config__status.is-ready { color: var(--ox-success, #198754); background: color-mix(in srgb, var(--ox-success, #198754) 10%, var(--ox-bg-surface, #fff)); }
+/* 深色小号状态文字提高对比度。 / Increase contrast for compact dark-theme status text. */
+[data-theme="dark"] .competition-runtime-config__status.is-ready { color: color-mix(in srgb, var(--ox-success, #4ca280) 70%, var(--ox-text-primary, #e5f4fb) 30%); }
+.competition-runtime-config__platform-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; }
+.competition-runtime-config__readiness-card { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--ox-border, #e5e9f0); border-radius: 12px; background: var(--ox-bg-surface-hover, #f3f6fa); }
+.competition-runtime-config__readiness-card.is-ready { border-color: color-mix(in srgb, #198754 35%, var(--ox-border, #e5e9f0)); background: color-mix(in srgb, #198754 6%, var(--ox-bg-surface, #fff)); }
+.competition-runtime-config__readiness-card.is-blocked { border-color: color-mix(in srgb, #bd7c08 35%, var(--ox-border, #e5e9f0)); background: color-mix(in srgb, #bd7c08 6%, var(--ox-bg-surface, #fff)); }
+.competition-runtime-config__readiness-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: var(--ox-warning, #bd7c08); background: color-mix(in srgb, #bd7c08 14%, var(--ox-bg-surface, #fff)); }
+.is-ready .competition-runtime-config__readiness-icon { color: var(--ox-success, #198754); background: color-mix(in srgb, #198754 14%, var(--ox-bg-surface, #fff)); }
+.competition-runtime-config__readiness-card strong { font-size: 14px; }
+.competition-runtime-config__readiness-card p { margin: 4px 0 0; color: var(--ox-text-secondary, #627087); line-height: 1.55; }
+.competition-runtime-config__facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.competition-runtime-config__facts > div { display: grid; gap: 5px; padding: 12px; border-radius: 10px; background: var(--ox-bg-surface-hover, #f3f6fa); }
+.competition-runtime-config__facts span { font-size: 11px; color: var(--ox-text-muted, #8b95a7); }
+.competition-runtime-config__facts strong { font-size: 13px; line-height: 1.45; }
+.competition-runtime-config__live-grid { display: grid; gap: 8px; }
+.competition-runtime-config__live-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(130px, .75fr) minmax(130px, .75fr) 24px; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 9px; background: var(--ox-bg-surface-hover, #f3f6fa); }
+.competition-runtime-config__live-row span { color: var(--ox-text-secondary, #627087); font-size: 12px; }
+.competition-runtime-config__live-row i { color: #198754; }
+@media (max-width: 900px) { .competition-runtime-config__hero, .competition-runtime-config__section-head { flex-direction: column; } .competition-runtime-config__platform-grid, .competition-runtime-config__facts, .competition-runtime-config__tabs { grid-template-columns: 1fr; } .competition-runtime-config__readiness-card { grid-template-columns: 36px minmax(0, 1fr); } .competition-runtime-config__readiness-card > button { grid-column: 2; justify-self: start; } .competition-runtime-config__live-row { grid-template-columns: 1fr; gap: 4px; } .competition-runtime-config__howto { grid-template-columns: 22px minmax(0, 1fr); } }
+
+.competition-connection__choices { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding-bottom: 22px; border-bottom: 1px solid var(--ox-border, #dfe7ed); }
+.competition-connection__choices > div { min-width: 0; }
+.competition-connection__choices i { color: var(--ox-accent, #0083b9); margin-right: 8px; }
+.competition-connection__choices p, .competition-connection__next p { color: var(--ox-text-secondary, #627087); font-size: 13px; line-height: 1.65; margin: 8px 0 12px; }
+.competition-connection__form { width: 100%; max-width: 840px; }
+.competition-connection__form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 18px; }
+.competition-connection__field { display: grid; gap: 7px; min-width: 0; }
+.competition-connection__field label { font-weight: 600; font-size: 13px; }
+.competition-connection__field input, .competition-connection__field select { width: 100%; min-width: 0; height: 42px; padding: 0 12px; border: 1px solid var(--ox-border, #dfe7ed); border-radius: 9px; color: var(--ox-text-primary, #172033); background: var(--ox-bg-base, #f7f9fc); font: inherit; font-size: 13px; transition: border-color .15s, box-shadow .15s; }
+.competition-connection__field input:focus, .competition-connection__field select:focus { border-color: var(--ox-accent, #0083b9); outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ox-accent, #0083b9) 15%, transparent); }
+.competition-connection__field input::placeholder { color: var(--ox-text-muted, #718296); opacity: 1; }
+.competition-connection__field small { color: var(--ox-text-secondary, #627087); font-size: 12px; line-height: 1.6; }
+.competition-connection__enable { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.competition-connection__enable input { accent-color: var(--ox-accent, #0083b9); width: 16px; height: 16px; }
+.competition-connection__buttons { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.competition-connection__buttons > span { flex-basis: 100%; font-size: 12px; line-height: 1.6; color: var(--ox-text-secondary, #627087); }
+.competition-connection__text-link { border: 0; background: transparent; padding: 4px 0; color: var(--ox-accent, #0083b9); font: inherit; font-size: 12px; text-align: left; cursor: pointer; justify-self: start; }
+.competition-connection__text-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.competition-connection__text-link:focus-visible { outline: 2px solid var(--ox-accent, #0083b9); outline-offset: 3px; }
+.competition-connection__feedback { padding: 12px 14px; display: flex; align-items: flex-start; gap: 9px; border-radius: 9px; font-size: 13px; line-height: 1.6; background: var(--ox-bg-surface-hover, #edf3f7); }
+.competition-connection__feedback i { margin-top: 4px; }
+.competition-connection__feedback.is-error { border-left: 3px solid var(--ox-danger, #d85846); }
+.competition-connection__feedback.is-success { border-left: 3px solid var(--ox-accent, #0083b9); }
+.competition-connection__receipt { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 16px; border-radius: 10px; background: var(--ox-bg-surface-hover, #edf3f7); }
+.competition-connection__receipt > div { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.competition-connection__receipt span { color: var(--ox-text-secondary, #627087); font-size: 12px; }
+.competition-connection__receipt strong { font-size: 13px; }
+.competition-connection__receipt p { grid-column: 1 / -1; font-size: 12px; line-height: 1.6; color: var(--ox-text-secondary, #627087); margin: 0; }
+.competition-connection__next { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-top: 16px; border-top: 1px solid var(--ox-border, #dfe7ed); }
+.competition-connection__next > div { flex: 1 1 320px; }
+.competition-connection__disconnect { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 12px; border-top: 1px solid var(--ox-border, #dfe7ed); color: var(--ox-text-secondary, #627087); font-size: 12px; }
+.competition-runtime-config-page button:disabled { cursor: not-allowed; opacity: .55; }
+@media (max-width: 900px) { .competition-connection__choices, .competition-connection__receipt { grid-template-columns: minmax(0, 1fr); } .competition-connection__next { align-items: flex-start; } .competition-connection__next > div { flex-basis: 100%; } }
+@media (prefers-reduced-motion: reduce) { .competition-connection__field input, .competition-connection__field select { transition: none; } }
+
+/* Live 接入保持单层表单，授权回执与网页身份分开展示。 / Keep Live setup flat and separate execution receipts from page identities. */
+.competition-live-connection__intro { display: flex; align-items: flex-start; gap: 12px; max-width: 920px; }
+.competition-live-connection__intro > i { color: var(--ox-accent, #0083b9); padding-top: 4px; }
+.competition-live-connection__intro strong { font-size: 14px; }
+.competition-live-connection__intro p { margin: 5px 0 0; color: var(--ox-text-secondary, #627087); font-size: 13px; line-height: 1.7; }
+.competition-live-connection__form { max-width: 920px; }
+.competition-live-connection__receipt { display: grid; gap: 14px; min-width: 0; padding-top: 20px; border-top: 1px solid var(--ox-border, #dfe7ed); }
+.competition-live-connection__receipt-heading { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+.competition-live-connection__receipt-heading > strong { font-size: 14px; }
+.competition-live-connection__health { display: grid; gap: 0; border: 1px solid var(--ox-border, #dfe7ed); border-radius: 10px; overflow: hidden; }
+.competition-live-connection__health-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr) minmax(180px, 1fr); gap: 12px; padding: 14px 16px; font-size: 13px; line-height: 1.6; }
+.competition-live-connection__health-row + .competition-live-connection__health-row { border-top: 1px solid var(--ox-border, #dfe7ed); }
+.competition-live-connection__health-row > * { min-width: 0; overflow-wrap: anywhere; }
+.competition-live-connection__health-row span { display: flex; gap: 7px; align-items: baseline; }
+.competition-live-connection__health-row .is-ready { color: var(--ox-text-secondary, #627087); }
+.competition-live-connection__health-row .is-ready > i { color: var(--ox-accent, #0083b9); }
+.competition-live-connection__health-row .is-pending { color: var(--ox-text-primary, #172033); }
+.competition-live-connection__health-row .is-pending > i { color: var(--ox-warning, #bd7c08); }
+.competition-live-connection__missing { margin: 0; padding: 12px 14px; list-style: none; display: grid; gap: 7px; border-left: 3px solid var(--ox-warning, #bd7c08); background: var(--ox-bg-surface-hover, #edf3f7); border-radius: 8px; }
+.competition-live-connection__missing li { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.competition-live-connection__missing i { color: var(--ox-warning, #bd7c08); }
+.competition-live-connection__scope { color: var(--ox-text-secondary, #627087); font-size: 12px; line-height: 1.6; }
+.competition-live-connection__scope summary { cursor: pointer; color: var(--ox-accent, #0083b9); }
+.competition-live-connection__scope ul { display: grid; gap: 5px; padding-left: 20px; overflow-wrap: anywhere; }
+.competition-live-connection__scope summary:focus-visible { outline: 2px solid var(--ox-accent, #0083b9); outline-offset: 4px; }
+@media (max-width: 1100px) { .competition-live-connection__health-row { grid-template-columns: 1fr; gap: 5px; } }

@@ -1,10 +1,31 @@
+<!--
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+会话工作台 / Conversation workbench.
+Author: maoyo | Department: 研发部 | Date: 2026-09-14
+Version: 1.0.0 | Security Level: INTERNAL
+__version__: 1.0.0 | __author__: maoyo | __copyright__: Copyright 2026 Synapxnet
+__maintainer__: maoyo | __email__: synapxnet@gmail.com
+-->
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { createChatBridge } from './chatBridge';
+import ChatActivity from './ChatActivity.vue';
+import ConversationInspector from './ConversationInspector.vue';
+import FilePreviewPanel from './FilePreviewPanel.vue';
+import AutomationPanel from './AutomationPanel.vue';
+import GuidanceQueue from './GuidanceQueue.vue';
+import ConnectionNotice from './ConnectionNotice.vue';
+import MessageNavigator from './MessageNavigator.vue';
+import { conversationScopeKey, isNearLatest, messageScrollOffset, shouldFollowLatest } from './conversationViewport.js';
 
 const bridge = createChatBridge();
 const snapshot = ref(bridge.snapshot());
 const draft = ref('');
+const guidanceSending = ref('');
+const guidanceSubmissionPending = computed(() => guidanceSending.value === conversationScopeKey(snapshot.value));
+const guidance = computed(() => snapshot.value.guidance || { items: [], available: false, loading: false, sending: false, error: '', notice: '' });
 const streamRef = ref(null);
 const inputWrapperRef = ref(null);
 const textareaRef = ref(null);
@@ -20,7 +41,56 @@ const showRoleCardPopover = ref(false);
 const showQuestPanel = ref(false);
 const questRefreshing = ref(false);
 const questStatus = ref(null);
-const showConversationsPanel = ref(true);
+const viewportWidth = ref(typeof window === 'undefined' ? 1280 : window.innerWidth);
+const showConversationsPanel = ref(viewportWidth.value >= 1000);
+const showComposerTools = ref(false);
+const showMemoryPopover = ref(false);
+const activeMessageId = ref('');
+const navigationTargetId = ref('');
+const hasUnreadOutput = ref(false);
+const readingHistory = ref(false);
+const inspectorSelection = ref(null);
+const filePreviewTabs = ref([]);
+const activeFilePreviewKey = ref('');
+const automationSelection = ref('');
+const recoveryActionPending = ref(false);
+const recoveryActionError = ref('');
+const completionPreferencePending = ref(false);
+const completionPreferenceError = ref('');
+const recoveryState = computed(() => snapshot.value.recovery || { available: false, pending: false, error: '', reason: '' });
+const connectionAction = ref('');
+const connectionActionError = ref('');
+/** 只呈现当前会话与工作区的明确中断记录。 / Present explicit interruption records for the current conversation and workspace only. */
+const connectionState = computed(() => {
+  const state = snapshot.value.connection;
+  if (!state || !['offline', 'interrupted', 'checking', 'reachable', 'failed'].includes(state.state) || state.conversationId !== snapshot.value.conversationId
+    || String(state.workspacePath || '') !== String(snapshot.value.settings?.workspace?.path || '')) return null;
+  return state;
+});
+/** 使用会话、请求、工作区隔离动作反馈。 / Isolate action feedback by conversation, request and workspace. */
+function connectionReferenceKey(reference) { return JSON.stringify([reference?.conversationId || '', reference?.requestId || '', reference?.workspacePath || '']); }
+/** 连接快照变化不触发额外请求。 / Connection snapshot changes never trigger extra requests. */
+const connectionScope = computed(() => connectionState.value ? connectionReferenceKey(connectionState.value) : '');
+/** 检查中的锁仅属于发起动作的原范围。 / The check lock belongs only to its original scope. */
+const connectionActionPending = computed(() => !!connectionScope.value && connectionAction.value === connectionScope.value);
+/** 找到明确回复锚点，缺失时在消息末尾呈现一次。 / Find the explicit reply anchor, otherwise show once after the messages. */
+const connectionMessageId = computed(() => connectionState.value?.messageId && snapshot.value.messages?.some((message) => message.role === 'assistant' && message.id === connectionState.value.messageId) ? connectionState.value.messageId : '');
+/** 同一恢复记录使用消息旁入口，未保存错误仍保留原提示。 / Use the inline action for the same recovery record while keeping unsaved-content errors. */
+const connectionOwnsRecovery = computed(() => !!connectionState.value?.requestId && connectionState.value.requestId === recoveryState.value.requestId && connectionState.value.conversationId === recoveryState.value.conversationId);
+/** 原范围变化时清除本地反馈，不复用旧检查结果。 / Clear local feedback when its scope changes without reusing old results. */
+watch(connectionScope, () => { connectionActionError.value = ''; });
+const automations = computed(() => snapshot.value.automations || { tasks: [], error: '', loading: false });
+const selectedAutomation = computed(() => automations.value.tasks.find((task) => task.id === automationSelection.value) || null);
+const avatarInputRef = ref(null);
+const avatarPending = ref(false);
+const composerError = ref('');
+const permissionPending = ref(false);
+const permissionPreviousMode = ref('');
+const permissionChangeContext = ref(null);
+const permissionError = ref('');
+const draftByScope = new Map();
+let currentDraftScope = conversationScopeKey(snapshot.value);
+const inspectorMessage = computed(() => (snapshot.value.messages || []).find((item) => item.id === inspectorSelection.value?.messageId) || null);
 const liveStatus = ref({
   visible: false,
   tone: 'info',
@@ -35,6 +105,7 @@ let statusHideTimer = null;
 let composerResizeObserver = null;
 let scrollFrame = 0;
 let scrollFollowFrame = 0;
+let readingIntentVersion = 0;
 
 const questFallbackStatus = {
   gateway: {
@@ -67,7 +138,30 @@ const questFallbackStatus = {
 
 const composerSpaceStyle = computed(() => `${composerSpace.value}px`);
 
+/** 关闭其他弹层，避免输入工具互相覆盖。 Close other popovers so composer controls never overlap. */
+function closeComposerPopovers(except = null) {
+  for (const control of [showMemoryPopover, showMorePopover, showRoleCardPopover, showQuestPanel, showPermissionMenu, showContextPopover, showCreditsPopover, showGitMenu]) {
+    if (control !== except) control.value = false;
+  }
+}
+
+/** 切换单一弹层并收起相邻详情。 Toggle one popover and dismiss adjacent detail surfaces. */
+function toggleComposerPopover(control, event) {
+  event?.stopPropagation?.();
+  const opening = !control.value;
+  closeComposerPopovers(control);
+  if (opening) closeMessageInspector();
+  control.value = opening;
+}
+
+/** 打开独立记忆开关。 Open the independent memory controls. */
+function toggleMemoryPopover(event) {
+  toggleComposerPopover(showMemoryPopover, event);
+}
+
+/** 点击空白处关闭当前局部弹层。 Dismiss local popovers when clicking outside. */
 function handleDocumentClick() {
+  showMemoryPopover.value = false;
   if (showMorePopover.value) {
     showMorePopover.value = false;
   }
@@ -87,6 +181,25 @@ function handleDocumentClick() {
   }
 }
 
+/** 关闭局部面板并恢复键盘焦点。 Close local panels and restore keyboard focus. */
+function handleDocumentKeydown(event) {
+  if (event.key !== 'Escape') return;
+  closeMessageInspector();
+  showComposerTools.value = false;
+  const restoreFocus = conversationMenu.value.visible ? conversationMenuTrigger : null;
+  handleDocumentClick();
+  restoreFocus?.focus({ preventScroll: true });
+}
+
+/** 调整窄屏侧栏并保持阅读位置。 Adjust narrow-screen navigation while retaining the reading position. */
+function handleWindowResize() {
+  const wasWide = viewportWidth.value >= 1000;
+  viewportWidth.value = window.innerWidth;
+  if (wasWide && viewportWidth.value < 1000) showConversationsPanel.value = false;
+  scheduleComposerMeasure();
+  closeConversationMenu();
+}
+
 function pushStatus(text, tone = 'info') {
   liveStatus.value = {
     visible: true,
@@ -101,6 +214,7 @@ function pushStatus(text, tone = 'info') {
   }, 2800);
 }
 
+/** 追踪正文、身份和执行凭据的实际变动。 Track real changes to content, identity and execution receipts. */
 function buildMessageSignature(messages) {
   return messages
     .map((message) => [
@@ -111,6 +225,9 @@ function buildMessageSignature(messages) {
       message.text || '',
       message.html || '',
       message.activity?.signature || '',
+      JSON.stringify(message.identity || null),
+      JSON.stringify(message.memoryContext || []),
+      JSON.stringify(message.attachments || []),
     ].join('::'))
     .join('||');
 }
@@ -148,6 +265,7 @@ function buildWorkspaceSignature(workspace) {
   ].join('::');
 }
 
+/** 让身份和上下文状态参与增量刷新。 Include identity and context state in incremental refreshes. */
 function buildSettingsSignature(settings) {
   const safe = settings || {};
   const permission = safe.permission || {};
@@ -160,6 +278,7 @@ function buildSettingsSignature(settings) {
     safe.temperature,
     safe.maxTokens,
     safe.memoryEnabled ? '1' : '0',
+    safe.nativeMemoryEnabled ? '1' : '0',
     safe.interpreterEnabled ? '1' : '0',
     safe.asrEnabled ? '1' : '0',
     safe.webSearchEnabled ? '1' : '0',
@@ -170,8 +289,28 @@ function buildSettingsSignature(settings) {
     safe.roleCardSelectedId,
     safe.roleCardAvatarImage,
     safe.roleCardAvatarText,
+    safe.roleCardName,
+    safe.systemPrompt,
+    safe.completionNotificationsEnabled,
+    safe.completionNotificationSound,
+    safe.completionPreferencesAvailable,
+    safe.memoryAvailable,
+    safe.nativeMemoryAvailable,
+    JSON.stringify(safe.roleCards || []),
+    JSON.stringify(safe.providerCards || []),
+    JSON.stringify(safe.validation || null),
     permission.current,
+    permission.available,
+    permission.pending,
+    permission.engine,
+    permission.scopeHint,
+    permission.uncertain,
+    JSON.stringify(permission.options || []),
     contextWindow.percent,
+    contextWindow.label,
+    contextWindow.summary,
+    contextWindow.used,
+    contextWindow.limit,
     customCredits.active ? '1' : '0',
     customCredits.dailyRemaining,
     customCredits.totalRemaining,
@@ -180,6 +319,7 @@ function buildSettingsSignature(settings) {
   ].join('::');
 }
 
+/** 状态快照参与刷新，同时保留稳定消息与阅读位置。 / Include state snapshots in refreshes while retaining stable messages and reading position. */
 function buildSnapshotSignature(nextSnapshot, messageSignature) {
   return [
     messageSignature,
@@ -192,6 +332,10 @@ function buildSnapshotSignature(nextSnapshot, messageSignature) {
     nextSnapshot.isEmpty ? '1' : '0',
     nextSnapshot.isSending ? '1' : '0',
     nextSnapshot.historyQuery || '',
+    JSON.stringify(nextSnapshot.automations || null),
+    JSON.stringify(nextSnapshot.recovery || null),
+    JSON.stringify(nextSnapshot.guidance || null),
+    JSON.stringify(nextSnapshot.connection || null),
     buildConversationSignature(nextSnapshot.conversations || []),
     buildSettingsSignature(nextSnapshot.settings || {}),
     (nextSnapshot.attachments || []).map((item) => `${item.name || ''}:${item.path || ''}`).join('|'),
@@ -284,10 +428,9 @@ function getBottomDistance() {
   return container.scrollHeight - container.scrollTop - container.clientHeight;
 }
 
+/** 只跟随实际停留最新位置的读者。 Follow only readers who remain near the latest output. */
 function shouldPinToBottom() {
-  if (!streamRef.value) return true;
-  const threshold = Math.max(140, Math.min(360, composerSpace.value + 72));
-  return getBottomDistance() <= threshold;
+  return !readingHistory.value && isNearLatest(streamRef.value);
 }
 
 function applyScrollToBottom() {
@@ -296,18 +439,22 @@ function applyScrollToBottom() {
   container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight + 2);
 }
 
+/** 延迟滚动仍尊重更新的阅读意图。 Deferred scrolling still respects newer reading intent. */
 function scrollToBottom(force = false, passes = 2) {
   if (!streamRef.value) return;
   if (!force && !shouldPinToBottom()) return;
+  const intentVersion = readingIntentVersion;
   cancelUiFrame(scrollFrame);
   cancelUiFrame(scrollFollowFrame);
   scrollFrame = requestUiFrame(() => {
     scrollFrame = 0;
+    if (intentVersion !== readingIntentVersion) return;
     if (!force && !shouldPinToBottom()) return;
     applyScrollToBottom();
     if (passes > 1) {
       scrollFollowFrame = requestUiFrame(() => {
         scrollFollowFrame = 0;
+        if (intentVersion !== readingIntentVersion) return;
         if (force || shouldPinToBottom()) {
           applyScrollToBottom();
         }
@@ -316,13 +463,14 @@ function scrollToBottom(force = false, passes = 2) {
   });
 }
 
+/** 输入区变化不会抢走历史阅读位置。 Composer resizing never steals the history reading position. */
 function scheduleComposerMeasure() {
   const wasPinned = shouldPinToBottom();
   nextTick(() => {
     requestUiFrame(() => {
       updateComposerSpace();
-      if (wasPinned || snapshot.value.isSending) {
-        scrollToBottom(true, snapshot.value.isSending ? 3 : 2);
+      if (wasPinned && !readingHistory.value) {
+        scrollToBottom(true, 2);
       }
     });
   });
@@ -344,29 +492,55 @@ function scheduleRefreshLoop(delay = getNextRefreshDelay()) {
   }
   refreshTimer = window.setTimeout(() => {
     const nextSnapshot = refreshSnapshot(false, { passive: true });
+    refreshAutomationTasks();
+    refreshGuidanceQueue();
     scheduleRefreshLoop(getNextRefreshDelay(nextSnapshot || snapshot.value));
   }, delay);
 }
 
+/** 合并真实快照，同时隔离草稿、详情和阅读位置。 Merge real snapshots while isolating drafts, details and reading position. */
 function refreshSnapshot(forceScroll = false, options = {}) {
   const passive = Boolean(options?.passive);
   const wasPinned = shouldPinToBottom();
-  const wasSending = !!snapshot.value.isSending;
   const nextSnapshot = bridge.snapshot();
+  const nextScope = conversationScopeKey(nextSnapshot);
+  const scopeChanged = nextScope !== currentDraftScope;
+  if (scopeChanged) {
+    draftByScope.set(currentDraftScope, draft.value);
+    draft.value = draftByScope.get(nextScope) || '';
+    currentDraftScope = nextScope;
+    inspectorSelection.value = null;
+    filePreviewTabs.value = [];
+    activeFilePreviewKey.value = '';
+    automationSelection.value = '';
+    recoveryActionError.value = '';
+    activeMessageId.value = '';
+    navigationTargetId.value = '';
+    readingHistory.value = false;
+    hasUnreadOutput.value = false;
+    composerError.value = '';
+    permissionError.value = '';
+  }
   const nextSignature = buildMessageSignature(nextSnapshot.messages);
   const nextSnapshotSignature = buildSnapshotSignature(nextSnapshot, nextSignature);
   const hasChanged = nextSnapshotSignature !== lastSnapshotSignature;
   const shouldForceForChatEntry = nextSnapshot.activeMenu === 'chat' && lastActiveMenu !== 'chat';
-  const shouldFollowStreaming = nextSnapshot.activeMenu === 'chat' && (nextSnapshot.isSending || wasSending);
+  const follow = shouldFollowLatest({ nearBottom: wasPinned, explicit: forceScroll || shouldForceForChatEntry, scopeChanged });
+  const intentVersion = readingIntentVersion;
   const shouldApplySnapshot = !passive || hasChanged || forceScroll || shouldForceForChatEntry;
 
   if (shouldApplySnapshot) {
+    if (nextSignature !== lastMessageSignature && !follow) hasUnreadOutput.value = true;
     snapshot.value = nextSnapshot;
     lastMessageSignature = nextSignature;
     lastSnapshotSignature = nextSnapshotSignature;
     nextTick(() => {
       updateComposerSpace();
-      scrollToBottom(forceScroll || shouldForceForChatEntry || shouldFollowStreaming || wasPinned, shouldFollowStreaming ? 3 : 2);
+      if (follow && intentVersion === readingIntentVersion) {
+        readingHistory.value = false;
+        scrollToBottom(true, 2);
+      }
+      if (scopeChanged) autoResizeTextarea();
     });
   }
   lastActiveMenu = nextSnapshot.activeMenu || '';
@@ -386,9 +560,290 @@ function autoResizeTextarea() {
   scheduleComposerMeasure();
 }
 
+/** 按当前会话保留草稿并清理旧提交错误。 Retain the current conversation draft and clear stale submit errors. */
 function handleDraftInput(event) {
   draft.value = event.target.value;
+  draftByScope.set(currentDraftScope, draft.value);
+  composerError.value = '';
   nextTick(autoResizeTextarea);
+}
+
+/** 记录当前阅读刻度，手动上滚会取消待执行的自动跟随。 Track the reading marker and cancel queued following when the reader scrolls up. */
+function handleStreamScroll() {
+  const container = streamRef.value;
+  if (!container) return;
+  if (navigationTargetId.value) {
+    activeMessageId.value = navigationTargetId.value;
+    readingHistory.value = true;
+    return;
+  }
+  const nearLatest = isNearLatest(container);
+  if (!nearLatest) readingIntentVersion += 1;
+  readingHistory.value = !nearLatest;
+  if (nearLatest) hasUnreadOutput.value = false;
+  else {
+    cancelUiFrame(scrollFrame);
+    cancelUiFrame(scrollFollowFrame);
+  }
+  const top = container.getBoundingClientRect().top + 96;
+  const messages = Array.from(container.querySelectorAll('[data-message-id]'));
+  const visible = messages.filter((item) => item.getBoundingClientRect().top <= top);
+  const visibleId = (visible.at(-1) || messages[0])?.dataset.messageId || '';
+  const visibleIndex = snapshot.value.messages.findIndex((message) => message.id === visibleId);
+  activeMessageId.value = snapshot.value.messages.slice(0, visibleIndex + 1).findLast((message) => message.role === 'user')?.id || '';
+}
+
+/** 真实滚动意图释放点击定位，让刻度重新跟随阅读。 Real scrolling intent releases explicit navigation so markers follow reading again. */
+function handleReadingIntent(event) {
+  if (event?.type === 'keydown') {
+    if (!['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) return;
+    if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(event.target?.tagName) || event.target?.isContentEditable) return;
+  }
+  navigationTargetId.value = '';
+  readingIntentVersion += 1;
+  readingHistory.value = true;
+  cancelUiFrame(scrollFrame);
+  cancelUiFrame(scrollFollowFrame);
+}
+
+/** 拖动原生滚动条也属于手动阅读。 Dragging the native scrollbar is also manual reading. */
+function handleStreamPointerDown(event) {
+  if (event.target === streamRef.value) handleReadingIntent(event);
+}
+
+/** 在当前会话容器中定位消息，并保留键盘焦点。 Locate a message in the current conversation viewport and retain keyboard focus. */
+function navigateToMessage(id) {
+  const container = streamRef.value;
+  const target = Array.from(container?.querySelectorAll('[data-message-id]') || []).find((item) => item.dataset.messageId === String(id));
+  if (!container || !target) return;
+  readingIntentVersion += 1;
+  cancelUiFrame(scrollFrame);
+  cancelUiFrame(scrollFollowFrame);
+  navigationTargetId.value = String(id);
+  container.scrollTop = messageScrollOffset(container.getBoundingClientRect(), target.getBoundingClientRect(), container.scrollTop);
+  readingHistory.value = true;
+  activeMessageId.value = String(id);
+  target.focus({ preventScroll: true });
+}
+
+/** 用户主动回到最新内容后恢复自动跟随。 Resume automatic following after the user explicitly returns to the latest content. */
+function returnToLatest() {
+  readingIntentVersion += 1;
+  navigationTargetId.value = '';
+  activeMessageId.value = snapshot.value.messages.findLast((message) => message.role === 'user')?.id || '';
+  readingHistory.value = false;
+  hasUnreadOutput.value = false;
+  scrollToBottom(true, 2);
+}
+
+/** 打开当前范围内消息的只读详情。 Open read-only details for a message in the current scope. */
+function openMessageInspector(messageId, selection = { kind: 'identity' }) {
+  if (!messageItems.value.some((item) => item.id === messageId)) return;
+  automationSelection.value = '';
+  if (selection.kind === 'file') {
+    const reference = filePreviewReference(messageId, selection);
+    if (!reference) return;
+    const index = filePreviewTabs.value.findIndex((item) => item.key === reference.key);
+    if (index >= 0) filePreviewTabs.value[index] = reference; else filePreviewTabs.value.push(reference);
+    activeFilePreviewKey.value = reference.key;
+  }
+  closeComposerPopovers();
+  inspectorSelection.value = { ...selection, messageId };
+  showSettingsPanel.value = false;
+  if (viewportWidth.value < 1400) showConversationsPanel.value = false;
+}
+
+/** 关闭详情时不改变会话或执行状态。 Close details without changing the conversation or execution state. */
+function closeMessageInspector() {
+  automationSelection.value = '';
+  inspectorSelection.value = null;
+  filePreviewTabs.value = [];
+  activeFilePreviewKey.value = '';
+}
+
+/** 从受控桥接读取当前步骤的子任务会话。 / Read the current step's child transcript through the scoped bridge. */
+function loadSubagentTranscript(messageId, stepId) { return bridge.readSubagentTranscript(messageId, stepId); }
+
+/** 调度低频任务读取，快照本身不发起网络请求。 / Schedule low-frequency task reads without issuing requests from snapshots. */
+function refreshAutomationTasks(force = false) {
+  bridge.refreshAutomations?.({ open: !!automationSelection.value, force }).then((changed) => { if (changed) refreshSnapshot(false, { passive: true }); }).catch(() => {});
+}
+
+/** 选择当前会话的自动任务并保持草稿与阅读位置。 / Select a current-conversation automation while preserving drafts and reading position. */
+function openAutomation(taskId) {
+  if (!automations.value.tasks.some((task) => task.id === taskId)) return;
+  closeMessageInspector(); closeComposerPopovers();
+  automationSelection.value = taskId;
+  showSettingsPanel.value = false;
+  if (viewportWidth.value < 1400) showConversationsPanel.value = false;
+  refreshAutomationTasks();
+}
+
+/** 操作后重新投影真实状态，不改变用户草稿。 / Reproject actual state after an action without changing the user draft. */
+function automationChanged() { refreshSnapshot(false, { passive: true }); }
+
+/** 使用可读状态文字补充图标。 / Supplement icons with readable lifecycle labels. */
+function automationStateLabel(state) { return ({ active: isZh.value ? '进行中' : 'Active', paused: isZh.value ? '已暂停' : 'Paused', completed: isZh.value ? '已结束' : 'Completed' })[state] || (isZh.value ? '状态未知' : 'Unknown'); }
+
+/** 仅展示明确通知的真实运行结果；完整历史保留在详情。 / Show only actual notified run results; retain full history in details. */
+function automationLatestResult(task) { return [...(task.runs || [])].reverse().find((run) => run.notify && run.summary) || null; }
+
+/** 将计划时间格式化为当前语言，同时保留不可解析的原值。 / Format scheduled times for the current language while retaining unparseable source values. */
+function automationNextCheck(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString(isZh.value ? 'zh-CN' : 'en-US'); }
+
+/** 显式恢复或重试保存，异步结果只更新所属会话，草稿保持原样。 / Explicitly recover or retry saving, applying async results only to the owning conversation and preserving drafts. */
+async function handleConversationRecovery(saveOnly = false) {
+  if (recoveryActionPending.value || recoveryState.value.pending || snapshot.value.isSending) return;
+  const scope = conversationScopeKey(snapshot.value);
+  const reference = { conversationId: snapshot.value.conversationId, requestId: recoveryState.value.requestId || '', workspacePath: workspaceState.value.path || '' };
+  recoveryActionPending.value = true; recoveryActionError.value = '';
+  try {
+    const result = await (saveOnly ? bridge.retryConversationSave() : bridge.resumeConversationRecovery(reference));
+    if (scope !== conversationScopeKey(snapshot.value) || (!saveOnly && reference.requestId !== recoveryState.value.requestId)) return;
+    refreshSnapshot(false, { passive: true });
+    if (result !== true && !recoveryState.value.error && !recoveryState.value.reason) recoveryActionError.value = isZh.value ? '尚未获得确认，请重试。' : 'Not yet confirmed. Please retry.';
+  } catch (error) { if (scope === conversationScopeKey(snapshot.value) && (saveOnly || reference.requestId === recoveryState.value.requestId)) recoveryActionError.value = isZh.value ? '恢复失败，请检查会话状态后重试。' : 'Recovery failed. Check the conversation state and retry.'; }
+  finally { recoveryActionPending.value = false; if (scope === conversationScopeKey(snapshot.value)) refreshSnapshot(false, { passive: true }); }
+}
+
+/** 显式调用只读检查，保留草稿并拒绝原请求之外的迟到反馈。 / Explicitly call the read-only check, retaining drafts and rejecting late feedback outside the original request. */
+async function handleConnectionCheck(reference) {
+  const scope = connectionReferenceKey(reference);
+  if (scope !== connectionScope.value || connectionActionPending.value || recoveryActionPending.value || !connectionState.value?.canCheck || typeof bridge.checkConversationConnection !== 'function') return;
+  connectionAction.value = scope; connectionActionError.value = '';
+  try {
+    const result = await bridge.checkConversationConnection(reference);
+    refreshSnapshot(false, { passive: true });
+    if (scope === connectionScope.value && result === false) connectionActionError.value = isZh.value ? '状态检查尚未确认，请重试。' : 'The state check was not confirmed. Please retry.';
+  } catch (error) {
+    if (scope === connectionScope.value) connectionActionError.value = isZh.value ? '状态检查未完成，请稍后重试。' : 'The state check did not complete. Please retry.';
+  } finally {
+    if (connectionAction.value === scope) connectionAction.value = '';
+    if (scope === connectionScope.value) refreshSnapshot(false, { passive: true });
+  }
+}
+
+/** 继续操作复用原恢复流程，必须仍匹配当前请求及真实可恢复记录。 / Continue through existing recovery only when the current request and actual recovery receipt still match. */
+async function handleConnectionContinue(reference) {
+  if (connectionReferenceKey(reference) !== connectionScope.value || connectionActionPending.value || !connectionState.value?.canContinue || !connectionOwnsRecovery.value || !recoveryState.value.available) return;
+  await handleConversationRecovery(false);
+}
+
+/** 保存全局完成提醒选项，等待确认时保持原勾选状态。 / Save global completion preferences while retaining confirmed checkbox values during persistence. */
+async function handleCompletionPreference(field, event) {
+  const enabled = event?.target?.checked === true;
+  if (event?.target) event.target.checked = settings.value[field] === true;
+  if (completionPreferencePending.value || !settings.value.completionPreferencesAvailable) return;
+  completionPreferencePending.value = true; completionPreferenceError.value = '';
+  try { if (await bridge.setCompletionPreference(field, enabled) !== true) throw new Error(isZh.value ? '完成提醒设置没有保存成功。' : 'Completion preference saving was not confirmed.'); }
+  catch (error) { completionPreferenceError.value = error?.message || (isZh.value ? '保存失败，请重试。' : 'Saving failed. Please retry.'); }
+  finally { completionPreferencePending.value = false; refreshSnapshot(false, { passive: true }); }
+}
+
+/** 从当前消息回执解析文件，不信任事件中的任意路径。 / Resolve files from current message receipts instead of trusting arbitrary event paths. */
+function filePreviewReference(messageId, selection) {
+  const message = messageItems.value.find((item) => item.id === messageId);
+  const step = message?.activity?.steps?.find((item) => item.id === selection.stepId);
+  const file = step?.fileChanges?.find((item) => (!selection.fileId || item.id === selection.fileId) && (!selection.path || item.path === selection.path));
+  if (!file || (!selection.fileId && !selection.path)) return null;
+  const scope = conversationScopeKey(snapshot.value);
+  return { key: JSON.stringify([scope, file.path]), scope, conversationId: snapshot.value.conversationId, workspacePath: workspaceState.value.path || '', messageId, stepId: step.id, fileId: file.id, path: file.path, file };
+}
+
+/** 跟随真实回执刷新已打开标签，删除的回执显示不可用。 / Refresh open tabs from actual receipts and mark removed receipts unavailable. */
+const filePreviewEntries = computed(() => filePreviewTabs.value.map((tab) => filePreviewReference(tab.messageId, tab) || { ...tab, file: null }));
+
+/** 保留当前用户轮次内的已确认文件变更。 / Retain confirmed file changes belonging to the current user turn. */
+const currentTurnFiles = computed(() => {
+  const messages = messageItems.value;
+  const start = messages.findLastIndex((message) => message.role === 'user');
+  const files = [];
+  for (const message of messages.slice(start < 0 ? 0 : start + 1)) {
+    if (message.role !== 'assistant') continue;
+    for (const step of message.activity?.steps || []) {
+      for (const file of step.fileChanges || []) if (file.confirmed) files.push({ messageId: message.id, stepId: step.id, fileId: file.id, path: file.path, file });
+    }
+  }
+  return files;
+});
+
+/** 只统计明确已知的行数，不把未知值按零计。 / Count only explicit line totals without treating unknown values as zero. */
+const currentTurnFileSummary = computed(() => {
+  const records = currentTurnFiles.value;
+  /** 只有全部回执都提供计数时才展示总数。 / Show totals only when every receipt provides a count. */
+  const total = (field) => records.length && records.every((entry) => Number.isInteger(entry.file[field]) && entry.file[field] >= 0) ? records.reduce((sum, entry) => sum + entry.file[field], 0) : null;
+  return { count: new Set(records.map((entry) => entry.path)).size, additions: total('additions'), deletions: total('deletions') };
+});
+
+/** 从摘要打开本轮文件标签，保留每项回执归属。 / Open current-turn file tabs from the summary while preserving receipt ownership. */
+function openCurrentTurnFiles() {
+  for (const file of currentTurnFiles.value) openMessageInspector(file.messageId, { kind: 'file', stepId: file.stepId, fileId: file.fileId, path: file.path });
+}
+
+/** 激活已有文件标签，不读取其他文件。 / Activate an existing file tab without reading another file. */
+function selectFilePreview(key) {
+  const entry = filePreviewTabs.value.find((item) => item.key === key);
+  if (!entry) return;
+  activeFilePreviewKey.value = key;
+  inspectorSelection.value = { kind: 'file', messageId: entry.messageId, stepId: entry.stepId, fileId: entry.fileId, path: entry.path };
+}
+
+/** 关闭单个文件标签并选择相邻项。 / Close one file tab and select a neighboring entry. */
+function closeFilePreview(key) {
+  const index = filePreviewTabs.value.findIndex((item) => item.key === key);
+  if (index < 0) return;
+  filePreviewTabs.value.splice(index, 1);
+  if (!filePreviewTabs.value.length) { closeMessageInspector(); return; }
+  if (activeFilePreviewKey.value === key) selectFilePreview(filePreviewTabs.value[Math.min(index, filePreviewTabs.value.length - 1)].key);
+}
+
+/** 按消息自身的身份快照展示头像，旧记录使用通用身份。 Display each message's own identity snapshot and use generic identities for older records. */
+function getMessageIdentity(message) {
+  const fallbackName = message.role === 'assistant' ? 'OpenXnet' : (isZh.value ? '你' : 'You');
+  return { id: '', name: fallbackName, image: '', text: message.role === 'assistant' ? 'OX' : (isZh.value ? '我' : 'ME'), ...message.identity };
+}
+
+/** 复制当前可见消息正文，不复制隐含记忆或工具参数。 Copy visible message text without hidden memories or tool parameters. */
+async function copyMessage(message) {
+  try {
+    await navigator.clipboard.writeText(String(message.text || ''));
+    pushStatus(isZh.value ? '已复制消息' : 'Message copied', 'success');
+  } catch {
+    pushStatus(isZh.value ? '复制失败，请选择正文手动复制。' : 'Copy failed. Select the text to copy it manually.', 'warning');
+  }
+}
+
+/** 将引用插入未发送草稿，不直接发送。 Insert a quotation into the unsent draft without sending it. */
+function quoteMessage(message) {
+  const quotation = String(message.text || '').slice(0, 6000).split('\n').map((line) => `> ${line}`).join('\n');
+  draft.value = `${draft.value ? `${draft.value}\n\n` : ''}${quotation}\n\n`;
+  draftByScope.set(currentDraftScope, draft.value);
+  nextTick(() => { autoResizeTextarea(); textareaRef.value?.focus(); });
+}
+
+/** 从空态建议生成可编辑草稿。 Create an editable draft from an empty-state suggestion. */
+function startSuggestedDraft(text) {
+  draft.value = text;
+  draftByScope.set(currentDraftScope, text);
+  nextTick(() => { autoResizeTextarea(); textareaRef.value?.focus(); });
+}
+
+/** 导入当前角色头像，等待宿主持久化后再刷新展示。 Import the current role portrait and refresh only after host persistence. */
+async function handleAvatarImport(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file || avatarPending.value) return;
+  avatarPending.value = true;
+  try {
+    if (typeof bridge.importRoleAvatar !== 'function') throw new Error(isZh.value ? '头像导入暂不可用。' : 'Avatar import is unavailable.');
+    await bridge.importRoleAvatar(file);
+    refreshSnapshot();
+    pushStatus(isZh.value ? '角色头像已保存，将用于后续消息。' : 'Role portrait saved for subsequent messages.', 'success');
+  } catch (error) {
+    pushStatus(error?.message || (isZh.value ? '头像导入失败' : 'Avatar import failed'), 'warning');
+  } finally {
+    avatarPending.value = false;
+  }
 }
 
 function handleComposerPaste(event) {
@@ -407,11 +862,20 @@ function toggleConversationsPanel() {
   showConversationsPanel.value = !showConversationsPanel.value;
 }
 
+/** 发送内容或引导，拒绝提交时恢复原范围的草稿。 / Send content or guidance, restoring the original scope's draft when submission is rejected. */
 async function handleSend() {
   const text = String(draft.value || '');
-  if (!text.trim() && !snapshot.value.isSending) return;
-  // 立即清空输入框，避免宿主 handleSendOrGuidance 抛异常时把内容留在框里
+  if (guidanceSubmissionPending.value || guidance.value.sending) return;
+  if ((permissionPending.value || permissionState.value.pending) && !(snapshot.value.isSending && !text.trim() && !attachments.value.length)) return;
+  const submitScope = currentDraftScope;
+  if (!text.trim() && !attachments.value.length) return;
+  const isGuidance = snapshot.value.isSending;
+  if (isGuidance && attachments.value.length) { composerError.value = isZh.value ? '当前引导支持文字，请先移除附件。' : 'Live guidance supports text; remove attachments first.'; return; }
+  if (isGuidance) guidanceSending.value = submitScope;
+  composerError.value = '';
+  if (text.trim() || attachments.value.length) returnToLatest();
   draft.value = '';
+  draftByScope.set(submitScope, '');
   nextTick(() => {
     if (textareaRef.value) {
       textareaRef.value.style.height = `${COMPOSER_TEXTAREA_MIN_HEIGHT}px`;
@@ -419,15 +883,32 @@ async function handleSend() {
     }
   });
   try {
-    await bridge.sendMessage(text);
+    const accepted = await bridge.sendMessage(text);
+    if (accepted === false || accepted?.accepted === false) throw new Error(isGuidance ? (bridge.snapshot().guidance?.error || (isZh.value ? '引导未发送，草稿已保留。' : 'Guidance was not sent; your draft was kept.')) : (isZh.value ? '消息未发送，请检查模型与附件后重试。' : 'Message not sent. Check the model and attachments, then retry.'));
   } catch (error) {
-    console.warn('sendMessage failed:', error);
-  }
-  refreshSnapshot(true);
+    if (currentDraftScope === submitScope) {
+      if (!draft.value) draft.value = text;
+      else if (isGuidance && draft.value !== text) draft.value = `${text}\n\n${draft.value}`;
+      draftByScope.set(submitScope, draft.value);
+      composerError.value = error?.message || (isZh.value ? '发送失败，草稿已保留。' : 'Sending failed. Your draft is preserved.');
+    } else if (!draftByScope.get(submitScope)) draftByScope.set(submitScope, text);
+  } finally { if (isGuidance && guidanceSending.value === submitScope) guidanceSending.value = ''; }
+  refreshSnapshot();
+  nextTick(autoResizeTextarea);
 }
 
+/** 停止为独立操作，保留当前输入框草稿。 / Stop is an independent action that preserves the composer draft. */
+function handleStopResponse() { bridge.stopResponse?.(); refreshSnapshot(false, { passive: true }); }
+
+/** 复用宿主节流刷新，不从快照读取中发请求。 / Reuse host-throttled refresh without requesting data during snapshot reads. */
+function refreshGuidanceQueue() { bridge.refreshGuidance?.().then((changed) => { if (changed) refreshSnapshot(false, { passive: true }); }).catch(() => {}); }
+
+/** 将未接收原文放回草稿，保留已有输入且不自动发送。 / Restore unreceived text to the draft, preserving existing input without sending it. */
+function restoreGuidanceText(text) { draft.value = [draft.value, text].filter(Boolean).join('\n\n'); draftByScope.set(currentDraftScope, draft.value); nextTick(autoResizeTextarea); }
+
+/** 输入法组字期间不发送消息。 Do not send messages during IME composition. */
 function handleComposerKeydown(event) {
-  if (event.key === 'Enter' && !event.shiftKey) {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
     event.preventDefault();
     handleSend();
   }
@@ -442,7 +923,10 @@ function handleHistory() {
   bridge.openHistory();
 }
 
+/** 设置和消息详情互斥。 Keep settings and message details mutually exclusive. */
 function handleToggleSettings() {
+  closeComposerPopovers();
+  closeMessageInspector();
   showSettingsPanel.value = !showSettingsPanel.value;
 }
 
@@ -450,7 +934,10 @@ function handleCloseSettings() {
   showSettingsPanel.value = false;
 }
 
+/** 从模型入口打开设置并关闭其他浮层。 Open model settings and dismiss other floating surfaces. */
 function handleModelBadge() {
+  closeComposerPopovers();
+  closeMessageInspector();
   showSettingsPanel.value = true;
 }
 
@@ -540,9 +1027,9 @@ async function refreshQuestStatus({ silent = false } = {}) {
   return questStatus.value;
 }
 
+/** 打开设备状态面板并保持浮层互斥。 Open device status while keeping popovers exclusive. */
 function toggleQuestPanel(event) {
-  if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-  showQuestPanel.value = !showQuestPanel.value;
+  toggleComposerPopover(showQuestPanel, event);
   if (showQuestPanel.value) {
     showMorePopover.value = false;
     showRoleCardPopover.value = false;
@@ -621,6 +1108,17 @@ function handleToggleMemory() {
   refreshSnapshot();
 }
 
+/** 只改变后续请求的原生记忆开关，不伪造当前注入记录。 Change native-memory settings for future requests without fabricating receipts. */
+async function handleToggleNativeMemory() {
+  try {
+    if (typeof bridge.toggleNativeMemory !== 'function') throw new Error(isZh.value ? '原生记忆设置暂不可用。' : 'Native memory settings are unavailable.');
+    await bridge.toggleNativeMemory();
+    refreshSnapshot();
+  } catch (error) {
+    pushStatus(error?.message || (isZh.value ? '设置未保存' : 'Setting was not saved'), 'warning');
+  }
+}
+
 const conversationTab = ref('chat');
 
 async function handleSelectConversation(id) {
@@ -632,8 +1130,7 @@ async function handleDeleteConversation(id, event) {
   if (event) {
     event.stopPropagation();
   }
-  await bridge.deleteConversation(id);
-  refreshSnapshot();
+  await performDeleteConversation(id);
 }
 
 function handleHistorySearchInput(event) {
@@ -677,9 +1174,9 @@ function handleTablePet() {
   showRoleCardPopover.value = false;
 }
 
+/** 切换角色选择器并关闭其他浮层。 Toggle the role selector and close other popovers. */
 function toggleRoleCardPopover(event) {
-  if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-  showRoleCardPopover.value = !showRoleCardPopover.value;
+  toggleComposerPopover(showRoleCardPopover, event);
   if (showRoleCardPopover.value) {
     showMorePopover.value = false;
     showQuestPanel.value = false;
@@ -707,9 +1204,9 @@ function handleOpenRoleCardConfig() {
   showRoleCardPopover.value = false;
 }
 
+/** 打开更多功能并关闭其他浮层。 Open more actions and close other popovers. */
 function toggleMorePopover(event) {
-  event.stopPropagation();
-  showMorePopover.value = !showMorePopover.value;
+  toggleComposerPopover(showMorePopover, event);
   if (showMorePopover.value) {
     showRoleCardPopover.value = false;
     showQuestPanel.value = false;
@@ -732,7 +1229,7 @@ function handleSystemPromptInput(event) {
 }
 
 const messageItems = computed(() => snapshot.value.messages || []);
-const composerPlaceholder = computed(() => snapshot.value.isZh ? '输入消息...' : 'Type a message...');
+const composerPlaceholder = computed(() => snapshot.value.isSending ? (snapshot.value.isZh ? '补充要求，引导当前回复…' : 'Add instructions for this reply…') : (snapshot.value.isZh ? '输入消息...' : 'Type a message...'));
 const sendIconClass = computed(() => snapshot.value.isSending && !String(draft.value || '').trim()
   ? 'fa-solid fa-stop'
   : 'fa-solid fa-arrow-up');
@@ -772,8 +1269,14 @@ const assistantAvatar = computed(() => {
 
 // —— 权限模式 / 上下文进度 / custom 服务商每日积分 ——
 const workspaceState = computed(() => settings.value.workspace || { loaded: false, name: '', path: '' });
-const permissionState = computed(() => settings.value.permission || { current: 'default', options: [] });
-const contextWindowState = computed(() => settings.value.contextWindow || { used: 0, limit: 1_000_000, ratio: 0, percent: 0, warn: false, critical: false, label: '0 / 1M', summary: '' });
+/** 保存期间保持原权限标签，直到获得明确结果。 / Keep the prior permission label until saving has a definite result. */
+const permissionState = computed(() => {
+  const state = settings.value.permission || { current: 'default', options: [], available: false };
+  const context = permissionChangeContext.value;
+  const sameContext = context?.scope === conversationScopeKey(snapshot.value) && context?.engine === String(state.engine || '');
+  return permissionPending.value && sameContext ? { ...state, current: permissionPreviousMode.value } : state;
+});
+const contextWindowState = computed(() => settings.value.contextWindow || { used: null, limit: null, ratio: 0, percent: null, warn: false, critical: false, label: '—', summary: '' });
 const customCreditsState = computed(() => settings.value.customCredits || { active: false });
 
 const showPermissionMenu = ref(false);
@@ -821,30 +1324,49 @@ function dismissLowCreditsBanner() {
   lowCreditsBannerDismissed.value = true;
 }
 
+/** 切换执行权限菜单并关闭其他浮层。 Toggle permission controls and close other popovers. */
 function togglePermissionMenu(event) {
-  if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-  showPermissionMenu.value = !showPermissionMenu.value;
+  toggleComposerPopover(showPermissionMenu, event);
   if (showPermissionMenu.value) { showContextPopover.value = false; showCreditsPopover.value = false; showRoleCardPopover.value = false; showQuestPanel.value = false; }
 }
+/** 仅保存显式的新模式，失败保留草稿和已确认的权限。 / Save only an explicitly selected new mode, preserving drafts and confirmed permissions on failure. */
 async function selectPermissionMode(modeId) {
-  showPermissionMenu.value = false;
-  const pending = bridge.setPermissionMode(modeId);
-  refreshSnapshot(true);
-  const changed = await pending;
-  refreshSnapshot(Boolean(changed));
+  const option = (permissionState.value.options || []).find((item) => item.id === modeId);
+  if (permissionPending.value || permissionState.value.pending || permissionState.value.available === false || option?.disabled || !option) return;
+  if (modeId === permissionState.value.current && !permissionState.value.uncertain) { showPermissionMenu.value = false; return; }
+  permissionPreviousMode.value = permissionState.value.current;
+  const context = { scope: conversationScopeKey(snapshot.value), engine: String(permissionState.value.engine || '') };
+  permissionChangeContext.value = context;
+  permissionPending.value = true;
+  permissionError.value = '';
+  try {
+    const changed = await bridge.setPermissionMode(modeId);
+    if (changed !== true) throw new Error(isZh.value ? '权限模式未保存，请重试。' : 'Permission mode was not saved. Please retry.');
+    showPermissionMenu.value = false;
+  } catch (error) {
+    if (context.scope === conversationScopeKey(snapshot.value) && context.engine === String(settings.value.permission?.engine || '')) {
+      permissionError.value = error?.message || (isZh.value ? '权限模式保存失败，原模式已保留。' : 'Permission saving failed. The previous mode is retained.');
+    }
+  } finally {
+    permissionPending.value = false;
+    permissionChangeContext.value = null;
+    refreshSnapshot(false, { passive: true });
+  }
 }
+/** 始终显示当前模式的可读文字。 / Always show a readable label for the current permission mode. */
 function getPermissionModeLabel(modeId) {
   const opt = (permissionState.value.options || []).find((o) => o.id === modeId);
-  return opt ? opt.label : modeId;
+  return opt ? opt.label : modeId === 'default' ? (isZh.value ? '默认只读模式' : 'Default read-only mode') : modeId;
 }
+/** 使用当前模式的辅助图标，不以图标替代模式名称。 / Use the mode icon as a supplement rather than replacing its name. */
 function getPermissionModeIcon(modeId) {
   const opt = (permissionState.value.options || []).find((o) => o.id === modeId);
   return opt ? opt.icon : 'fa-solid fa-shield-halved';
 }
 
+/** 查看上下文用量并关闭其他浮层。 Inspect context usage and close other popovers. */
 function toggleContextPopover(event) {
-  if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-  showContextPopover.value = !showContextPopover.value;
+  toggleComposerPopover(showContextPopover, event);
   if (showContextPopover.value) { showPermissionMenu.value = false; showCreditsPopover.value = false; showRoleCardPopover.value = false; showQuestPanel.value = false; }
 }
 const creditsRefreshing = ref(false);
@@ -860,9 +1382,9 @@ async function refreshCreditsAndSnapshot() {
     refreshSnapshot();
   }
 }
+/** 打开额度信息并刷新其真实值。 Open credits and refresh their actual values. */
 function toggleCreditsPopover(event) {
-  if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-  showCreditsPopover.value = !showCreditsPopover.value;
+  toggleComposerPopover(showCreditsPopover, event);
   if (showCreditsPopover.value) {
     showPermissionMenu.value = false;
     showContextPopover.value = false;
@@ -976,7 +1498,16 @@ const questHardwareItems = computed(() => {
 // —— 工作区项目展开 / Git 菜单 / 会话右键菜单 ——
 const expandedProjects = ref(new Set());
 const showGitMenu = ref(false);
+const gitSwitchPending = ref(false);
+const archivePending = ref(false);
+const renamePending = ref(false);
+const deletePending = ref(false);
+const renameDialog = ref({ visible: false, id: '', title: '', originalTitle: '', error: '' });
+const renameDialogRef = ref(null);
+const renameInputRef = ref(null);
 const conversationMenu = ref({ visible: false, x: 0, y: 0, conversationId: '', conversationTitle: '' });
+const conversationMenuRef = ref(null);
+let conversationMenuTrigger = null;
 
 function isProjectExpanded(proj) {
   if (!proj) return false;
@@ -1006,24 +1537,40 @@ function getProjectConversations(proj) {
   return conversations.value || [];
 }
 
+/** 打开可用分支菜单并关闭其他浮层。 Open available branches and close other popovers. */
 function toggleGitMenu(event) {
-  if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-  showGitMenu.value = !showGitMenu.value;
+  if (!workspaceState.value.git?.canSwitch || gitSwitchPending.value) return;
+  toggleComposerPopover(showGitMenu, event);
 }
 
-function selectGitBranch(branch) {
-  bridge.setGitBranch(branch);
-  showGitMenu.value = false;
-  refreshSnapshot();
+async function selectGitBranch(branch) {
+  if (!workspaceState.value.git?.canSwitch || gitSwitchPending.value) return;
+  gitSwitchPending.value = true;
+  try {
+    const switched = await bridge.setGitBranch(branch);
+    if (!switched) {
+      pushStatus(isZh.value ? '分支未切换，请重试' : 'Branch was not switched. Please try again.', 'error');
+      return;
+    }
+    showGitMenu.value = false;
+    refreshSnapshot(true);
+  } catch (error) {
+    pushStatus(isZh.value ? '分支切换失败，请重试' : 'Could not switch branches. Please try again.', 'error');
+  } finally {
+    gitSwitchPending.value = false;
+  }
 }
 
-function openConversationMenu(event, item) {
+async function openConversationMenu(event, item) {
   if (!item) return;
   if (event && typeof event.preventDefault === 'function') event.preventDefault();
   if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-  // 限制在视口内
-  const x = Math.min(event.clientX || 0, window.innerWidth - 220);
-  const y = Math.min(event.clientY || 0, window.innerHeight - 200);
+  conversationMenuTrigger = event?.currentTarget?.closest('button') || null;
+  const anchor = event?.currentTarget?.getBoundingClientRect?.();
+  const requestedX = event?.clientX || anchor?.right || 8;
+  const requestedY = event?.clientY || anchor?.bottom || 8;
+  const x = Math.max(8, Math.min(requestedX, window.innerWidth - 220));
+  const y = Math.max(8, Math.min(requestedY, window.innerHeight - 200));
   conversationMenu.value = {
     visible: true,
     x,
@@ -1031,6 +1578,11 @@ function openConversationMenu(event, item) {
     conversationId: String(item.id || ''),
     conversationTitle: String(item.title || ''),
   };
+  await nextTick();
+  if (!conversationMenu.value.visible || !conversationMenuRef.value) return;
+  const rect = conversationMenuRef.value.getBoundingClientRect();
+  conversationMenu.value.x = Math.max(8, Math.min(requestedX, window.innerWidth - rect.width - 8));
+  conversationMenu.value.y = Math.max(8, Math.min(requestedY, window.innerHeight - rect.height - 8));
 }
 
 function closeConversationMenu() {
@@ -1042,13 +1594,47 @@ function closeConversationMenu() {
 async function handleRenameConversation() {
   const id = conversationMenu.value.conversationId;
   const oldTitle = conversationMenu.value.conversationTitle || '';
+  if (!id || renamePending.value) return;
   closeConversationMenu();
-  const next = window.prompt('重命名对话', oldTitle);
-  if (next === null) return;
-  const trimmed = String(next || '').trim();
-  if (!trimmed || trimmed === oldTitle) return;
-  await bridge.renameConversation(id, trimmed);
-  refreshSnapshot(true);
+  renameDialog.value = { visible: true, id, title: oldTitle, originalTitle: oldTitle, error: '' };
+  await nextTick();
+  renameDialogRef.value?.showModal();
+  renameInputRef.value?.focus();
+  renameInputRef.value?.select();
+}
+
+function closeRenameDialog() {
+  renameDialogRef.value?.close();
+  renameDialog.value = { visible: false, id: '', title: '', originalTitle: '', error: '' };
+  conversationMenuTrigger?.focus({ preventScroll: true });
+}
+
+async function submitRenameConversation() {
+  const { id, title, originalTitle } = renameDialog.value;
+  const trimmed = String(title || '').trim();
+  if (!id || !trimmed || renamePending.value) return;
+  if (trimmed === originalTitle) {
+    closeRenameDialog();
+    return;
+  }
+  renamePending.value = true;
+  renameDialog.value.error = '';
+  try {
+    const renamed = await bridge.renameConversation(id, trimmed);
+    if (!renamed) {
+      renameDialog.value.error = isZh.value ? '对话未重命名，请重试' : 'Conversation was not renamed. Please try again.';
+      pushStatus(renameDialog.value.error, 'error');
+      return;
+    }
+    closeRenameDialog();
+    pushStatus(isZh.value ? '对话已重命名' : 'Conversation renamed', 'success');
+    refreshSnapshot(true);
+  } catch (error) {
+    renameDialog.value.error = isZh.value ? '名称保存失败，请重试' : 'Could not save the name. Please try again.';
+    pushStatus(renameDialog.value.error, 'error');
+  } finally {
+    renamePending.value = false;
+  }
 }
 
 async function handleCopyConversationId() {
@@ -1060,52 +1646,48 @@ async function handleCopyConversationId() {
 
 async function handleArchiveConversation() {
   const id = conversationMenu.value.conversationId;
+  if (!id || archivePending.value) return;
   closeConversationMenu();
-  await bridge.archiveConversation(id);
-  pushStatus('已归档为永久记忆', 'success');
-  refreshSnapshot(true);
+  archivePending.value = true;
+  try {
+    const archived = await bridge.archiveConversation(id);
+    if (!archived) {
+      pushStatus(isZh.value ? '对话未归档，请重试' : 'Conversation was not archived. Please try again.', 'error');
+      return;
+    }
+    pushStatus(isZh.value ? '对话已归档' : 'Conversation archived', 'success');
+    refreshSnapshot(true);
+  } catch (error) {
+    pushStatus(isZh.value ? '归档保存失败，请重试' : 'Could not save the archive. Please try again.', 'error');
+  } finally {
+    archivePending.value = false;
+  }
 }
 
 async function handleDeleteFromMenu() {
   const id = conversationMenu.value.conversationId;
   closeConversationMenu();
-  if (!id) return;
-  const target = String(id);
+  await performDeleteConversation(id);
+}
 
-  // 1) 调用宿主清理（vue_methods.js 已修复 String 比较）
+async function performDeleteConversation(id) {
+  if (!id || deletePending.value) return false;
+  deletePending.value = true;
   try {
-    await bridge.deleteConversation(target);
-  } catch (e) {
-    console.warn('[chat-vite] deleteConversation bridge failed:', e);
-  }
-
-  // 2) 防御性兜底：万一 vue_methods.js 因缓存等原因还是旧版本，直接在宿主
-  //    conversations 数组上再做一次 String 比较过滤。即使宿主方法没生效，
-  //    UI 也能立即看到删除效果。
-  try {
-    const host = window.openxnetApp;
-    if (host && Array.isArray(host.conversations)) {
-      const before = host.conversations.length;
-      host.conversations = host.conversations.filter((c) => String(c?.id) !== target);
-      const after = host.conversations.length;
-      if (after === before) {
-        // 没匹配到任何 id —— 把当前所有 id 打出来，方便看清差异
-        console.warn('[chat-vite] delete fallback found no match; id sent =', target,
-          '; ids =', host.conversations.map((c) => `${typeof c?.id}:${c?.id}`));
-      }
-      if (String(host.conversationId) === target) {
-        host.conversationId = null;
-        if (Array.isArray(host.messages)) host.messages = [];
-      }
-      if (typeof host.saveConversations === 'function') {
-        host.saveConversations().catch(() => {});
-      }
+    const deleted = await bridge.deleteConversation(id);
+    if (!deleted) {
+      pushStatus(isZh.value ? '对话未删除，请重试' : 'Conversation was not deleted. Please try again.', 'error');
+      return false;
     }
-  } catch (e) {
-    console.warn('[chat-vite] delete fallback failed:', e);
+    refreshSnapshot(true);
+    pushStatus(isZh.value ? '对话已删除' : 'Conversation deleted', 'success');
+    return true;
+  } catch (error) {
+    pushStatus(isZh.value ? '删除保存失败，请重试' : 'Could not save the deletion. Please try again.', 'error');
+    return false;
+  } finally {
+    deletePending.value = false;
   }
-
-  refreshSnapshot(true);
 }
 const providerValidationChip = computed(() => {
   if (!currentProvider.value) return '';
@@ -1159,6 +1741,8 @@ watch(
 
 onMounted(() => {
   refreshSnapshot(true);
+  refreshAutomationTasks();
+  refreshGuidanceQueue();
   scheduleRefreshLoop(getNextRefreshDelay());
   nextTick(() => {
     autoResizeTextarea();
@@ -1169,11 +1753,14 @@ onMounted(() => {
       composerResizeObserver.observe(inputWrapperRef.value);
     }
   });
-  window.addEventListener('resize', scheduleComposerMeasure);
+  window.addEventListener('resize', handleWindowResize);
   document.addEventListener('mousedown', handleDocumentClick);
+  document.addEventListener('keydown', handleDocumentKeydown);
 });
 
 onBeforeUnmount(() => {
+  bridge.suspendAutomationRefresh?.();
+  bridge.suspendGuidanceRefresh?.();
   if (refreshTimer) {
     window.clearTimeout(refreshTimer);
     refreshTimer = null;
@@ -1190,13 +1777,16 @@ onBeforeUnmount(() => {
   cancelUiFrame(scrollFollowFrame);
   scrollFrame = 0;
   scrollFollowFrame = 0;
-  window.removeEventListener('resize', scheduleComposerMeasure);
+  window.removeEventListener('resize', handleWindowResize);
   document.removeEventListener('mousedown', handleDocumentClick);
+  document.removeEventListener('keydown', handleDocumentKeydown);
 });
 </script>
 
 <template>
-  <div class="ox-vite-chat-shell">
+  <div class="ox-vite-chat-shell" :class="{ 'has-inspector': !!inspectorMessage || !!automationSelection, 'has-conversation-list': showConversationsPanel }">
+    <input ref="avatarInputRef" type="file" class="oxc-avatar-file" accept="image/png,image/jpeg,image/webp" aria-label="导入角色头像 / Import role portrait" @change="handleAvatarImport" />
+    <button v-if="showConversationsPanel && viewportWidth < 1000" class="oxc-conversation-backdrop" type="button" :aria-label="isZh ? '收起会话列表' : 'Close conversation list'" @click="showConversationsPanel = false"></button>
 
     <!-- ════════ Left: Conversation Panel toggle handle (visible when collapsed) ════════ -->
     <button
@@ -1350,14 +1940,18 @@ onBeforeUnmount(() => {
     </aside>
 
     <!-- ────── 会话右键菜单 ────── -->
+    <Teleport to="body">
     <div
       v-if="conversationMenu.visible"
+      ref="conversationMenuRef"
       class="oxc-conversation-menu"
+      role="group"
+      :aria-label="isZh ? '对话操作' : 'Conversation actions'"
       :style="{ top: conversationMenu.y + 'px', left: conversationMenu.x + 'px' }"
       @click.stop
       @mousedown.stop
     >
-      <button type="button" class="oxc-conversation-menu__item" @click="handleRenameConversation">
+      <button type="button" class="oxc-conversation-menu__item" :disabled="renamePending" @click="handleRenameConversation">
         <i class="fa-solid fa-pen-to-square"></i>
         <span>{{ isZh ? '重命名对话' : 'Rename' }}</span>
       </button>
@@ -1365,16 +1959,39 @@ onBeforeUnmount(() => {
         <i class="fa-solid fa-copy"></i>
         <span>{{ isZh ? '复制对话 ID' : 'Copy conversation ID' }}</span>
       </button>
-      <button type="button" class="oxc-conversation-menu__item" @click="handleArchiveConversation">
+      <button type="button" class="oxc-conversation-menu__item" :disabled="archivePending" @click="handleArchiveConversation">
         <i class="fa-solid fa-box-archive"></i>
-        <span>{{ isZh ? '归档为永久记忆' : 'Archive to memory' }}</span>
+        <span>{{ isZh ? '归档对话' : 'Archive conversation' }}</span>
       </button>
       <div class="oxc-conversation-menu__divider"></div>
-      <button type="button" class="oxc-conversation-menu__item is-danger" @click="handleDeleteFromMenu">
+      <button type="button" class="oxc-conversation-menu__item is-danger" :disabled="deletePending" @click="handleDeleteFromMenu">
         <i class="fa-regular fa-trash-can"></i>
         <span>{{ isZh ? '删除对话' : 'Delete' }}</span>
       </button>
     </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <dialog
+        v-if="renameDialog.visible"
+        ref="renameDialogRef"
+        class="oxc-rename-dialog"
+        aria-labelledby="oxc-rename-title"
+        @cancel.prevent="!renamePending && closeRenameDialog()"
+        @click="($event.target === $event.currentTarget && !renamePending) && closeRenameDialog()"
+      >
+        <form @submit.prevent="submitRenameConversation">
+          <h2 id="oxc-rename-title">{{ isZh ? '重命名对话' : 'Rename conversation' }}</h2>
+          <label for="oxc-rename-input">{{ isZh ? '对话名称' : 'Conversation name' }}</label>
+          <input id="oxc-rename-input" ref="renameInputRef" v-model="renameDialog.title" required maxlength="200" :disabled="renamePending" autocomplete="off" />
+          <p v-if="renameDialog.error" class="oxc-rename-dialog__error" role="alert">{{ renameDialog.error }}</p>
+          <div class="oxc-rename-dialog__actions">
+            <button type="button" :disabled="renamePending" @click="closeRenameDialog">{{ isZh ? '取消' : 'Cancel' }}</button>
+            <button type="submit" class="is-primary" :disabled="renamePending || !renameDialog.title.trim()">{{ renamePending ? (isZh ? '保存中…' : 'Saving…') : (isZh ? '保存' : 'Save') }}</button>
+          </div>
+        </form>
+      </dialog>
+    </Teleport>
 
     <!-- ════════ Right: Chat column (header + main + composer) ════════ -->
     <div class="oxc-chat-column">
@@ -1382,12 +1999,12 @@ onBeforeUnmount(() => {
     <!-- ════════ Chat Header ════════ -->
     <header class="oxc-header">
       <div class="oxc-header__left">
+        <button type="button" class="oxc-icon-btn oxc-header-list-toggle" :aria-label="isZh ? '切换会话列表' : 'Toggle conversation list'" :aria-expanded="showConversationsPanel" @click="toggleConversationsPanel"><i class="fa-solid fa-bars-staggered"></i></button>
         <h1 class="oxc-header__title">{{ snapshot.title }}</h1>
         <button type="button" class="oxc-header__model" @click="handleModelBadge">
           <i class="fa-solid fa-microchip"></i>
           <span>{{ snapshot.modelDisplay || snapshot.model }}</span>
         </button>
-        <span class="oxc-header__status" :title="isZh ? '在线' : 'Online'"></span>
       </div>
       <div class="oxc-header__right">
         <button type="button" class="oxc-icon-btn" @click="handleNewChat" :title="isZh ? '新对话' : 'New chat'">
@@ -1531,7 +2148,8 @@ onBeforeUnmount(() => {
     <div class="oxc-main" :style="{ '--oxc-composer-space': composerSpaceStyle }">
 
       <!-- Messages -->
-      <div ref="streamRef" class="oxc-stream">
+      <MessageNavigator v-if="messageItems.length" :key="conversationScopeKey(snapshot)" :messages="messageItems" :active-id="activeMessageId" :is-zh="isZh" @navigate="navigateToMessage" />
+      <div ref="streamRef" class="oxc-stream" @scroll.passive="handleStreamScroll" @wheel.passive="handleReadingIntent" @touchmove.passive="handleReadingIntent" @keydown="handleReadingIntent" @pointerdown="handleStreamPointerDown">
         <div class="oxc-stream__inner">
           <!-- 工作区已加载 + 全新会话 → Codex 风格居中欢迎 -->
           <div v-if="snapshot.isEmpty && workspaceState.loaded" class="oxc-project-welcome">
@@ -1541,51 +2159,51 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div v-else-if="snapshot.isEmpty" class="oxc-empty">
-            <div class="oxc-empty__icon"><i class="fa-solid fa-comments"></i></div>
-            <h2>{{ isZh ? '开始对话' : 'Start a conversation' }}</h2>
-            <p>{{ snapshot.emptyPrompt }}</p>
+            <div class="oxc-welcome-identity"><img v-if="assistantAvatar.image" :src="assistantAvatar.image" :alt="assistantAvatar.alt" /><img v-else :src="'source/icon.png'" alt="OpenXnet" /></div>
+            <span class="oxc-welcome-eyebrow">{{ settings.roleCardEnabled ? settings.roleCardName : 'OpenXnet' }}</span>
+            <h2>{{ isZh ? '今天，一起完成什么？' : 'What shall we work on today?' }}</h2>
+            <p>{{ settings.model && settings.model !== '未选择模型' && settings.model !== 'No model' ? (isZh ? '从一个想法、一份文件，或一个问题开始。' : 'Start with an idea, a file, or a question.') : (isZh ? '选择模型后开始。角色、记忆与工具随需加入。' : 'Choose a model to begin. Add a role, memory and tools as needed.') }}</p>
+            <div class="oxc-welcome-actions">
+              <button type="button" @click="startSuggestedDraft(isZh ? '帮我梳理这个目标，先给出步骤和需要补充的信息：' : 'Help me plan this goal, starting with steps and the information you need:')"><i class="fa-solid fa-route"></i>{{ isZh ? '梳理一项任务' : 'Plan a task' }}</button>
+              <button type="button" @click="handleAttachFiles"><i class="fa-regular fa-file-lines"></i>{{ isZh ? '从文件开始' : 'Start with a file' }}</button>
+              <button type="button" @click="handleOpenRoleCardConfig"><i class="fa-regular fa-address-card"></i>{{ isZh ? '配置角色与头像' : 'Roles and portraits' }}</button>
+            </div>
           </div>
 
           <article
             v-for="message in decoratedMessages"
             v-else
             :key="message.id"
+            :data-message-id="message.id"
+            tabindex="-1"
             class="oxc-msg"
             :class="[
               `is-${message.role === 'assistant' ? 'ai' : 'user'}`,
               { 'is-same-role': message.sameRole },
               { 'is-typing': message.typing },
               { 'is-streaming': message.streaming },
+              { 'is-located': activeMessageId === message.id },
+              { 'is-navigation-target': navigationTargetId === message.id },
             ]"
           >
-            <div
+            <button
               v-if="message.role === 'assistant'"
+              type="button"
               class="oxc-msg__avatar"
-              :class="{ 'is-role-card': assistantAvatar.roleCard }"
-              :style="assistantAvatar.style"
+              :aria-label="`${getMessageIdentity(message).name} · ${isZh ? '查看身份' : 'View identity'}`"
+              @click="openMessageInspector(message.id, { kind: 'identity' })"
             >
-              <img v-if="assistantAvatar.image" :src="assistantAvatar.image" :alt="assistantAvatar.alt" />
-              <span v-else>{{ assistantAvatar.text }}</span>
-            </div>
+              <img v-if="getMessageIdentity(message).image" :src="getMessageIdentity(message).image" :alt="getMessageIdentity(message).name" />
+              <span v-else>{{ getMessageIdentity(message).text }}</span>
+            </button>
             <div class="oxc-msg__content">
-              <div
-                v-if="message.role === 'assistant' && message.activity?.visible"
-                class="oxc-activity"
-                :class="{ 'is-active': message.activity.active }"
-              >
-                <div class="oxc-activity__elapsed">{{ message.activity.elapsedLabel }}</div>
-                <div class="oxc-activity__steps">
-                  <div
-                    v-for="step in message.activity.steps"
-                    :key="step.id"
-                    class="oxc-activity__step"
-                    :class="[`is-${step.status}`, `is-${step.kind}`]"
-                  >
-                    <span class="oxc-activity__verb">{{ step.label }}</span>
-                    <span v-if="step.title" class="oxc-activity__title">{{ step.title }}</span>
-                    <span v-if="step.duration" class="oxc-activity__duration">({{ step.duration }})</span>
-                    <span v-if="step.detail" class="oxc-activity__detail">{{ step.detail }}</span>
-                  </div>
+              <span v-if="message.role === 'assistant' && !message.sameRole" class="oxc-msg__identity-name">{{ getMessageIdentity(message).name }}</span>
+              <ChatActivity v-if="message.role === 'assistant' && message.activity?.visible" :activity="message.activity" :is-zh="isZh" @inspect="openMessageInspector(message.id, $event)" />
+              <button v-if="message.memoryContext?.length" type="button" class="oxc-memory-receipt" @click="openMessageInspector(message.id, { kind: 'memory' })"><i class="fa-solid fa-layer-group"></i>{{ isZh ? '查看本轮记忆来源' : 'Memory sources for this turn' }}<i class="fa-solid fa-chevron-right"></i></button>
+              <div v-if="message.attachments?.length" class="oxc-sent-attachments">
+                <div v-for="(attachment, attachmentIndex) in message.attachments" :key="attachment.id || attachmentIndex" class="oxc-sent-attachment">
+                  <img v-if="attachment.kind === 'image' && (attachment.url || attachment.path)" :src="attachment.url || attachment.path" :alt="attachment.name || (isZh ? '图片附件' : 'Image attachment')" loading="lazy" />
+                  <span v-else><i class="fa-regular fa-file-lines"></i>{{ attachment.name || (isZh ? '附件' : 'Attachment') }}</span>
                 </div>
               </div>
               <div
@@ -1607,16 +2225,37 @@ onBeforeUnmount(() => {
               >
                 {{ message.text }}
               </div>
-              <div v-if="message.time && !message.typing" class="oxc-msg__time">
-                {{ message.time }}
+              <ConnectionNotice v-if="connectionState && connectionMessageId === message.id" :key="connectionScope" :state="connectionState" :is-zh="isZh" :busy="connectionActionPending" :continuing="connectionOwnsRecovery && (recoveryActionPending || recoveryState.pending)" :action-error="connectionActionError || (connectionOwnsRecovery ? recoveryActionError : '')" @check="handleConnectionCheck" @continue="handleConnectionContinue" />
+              <div v-if="!message.typing" class="oxc-message-actions">
+                <button v-if="message.text" type="button" :aria-label="isZh ? '复制消息' : 'Copy message'" :title="isZh ? '复制消息' : 'Copy message'" @click="copyMessage(message)"><i class="fa-regular fa-copy"></i></button>
+                <button v-if="message.text" type="button" :aria-label="isZh ? '引用到草稿' : 'Quote in draft'" :title="isZh ? '引用到草稿' : 'Quote in draft'" @click="quoteMessage(message)"><i class="fa-solid fa-quote-left"></i></button>
+                <button type="button" :aria-label="isZh ? '消息详情' : 'Message details'" :title="isZh ? '消息详情' : 'Message details'" @click="openMessageInspector(message.id, { kind: 'identity' })"><i class="fa-solid fa-ellipsis"></i></button>
+                <time v-if="message.time">{{ message.time }}</time>
               </div>
             </div>
           </article>
+          <ConnectionNotice v-if="connectionState && !connectionMessageId" :key="connectionScope" :state="connectionState" :is-zh="isZh" :busy="connectionActionPending" :continuing="connectionOwnsRecovery && (recoveryActionPending || recoveryState.pending)" :action-error="connectionActionError || (connectionOwnsRecovery ? recoveryActionError : '')" @check="handleConnectionCheck" @continue="handleConnectionContinue" />
+          <section v-if="automations.tasks.length || automations.error" class="oxc-automation-cards" :aria-label="isZh ? '当前会话自动任务' : 'Current conversation automations'">
+            <button v-for="task in automations.tasks" :key="task.id" type="button" class="oxc-automation-card" :data-automation-id="task.id" @click="openAutomation(task.id)">
+              <span class="oxc-automation-card__heading"><span class="oxc-automation-origin"><i class="fa-regular fa-clock" aria-hidden="true"></i>{{ isZh ? '自动任务' : 'Automation' }}</span><span>{{ automationStateLabel(task.state) }}</span></span>
+              <strong>{{ task.title || (isZh ? '自动任务' : 'Automation') }}</strong>
+              <span v-if="task.state === 'active' && task.nextRunAt" class="oxc-automation-card__next" :title="task.nextRunAt">{{ isZh ? '下一次检查' : 'Next check' }} · {{ automationNextCheck(task.nextRunAt) }}</span>
+              <span v-if="automationLatestResult(task)" class="oxc-automation-result"><small>{{ isZh ? '自动任务结果' : 'Automation result' }}</small>{{ automationLatestResult(task).summary }}</span>
+            </button>
+            <p v-if="automations.error" role="alert">{{ automations.error }}</p>
+          </section>
         </div>
       </div>
 
       <!-- Input -->
       <div ref="inputWrapperRef" class="oxc-input-wrapper">
+        <GuidanceQueue :state="guidance" :is-zh="isZh" :running="snapshot.isSending" :bridge="bridge" @changed="refreshSnapshot(false, { passive: true })" @restore-text="restoreGuidanceText" />
+        <div v-if="recoveryState.error || (!connectionOwnsRecovery && (recoveryState.available || (recoveryActionPending && !snapshot.isSending) || recoveryActionError))" class="oxc-recovery-banner" :aria-busy="recoveryActionPending || recoveryState.pending">
+          <div><strong>{{ recoveryState.error ? (isZh ? '会话还有内容未保存' : 'Some conversation content is not saved') : (isZh ? '发现未完成的回复' : 'An unfinished reply was found') }}</strong><p>{{ recoveryActionError || recoveryState.error || recoveryState.reason || (isZh ? '已保留上次保存的内容。继续前会核对原执行状态。' : 'Saved content is retained. The original execution will be checked before continuing.') }}</p></div>
+          <button v-if="recoveryState.error" type="button" data-recovery-action="save" :disabled="recoveryActionPending || recoveryState.pending || snapshot.isSending" @click="handleConversationRecovery(true)">{{ isZh ? '重试保存' : 'Retry saving' }}</button>
+          <button v-else-if="recoveryState.available || recoveryActionPending" type="button" data-recovery-action="continue" :disabled="recoveryActionPending || recoveryState.pending || snapshot.isSending" @click="handleConversationRecovery(false)"><i :class="recoveryActionPending || recoveryState.pending ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-play'" aria-hidden="true"></i>{{ recoveryActionPending || recoveryState.pending ? (isZh ? '正在核对' : 'Checking') : (isZh ? '继续' : 'Continue') }}</button>
+        </div>
+        <button v-if="readingHistory || hasUnreadOutput" type="button" class="oxc-return-latest" @click="returnToLatest"><i class="fa-solid fa-arrow-down"></i>{{ hasUnreadOutput ? (isZh ? '有新内容 · 回到最新' : 'New content · Latest') : (isZh ? '回到最新' : 'Back to latest') }}</button>
         <!-- 积分不足横幅（custom 服务商日额度 ≤ 10% 时弹出，可关闭） -->
         <transition name="oxc-pop">
           <div v-if="showLowCreditsBanner" class="oxc-low-credits-banner">
@@ -1634,7 +2273,10 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </transition>
+        <button v-if="currentTurnFileSummary.count" type="button" class="oxc-file-summary" @click="openCurrentTurnFiles"><i class="fa-regular fa-file-code" aria-hidden="true"></i><span>{{ isZh ? `本轮 ${currentTurnFileSummary.count} 个文件已变更` : `${currentTurnFileSummary.count} files changed this turn` }}</span><span v-if="currentTurnFileSummary.additions !== null" class="oxc-file-summary__add">+{{ currentTurnFileSummary.additions }}</span><span v-if="currentTurnFileSummary.deletions !== null" class="oxc-file-summary__remove">−{{ currentTurnFileSummary.deletions }}</span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
         <div class="oxc-input-card">
+          <p v-if="composerError" class="oxc-composer-error" role="alert">{{ composerError }}</p>
+          <p v-if="permissionError" class="oxc-composer-error oxc-permission-error" role="alert">{{ permissionError }}</p>
           <!-- 附件预览：粘贴/上传后图片和文件在这里显示 -->
           <div v-if="attachments.length" class="oxc-attachments">
             <div
@@ -1686,6 +2328,7 @@ onBeforeUnmount(() => {
               <button
                 v-if="settings.tablePetAvailable"
                 type="button"
+                v-show="showComposerTools"
                 class="oxc-toolbar-btn"
                 :title="isZh ? '桌面宠物' : 'Desktop pet'"
                 @click="handleTablePet"
@@ -1700,12 +2343,14 @@ onBeforeUnmount(() => {
               >
                 <button
                   type="button"
-                  class="oxc-toolbar-btn"
+                  class="oxc-toolbar-btn oxc-role-trigger"
                   :class="{ 'is-active': showRoleCardPopover || settings.roleCardEnabled }"
                   :title="roleCardTitle"
                   @click="toggleRoleCardPopover"
                 >
-                  <i class="fa-solid fa-address-card"></i>
+                  <img v-if="assistantAvatar.image" :src="assistantAvatar.image" :alt="assistantAvatar.alt" />
+                  <i v-else class="fa-regular fa-address-card"></i>
+                  <span>{{ settings.roleCardEnabled ? settings.roleCardName : (isZh ? '角色' : 'Role') }}</span>
                 </button>
                 <transition name="oxc-pop">
                   <div v-if="showRoleCardPopover" class="oxc-popover oxc-popover--up oxc-popover--role-card">
@@ -1752,6 +2397,7 @@ onBeforeUnmount(() => {
                       <i class="fa-solid fa-sliders"></i>
                       <span>{{ isZh ? '角色卡配置' : 'Configure role cards' }}</span>
                     </button>
+                    <button type="button" class="oxc-popover__cta" :disabled="!settings.roleCardSelectedId || avatarPending" @click="avatarInputRef?.click()"><i class="fa-regular fa-image"></i>{{ avatarPending ? (isZh ? '保存头像中…' : 'Saving portrait…') : (isZh ? '为当前角色导入头像' : 'Import portrait for this role') }}</button>
                   </div>
                 </transition>
               </div>
@@ -1759,6 +2405,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="oxc-toolbar-btn"
                 :class="{ 'is-active': settings.webSearchEnabled }"
+                v-show="showComposerTools || settings.webSearchEnabled"
                 :title="isZh ? '联网搜索' : 'Web search'"
                 @click="handleToggleWebSearch"
               >
@@ -1768,21 +2415,21 @@ onBeforeUnmount(() => {
                 type="button"
                 class="oxc-toolbar-btn"
                 :class="{ 'is-active': snapshot.interpreterEnabled }"
+                v-show="showComposerTools || snapshot.interpreterEnabled"
                 :title="isZh ? '代码解释器' : 'Code interpreter'"
                 @click="handleToggleInterpreter"
               >
                 <i class="fa-solid fa-code"></i>
               </button>
-              <button
-                type="button"
-                class="oxc-toolbar-btn"
-                :class="{ 'is-active': settings.memoryEnabled }"
-                v-if="settings.memoryAvailable"
-                :title="isZh ? '长期记忆' : 'Memory'"
-                @click="handleToggleMemory"
-              >
-                <i class="fa-solid fa-brain"></i>
-              </button>
+              <div class="oxc-popover-wrap" @mousedown.stop @click.stop>
+                <button type="button" class="oxc-toolbar-btn oxc-memory-trigger" :class="{ 'is-active': settings.memoryEnabled || settings.nativeMemoryEnabled }" :aria-expanded="showMemoryPopover" :title="isZh ? '记忆与上下文' : 'Memory and context'" @click="toggleMemoryPopover"><i class="fa-solid fa-layer-group"></i></button>
+                <div v-if="showMemoryPopover" class="oxc-popover oxc-popover--up oxc-memory-controls">
+                  <div class="oxc-popover__head"><strong>{{ isZh ? '记忆与身份' : 'Memory and identity' }}</strong></div>
+                  <button v-if="settings.memoryAvailable" type="button" class="oxc-popover__option" @click="handleToggleMemory"><i class="fa-regular fa-address-card"></i><div class="oxc-popover__option-copy"><strong>{{ isZh ? '角色档案与角色记忆' : 'Role profile and role memory' }}</strong><small>{{ settings.roleCardName || (isZh ? '尚未选择角色' : 'No role selected') }}</small></div><span>{{ settings.memoryEnabled ? (isZh ? '开启' : 'On') : (isZh ? '关闭' : 'Off') }}</span></button>
+                  <button type="button" class="oxc-popover__option" :disabled="!settings.nativeMemoryAvailable" @click="handleToggleNativeMemory"><i class="fa-solid fa-brain"></i><div class="oxc-popover__option-copy"><strong>{{ isZh ? '原生 Memory V3' : 'Native Memory V3' }}</strong><small>{{ isZh ? '按当前身份与任务权限检索' : 'Retrieve within current identity and task permissions' }}</small></div><span>{{ settings.nativeMemoryEnabled ? (isZh ? '开启' : 'On') : (isZh ? '关闭' : 'Off') }}</span></button>
+                  <p class="oxc-memory-controls__note">{{ isZh ? '开关作用于后续请求。本轮是否使用、来源与结果，请查看消息中的记忆记录。' : 'Settings apply to future requests. Each message shows whether memory was used and its sources.' }}</p>
+                </div>
+              </div>
               <button
                 type="button"
                 class="oxc-toolbar-btn"
@@ -1793,6 +2440,7 @@ onBeforeUnmount(() => {
                 <i class="fa-solid fa-microphone"></i>
               </button>
 
+              <button type="button" class="oxc-toolbar-btn oxc-tools-trigger" :aria-expanded="showComposerTools" :class="{ 'is-active': showComposerTools }" @click="showComposerTools = !showComposerTools"><i class="fa-solid fa-sliders"></i><span>{{ isZh ? '工具' : 'Tools' }}</span></button>
               <div class="oxc-popover-wrap">
                 <button
                   type="button"
@@ -1866,8 +2514,8 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <div class="oxc-input-toolbar__right">
-              <!-- 权限模式 chip（只在工作区已加载时显示） -->
-              <div v-if="workspaceState.loaded" class="oxc-chip-shell" @mousedown.stop @click.stop>
+              <!-- 权限模式常驻输入区，与工作区是否加载无关。 / Keep permission mode visible independently of workspace loading. -->
+              <div class="oxc-chip-shell oxc-permission-shell" @mousedown.stop @click.stop>
                 <button
                   type="button"
                   class="oxc-chip oxc-chip--permission"
@@ -1876,22 +2524,32 @@ onBeforeUnmount(() => {
                     'is-accept': ['acceptEdits', 'auto-approve', 'auto-edit'].includes(permissionState.current),
                     'is-plan': permissionState.current === 'plan'
                   }"
-                  :title="isZh ? '权限模式' : 'Permission Mode'"
+                  :title="`${isZh ? '权限模式' : 'Permission mode'} · ${getPermissionModeLabel(permissionState.current)}`"
+                  :aria-label="`${isZh ? '权限模式' : 'Permission mode'} · ${getPermissionModeLabel(permissionState.current)}`"
+                  :aria-expanded="showPermissionMenu"
+                  aria-controls="oxc-permission-menu"
+                  :aria-busy="permissionPending || permissionState.pending || false"
                   @click="togglePermissionMenu"
                 >
                   <i :class="getPermissionModeIcon(permissionState.current)"></i>
                   <span class="oxc-chip__label">{{ getPermissionModeLabel(permissionState.current) }}</span>
-                  <i class="fa-solid fa-chevron-down oxc-chip__caret"></i>
+                  <span v-if="permissionState.uncertain" class="oxc-permission-unconfirmed">{{ isZh ? '待确认' : 'Unconfirmed' }}</span>
+                  <i :class="permissionPending || permissionState.pending ? 'fa-solid fa-spinner fa-spin oxc-chip__caret' : 'fa-solid fa-chevron-down oxc-chip__caret'" aria-hidden="true"></i>
                 </button>
                 <transition name="oxc-pop">
-                  <div v-show="showPermissionMenu" class="oxc-popover oxc-popover--up" @mousedown.stop @click.stop>
+                  <div v-show="showPermissionMenu" id="oxc-permission-menu" class="oxc-popover oxc-popover--up oxc-popover--permission" role="group" :aria-label="isZh ? '权限模式选项' : 'Permission mode options'" @mousedown.stop @click.stop>
                     <div class="oxc-popover__head">{{ isZh ? '权限模式' : 'Permission Mode' }}</div>
+                    <p v-if="permissionState.scopeHint" class="oxc-permission-note">{{ permissionState.scopeHint }}</p>
+                    <p v-if="permissionPending || permissionState.pending" class="oxc-permission-note" role="status">{{ isZh ? '正在保存，当前仍显示原模式…' : 'Saving; the previous mode is still shown…' }}</p>
                     <button
                       v-for="opt in permissionState.options"
                       :key="opt.id"
                       type="button"
                       class="oxc-popover__option"
                       :class="{ 'is-active': opt.id === permissionState.current }"
+                      :data-permission-mode="opt.id"
+                      :aria-pressed="opt.id === permissionState.current"
+                      :disabled="permissionPending || permissionState.pending || permissionState.available === false || opt.disabled || false"
                       @mousedown.stop
                       @click.stop="selectPermissionMode(opt.id)"
                     >
@@ -1965,7 +2623,8 @@ onBeforeUnmount(() => {
                   type="button"
                   class="oxc-context-ring"
                   :class="{ 'is-warn': contextWindowState.warn, 'is-critical': contextWindowState.critical }"
-                  :title="`${contextWindowState.label} (${contextWindowState.percent}%) — ${contextWindowState.summary}`"
+                  :title="`${contextWindowState.label} · ${contextWindowState.summary}`"
+                  :aria-label="isZh ? '查看上下文用量与来源' : 'View context usage and source'"
                   @click="toggleContextPopover"
                 >
                   <svg viewBox="0 0 24 24" class="oxc-context-ring__svg">
@@ -1978,41 +2637,40 @@ onBeforeUnmount(() => {
                       transform="rotate(-90 12 12)"
                     />
                   </svg>
-                  <span class="oxc-context-ring__pct">{{ contextWindowState.percent }}%</span>
+                  <span class="oxc-context-ring__pct">{{ contextWindowState.percent == null ? '—' : `${contextWindowState.percent}%` }}</span>
                 </button>
                 <transition name="oxc-pop">
                   <div v-show="showContextPopover" class="oxc-popover oxc-popover--up oxc-popover--context">
                     <div class="oxc-popover__head">
                       <strong>{{ isZh ? '上下文窗口' : 'Context Window' }}</strong>
-                      <small>{{ contextWindowState.label }} · {{ contextWindowState.percent }}%</small>
+                      <small>{{ contextWindowState.label }}</small>
                     </div>
-                    <div class="oxc-context-bar">
+                    <div v-if="contextWindowState.percent != null" class="oxc-context-bar">
                       <div class="oxc-context-bar__fill" :style="{ width: contextWindowState.percent + '%' }"></div>
-                      <div class="oxc-context-bar__threshold" :style="{ left: (contextWindowState.autoCompactAt * 100) + '%' }">
-                        <span>{{ Math.round(contextWindowState.autoCompactAt * 100) }}%</span>
-                      </div>
                     </div>
                     <p class="oxc-context-note">
                       <i class="fa-solid fa-circle-info"></i>
-                      {{ isZh ? 'OpenXnet 在接近 1M 上下文时会自动压缩历史，无需手动操作。' : 'OpenXnet auto-compacts history when context nears 1M — no manual action needed.' }}
+                      {{ contextWindowState.actual ? (isZh ? '用量来自上次请求的服务商回执，不代表尚未提交的完整输入。' : 'Usage comes from the previous provider response, not the complete next input.') : (isZh ? '当前数值由消息字符估算，不包含所有隐藏输入；实际用量以服务商回执为准。' : 'This estimate uses message characters and excludes some hidden inputs; provider receipts determine actual usage.') }}
                     </p>
                     <div class="oxc-context-rows">
-                      <div><span>{{ isZh ? '当前' : 'Used' }}</span><strong>{{ contextWindowState.used }}</strong></div>
-                      <div><span>{{ isZh ? '上限' : 'Limit' }}</span><strong>{{ contextWindowState.limit }}</strong></div>
+                      <div><span>{{ contextWindowState.actual ? (isZh ? '上次实际输入' : 'Last actual input') : (isZh ? '当前估算' : 'Current estimate') }}</span><strong>{{ contextWindowState.used ?? '—' }}</strong></div>
+                      <div><span>{{ isZh ? '配置上限' : 'Configured limit' }}</span><strong>{{ contextWindowState.limit ?? (isZh ? '未知' : 'Unknown') }}</strong></div>
                       <div><span>{{ isZh ? '状态' : 'Status' }}</span><strong>{{ contextWindowState.summary }}</strong></div>
                     </div>
                   </div>
                 </transition>
               </div>
 
+              <button v-if="snapshot.isSending" type="button" class="oxc-stop-response" data-composer-action="stop" :title="isZh ? '停止回复' : 'Stop response'" :aria-label="isZh ? '停止回复' : 'Stop response'" @click="handleStopResponse"><i class="fa-solid fa-stop" aria-hidden="true"></i></button>
               <button
                 type="button"
                 class="oxc-send-btn"
-                :class="{ 'is-stopping': snapshot.isSending && !String(draft || '').trim() }"
-                :title="isZh ? '发送' : 'Send'"
+                :title="snapshot.isSending ? (isZh ? '发送引导' : 'Send guidance') : (isZh ? '发送' : 'Send')"
+                :aria-label="snapshot.isSending ? (isZh ? '发送引导' : 'Send guidance') : (isZh ? '发送' : 'Send')"
+                :disabled="!snapshot.canUseHost || permissionPending || permissionState.pending || guidanceSubmissionPending || guidance.sending || (!String(draft || '').trim() && !attachments.length) || (snapshot.isSending && (!!attachments.length || guidance.supported === false))"
                 @click="handleSend"
               >
-                <i :class="sendIconClass"></i>
+                <i :class="guidanceSubmissionPending || guidance.sending ? 'fa-solid fa-spinner fa-spin' : snapshot.isSending ? 'fa-solid fa-arrow-turn-up' : sendIconClass"></i>
               </button>
             </div>
           </div>
@@ -2020,50 +2678,23 @@ onBeforeUnmount(() => {
 
         <!-- ── 输入框下方状态条（之前在消息上方）+ Git 分支 ── -->
         <div class="oxc-context-strip oxc-context-strip--below">
-          <span class="oxc-context-chip is-provider">
-            <i class="fa-solid fa-plug-circle-check"></i>
-            <span>{{ settings.providerName || (isZh ? '未选择服务商' : 'No provider') }}</span>
-          </span>
-          <span class="oxc-context-chip is-model">
-            <i class="fa-solid fa-microchip"></i>
-            <span>{{ settings.model }}</span>
-          </span>
-          <span class="oxc-context-chip" :class="currentProvider && currentProvider.validationStatus ? `is-${currentProvider.validationStatus}` : 'is-idle'">
-            <i class="fa-solid fa-shield-halved"></i>
-            <span>{{ providerValidationChip }}</span>
-          </span>
-          <span class="oxc-context-chip">
-            <i class="fa-solid fa-comments"></i>
-            <span>{{ snapshot.conversationId ? (isZh ? '记忆已连接' : 'Conversation linked') : (isZh ? '全新会话' : 'Fresh session') }}</span>
-          </span>
-          <span v-if="settings.memoryEnabled" class="oxc-context-chip is-feature">
-            <i class="fa-solid fa-brain"></i>
-            <span>{{ isZh ? '长期记忆开启' : 'Memory enabled' }}</span>
-          </span>
-          <span v-if="settings.webSearchEnabled" class="oxc-context-chip is-feature">
-            <i class="fa-solid fa-globe"></i>
-            <span>{{ isZh ? '联网搜索' : 'Web search' }}</span>
-          </span>
-          <span v-if="settings.interpreterEnabled" class="oxc-context-chip is-feature">
-            <i class="fa-solid fa-code"></i>
-            <span>{{ isZh ? '代码解释器' : 'Interpreter' }}</span>
-          </span>
-
-          <!-- Git 分支切换 -->
+          <span class="oxc-composer-hint">{{ snapshot.isSending ? (isZh ? 'Enter 引导 · 当前回复继续' : 'Enter to guide · Reply continues') : (isZh ? 'Enter 发送 · Shift + Enter 换行' : 'Enter to send · Shift + Enter for a new line') }}</span>
+          <!-- Git 当前分支；仅在宿主支持真实切换时提供选择 -->
           <div v-if="workspaceState.git && workspaceState.git.enabled" class="oxc-git-shell" @mousedown.stop @click.stop>
             <button
               type="button"
               class="oxc-context-chip is-git"
+              :disabled="!workspaceState.git.canSwitch || gitSwitchPending"
               @click="toggleGitMenu"
-              :title="isZh ? '切换 Git 分支' : 'Switch Git branch'"
+              :title="workspaceState.git.canSwitch ? (isZh ? '切换 Git 分支' : 'Switch Git branch') : (isZh ? '当前 Git 分支（只读）' : 'Current Git branch (read-only)')"
             >
               <i class="fa-solid fa-code-branch"></i>
               <span>{{ workspaceState.git.branch }}</span>
               <span v-if="workspaceState.git.dirty" class="oxc-git-dirty">●</span>
-              <i class="fa-solid fa-chevron-down oxc-context-chip__caret"></i>
+              <i v-if="workspaceState.git.canSwitch" class="fa-solid fa-chevron-down oxc-context-chip__caret"></i>
             </button>
             <transition name="oxc-pop">
-              <div v-show="showGitMenu" class="oxc-popover oxc-popover--up oxc-popover--git">
+              <div v-show="showGitMenu && workspaceState.git.canSwitch" class="oxc-popover oxc-popover--up oxc-popover--git">
                 <div class="oxc-popover__head">
                   <strong>{{ isZh ? 'Git 分支' : 'Git Branches' }}</strong>
                   <small v-if="workspaceState.git.ahead || workspaceState.git.behind">
@@ -2075,6 +2706,7 @@ onBeforeUnmount(() => {
                   :key="`git-${b}`"
                   type="button"
                   class="oxc-popover__option"
+                  :disabled="gitSwitchPending"
                   :class="{ 'is-active': b === workspaceState.git.branch }"
                   @click="selectGitBranch(b)"
                 >
@@ -2092,6 +2724,10 @@ onBeforeUnmount(() => {
     </div>
     </div><!-- /.oxc-chat-column -->
 
+    <FilePreviewPanel v-if="inspectorSelection?.kind === 'file' && filePreviewEntries.length" :tabs="filePreviewEntries" :active-key="activeFilePreviewKey" :is-zh="isZh" :bridge="bridge" @select="selectFilePreview" @close-tab="closeFilePreview" @close="closeMessageInspector" />
+    <AutomationPanel v-else-if="automationSelection" :key="conversationScopeKey(snapshot) + automationSelection" :task="selectedAutomation" :is-zh="isZh" :bridge="bridge" :can-manage="automations.canManage" :can-open-center="automations.canOpenCenter" :refresh-error="automations.error" :loading="automations.loading" @close="automationSelection = ''" @changed="automationChanged" @refresh="refreshAutomationTasks(true)" />
+    <ConversationInspector v-else-if="inspectorMessage" :message="inspectorMessage" :selection="inspectorSelection" :is-zh="isZh" :load-subagent-transcript="loadSubagentTranscript" @close="closeMessageInspector" />
+
     <!-- ════════ Settings panel toggle (right edge handle) ════════ -->
     <button
       type="button"
@@ -2104,7 +2740,7 @@ onBeforeUnmount(() => {
     </button>
 
     <!-- ════════ Settings panel ════════ -->
-    <aside class="oxc-settings-panel" :class="{ 'is-open': showSettingsPanel }">
+    <aside v-if="showSettingsPanel" class="oxc-settings-panel" :class="{ 'is-open': showSettingsPanel }">
       <div class="oxc-settings-panel__header">
         <span class="oxc-settings-panel__title">{{ isZh ? '对话设置' : 'Chat settings' }}</span>
         <button type="button" class="oxc-settings-panel__close" @click="handleCloseSettings" :title="isZh ? '关闭' : 'Close'">
@@ -2302,16 +2938,33 @@ onBeforeUnmount(() => {
           ></textarea>
         </div>
 
+        <div v-if="settings.completionPreferencesAvailable" class="oxc-setting-group">
+          <div class="oxc-toggle-row"><label class="oxc-setting-group__label">{{ isZh ? '完成提醒' : 'Completion alerts' }}</label><label class="oxc-toggle"><input type="checkbox" data-completion-preference="completionNotificationsEnabled" :aria-label="isZh ? '完成提醒' : 'Completion alerts'" :checked="settings.completionNotificationsEnabled" :disabled="completionPreferencePending" @change="handleCompletionPreference('completionNotificationsEnabled', $event)" /><span class="oxc-toggle__slider"></span></label></div>
+          <span class="oxc-setting-group__hint">{{ isZh ? '回复或任务实际结束后提醒；点击通知回到原会话。' : 'Notify when a reply or task actually finishes; click to return to its conversation.' }}</span>
+          <div class="oxc-toggle-row"><label class="oxc-setting-group__label">{{ isZh ? '提醒声音' : 'Alert sound' }}</label><label class="oxc-toggle"><input type="checkbox" data-completion-preference="completionNotificationSound" :aria-label="isZh ? '提醒声音' : 'Alert sound'" :checked="settings.completionNotificationSound" :disabled="completionPreferencePending || !settings.completionNotificationsEnabled" @change="handleCompletionPreference('completionNotificationSound', $event)" /><span class="oxc-toggle__slider"></span></label></div>
+          <p v-if="completionPreferenceError" class="oxc-composer-error" role="alert">{{ completionPreferenceError }}</p>
+        </div>
+
         <!-- Memory toggle -->
         <div class="oxc-setting-group" v-if="settings.memoryAvailable">
           <div class="oxc-toggle-row">
-            <label class="oxc-setting-group__label">{{ isZh ? '长期记忆' : 'Long-term memory' }}</label>
+            <label class="oxc-setting-group__label">{{ isZh ? '角色记忆' : 'Role memory' }}</label>
             <label class="oxc-toggle">
               <input type="checkbox" :checked="settings.memoryEnabled" @change="handleToggleMemory" />
               <span class="oxc-toggle__slider"></span>
             </label>
           </div>
-          <span class="oxc-setting-group__hint">{{ isZh ? '开启后 AI 会跨对话沉淀记忆条目' : 'When on, the assistant persists memory across chats' }}</span>
+          <span class="oxc-setting-group__hint">{{ isZh ? '使用所选角色的设定与角色记忆' : 'Use the selected role profile and its role memory' }}</span>
+        </div>
+        <div class="oxc-setting-group" v-if="settings.nativeMemoryAvailable">
+          <div class="oxc-toggle-row">
+            <label class="oxc-setting-group__label">{{ isZh ? '原生记忆 Memory V3' : 'Native memory · Memory V3' }}</label>
+            <label class="oxc-toggle">
+              <input type="checkbox" :checked="settings.nativeMemoryEnabled" @change="handleToggleNativeMemory" />
+              <span class="oxc-toggle__slider"></span>
+            </label>
+          </div>
+          <span class="oxc-setting-group__hint">{{ isZh ? '按本轮问题检索；注入结果可在回复的记忆来源中查看' : 'Recall for the current query; inspect injection receipts on the reply' }}</span>
         </div>
 
         <!-- Interpreter toggle -->
@@ -2339,6 +2992,20 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
+.ox-vite-chat-shell .oxc-stop-response { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--ox-border,#dde6ed); border-radius: 9px; background: var(--ox-bg-surface,#fff); color: var(--ox-text-secondary,#63778d); cursor: pointer; flex-shrink: 0; }
+.ox-vite-chat-shell .oxc-stop-response:hover { color: var(--ox-danger,#c84d55); border-color: currentColor; }
+.ox-vite-chat-shell .oxc-recovery-banner { display: flex; align-items: center; justify-content: space-between; gap: 14px; max-width: var(--chat-reading-width); margin: 0 auto 10px; padding: 12px 16px; border: 1px solid var(--ox-border,#dde6ed); border-radius: var(--ox-radius-md,12px); background: var(--ox-bg-surface,#fff); color: var(--ox-text-primary,#26313f); font-size: 12px; }
+.ox-vite-chat-shell .oxc-recovery-banner p { color: var(--ox-text-secondary,#63778d); margin: 5px 0 0; line-height: 1.5; overflow-wrap: anywhere; }
+.ox-vite-chat-shell .oxc-recovery-banner button { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; border: 1px solid var(--ox-border,#dde6ed); border-radius: var(--ox-radius-sm,8px); padding: 8px 12px; background: var(--ox-accent-soft,#e5f4fb); color: var(--ox-accent,#168abb); font: inherit; cursor: pointer; }
+.ox-vite-chat-shell .oxc-recovery-banner button:disabled { opacity: .6; cursor: default; }
+.ox-vite-chat-shell .oxc-automation-cards { display: grid; gap: 10px; margin: 20px 0; }
+.ox-vite-chat-shell .oxc-automation-card { display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 16px 18px; border: 1px solid var(--ox-border, #dde6ed); border-radius: var(--ox-radius-md, 12px); background: var(--ox-bg-surface, #fff); color: var(--ox-text-primary, #26313f); text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
+.ox-vite-chat-shell .oxc-automation-card:hover { border-color: var(--ox-accent, #168abb); }
+.ox-vite-chat-shell .oxc-automation-card__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; font-size: 11px; color: var(--ox-text-secondary, #63778d); }
+.ox-vite-chat-shell .oxc-automation-origin { display: inline-flex; gap: 7px; align-items: center; color: var(--ox-accent, #168abb); }
+.ox-vite-chat-shell .oxc-automation-card__next { font-size: 11px; color: var(--ox-text-secondary, #63778d); }
+.ox-vite-chat-shell .oxc-automation-result { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.ox-vite-chat-shell .oxc-automation-result small { display: block; margin-bottom: 4px; color: var(--ox-text-secondary, #63778d); font-size: 10px; }
 #openxnet-vite-chat-root {
   display: block;
   width: 100%;
@@ -2826,10 +3493,53 @@ onBeforeUnmount(() => {
 }
 
 /* ════════ 会话右键菜单 ════════ */
+.oxc-rename-dialog {
+  box-sizing: border-box;
+  width: min(400px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid var(--ox-border, #dce3eb);
+  border-radius: 14px;
+  background: var(--ox-bg-surface, #fff);
+  color: var(--ox-text-primary, #1e293b);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.2);
+}
+
+.oxc-rename-dialog::backdrop { background: rgba(15, 23, 42, 0.3); }
+.oxc-rename-dialog h2 { margin: 0 0 20px; font: 600 18px/1.4 var(--ox-font-sans, system-ui); }
+.oxc-rename-dialog label { display: block; margin-bottom: 8px; font-size: 13px; }
+.oxc-rename-dialog input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--ox-border, #dce3eb);
+  border-radius: 8px;
+  background: var(--ox-bg-base, #f8fafc);
+  color: inherit;
+  font: inherit;
+}
+.oxc-rename-dialog input:focus { outline: 2px solid var(--ox-accent, #0079aa); outline-offset: 2px; }
+.oxc-rename-dialog__error { margin: 10px 0 0; color: var(--ox-error, #dc2626); font-size: 13px; }
+.oxc-rename-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.oxc-rename-dialog button {
+  padding: 9px 18px;
+  border: 1px solid var(--ox-border, #dce3eb);
+  border-radius: 8px;
+  background: var(--ox-bg-surface, #fff);
+  color: inherit;
+  font: 500 13px/1.4 var(--ox-font-sans, system-ui);
+  cursor: pointer;
+}
+.oxc-rename-dialog button.is-primary { background: var(--ox-accent, #0079aa); border-color: var(--ox-accent, #0079aa); color: var(--ox-accent-contrast, #fff); }
+.oxc-rename-dialog button:disabled { opacity: 0.55; cursor: default; }
+
 .oxc-conversation-menu {
   position: fixed;
-  z-index: 200;
+  z-index: 2400;
+  box-sizing: border-box;
   min-width: 200px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
   padding: 6px;
   border-radius: 12px;
   background: var(--ox-bg-surface, #fff);
@@ -2956,6 +3666,11 @@ onBeforeUnmount(() => {
 
 .oxc-context-chip.is-git:hover {
   background: rgba(91, 163, 197, 0.10);
+}
+
+.oxc-context-chip.is-git:disabled {
+  cursor: default;
+  opacity: 0.8;
 }
 
 .oxc-context-chip__caret {
@@ -5683,3 +6398,4 @@ html[data-theme="midnight"] .highlight-block-error * {
   }
 }
 </style>
+<style src="./chatWorkbench.css"></style>

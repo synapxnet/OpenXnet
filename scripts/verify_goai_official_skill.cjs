@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict")
 const path = require("node:path")
 const { mkdir, writeFile } = require("node:fs/promises")
+const { version: releaseVersion } = require("../package.json")
 
 const {
   CompetitionPaiEasOfficialSkillBoundary,
@@ -34,7 +35,7 @@ async function main() {
   assert.equal(snapshot.allowedOperations.every((operation) => /^(?:Describe|List)/u.test(operation)), true)
   const attestation = {
     schema: "openxnet.goai-official-skill-attestation.v1",
-    version: "1.2.0",
+    version: releaseVersion,
     generatedAt: new Date().toISOString(),
     environmentClaim: "staging",
     supplyChain: snapshot,

@@ -56,6 +56,11 @@ export interface ApplicationSkillIdRequest {
   readonly skillId: string;
 }
 
+/** 按来源读取技能正文，工作区由Main解析。 Read skill content by source using the Main-owned workspace. */
+export interface ApplicationSkillContentRequest extends ApplicationSkillIdRequest {
+  readonly source?: "global" | "project";
+}
+
 /** 把企业 Skill 候选上传到 XnetMLOps 仓库的请求。 */
 export interface UploadApplicationSkillToMlopsRequest {
   readonly skillId: string;

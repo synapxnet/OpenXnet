@@ -1,0 +1,22 @@
+# -*- coding: utf-8 -*-
+# Copyright (C) 2026 Synapxnet. All rights reserved.
+# This file is Synapxnet Proprietary and Confidential. It is strictly
+# forbidden to copy, distribute, or use without explicit authorization.
+# pnpm 构建许可与依赖约束 / pnpm build permissions and dependency constraints.
+# Author: maoyo
+# Department: 研发部
+# Date: 2026-09-17
+# Version: 1.3.0
+# Security Level: INTERNAL
+# __version__ = "1.3.0"; __author__ = "maoyo"; __copyright__ = "Copyright 2026 Synapxnet"
+# __maintainer__ = "maoyo"; __email__ = "synapxnet@gmail.com"
+
+allowBuilds:
+  '@serialport/bindings-cpp': true
+  electron: true
+  electron-winstaller: true
+
+# 与 package.json 的 npm overrides 保持一致。 / Match npm overrides in package.json.
+overrides:
+  js-yaml: 4.3.2
+  osc>ws: 8.21.1

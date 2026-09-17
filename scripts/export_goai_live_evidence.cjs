@@ -3,6 +3,7 @@
 const { createHash } = require("node:crypto")
 const path = require("node:path")
 const { mkdir, readFile, writeFile } = require("node:fs/promises")
+const { version: releaseVersion } = require("../package.json")
 
 const {
   ApplicationCompetitionRuntimeService,
@@ -107,7 +108,7 @@ async function main() {
   }
   const manifest = {
     schema: "openxnet.goai-live-evidence-manifest.v1",
-    version: "1.2.0",
+    version: releaseVersion,
     environmentClaim: "staging",
     generatedAt: new Date().toISOString(),
     incidentCount: exports.length,

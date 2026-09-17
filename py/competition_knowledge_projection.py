@@ -1,11 +1,18 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""将 GOAI Competition 控制面快照投影为神经符号和时序知识图谱。"""
+# Copyright (C) 2026 Synapxnet. All rights reserved.
+# This file is Synapxnet Proprietary and Confidential. It is strictly
+# forbidden to copy, distribute, or use without explicit authorization.
+"""将控制面与严格任务图事件投影为企业知识；Project the control plane and strictly typed task graph events into enterprise knowledge.
+Author: maoyo | Department: 研发部 | Date: 2026-09-15 | Version: 1.0.0
+Security Level: INTERNAL | Maintainer: maoyo | Email: synapxnet@gmail.com
+"""
 
 from __future__ import annotations
 
 import hashlib
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +20,11 @@ from py.neuro_bridge_api import NeuroSymbol, SymbolK, SymbolQ, SymbolVector
 
 
 COMPETITION_KNOWLEDGE_SCHEMA = "openxnet.competition-knowledge.v1"
+__version__ = "1.0.0"
+__author__ = "maoyo"
+__copyright__ = "Copyright 2026 Synapxnet"
+__maintainer__ = "maoyo"
+__email__ = "synapxnet@gmail.com"
 
 
 class ProjectionModel(BaseModel):
@@ -226,9 +238,24 @@ class ProjectionTaskGraphNode(ProjectionModel):
     maximumAttempts: int = Field(ge=1, le=10)
     assignedRoleCardId: Optional[str] = Field(default=None, max_length=128)
     assignedAgentName: str = Field(default="", max_length=256)
-    assignmentMode: Optional[Literal["CAPABILITY_MATCH", "ROLE_FALLBACK", "CONTROL_PLANE", "HUMAN"]] = None
+    assignmentMode: Optional[Literal["CAPABILITY_MATCH", "ROLE_FALLBACK", "REASSIGNMENT", "CONTROL_PLANE", "HUMAN"]] = None
     status: str = Field(min_length=1, max_length=64)
     evidenceIds: List[str] = Field(default_factory=list, max_length=100)
+
+
+class ProjectionTaskGraphEvent(ProjectionModel):
+    """保留原顺序的有界协同事件，拒绝未知字段；Preserve bounded coordination events in original order and reject unknown fields."""
+
+    eventId: str = Field(min_length=1, max_length=128)
+    eventType: Literal["TASK_ASSIGNED", "CHECKPOINT_SAVED", "WORKER_TIMEOUT", "TASK_FAILED", "TASK_REASSIGNED", "RESOURCE_CONFLICT_DETECTED", "TRACE_RESUMED"]
+    nodeId: Optional[str] = Field(default=None, min_length=1, max_length=256)
+    attempt: int = Field(ge=1, strict=True)
+    fromRoleCardId: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    toRoleCardId: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    reasonCode: str = Field(min_length=1, max_length=128)
+    evidenceIds: List[Annotated[str, Field(min_length=1, max_length=128)]] = Field(default_factory=list, max_length=100)
+    checkpointDigest: str = Field(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$")
+    createdAt: str = Field(min_length=1, max_length=64)
 
 
 class ProjectionTaskGraph(ProjectionModel):
@@ -243,6 +270,7 @@ class ProjectionTaskGraph(ProjectionModel):
     replanReason: Optional[str] = Field(default=None, max_length=4096)
     conflictPolicies: List[str] = Field(default_factory=list, max_length=20)
     nodes: List[ProjectionTaskGraphNode] = Field(default_factory=list, max_length=200)
+    events: List[ProjectionTaskGraphEvent] = Field(default_factory=list, max_length=2000)
     createdAt: str = Field(min_length=1, max_length=64)
     updatedAt: str = Field(min_length=1, max_length=64)
     completedAt: Optional[str] = Field(default=None, max_length=64)

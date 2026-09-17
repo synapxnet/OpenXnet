@@ -41,6 +41,8 @@ export interface SystemSettings {
   readonly dateFormat: string;
   readonly launchAtStartup: boolean;
   readonly startMinimized: boolean;
+  readonly completionNotificationsEnabled: boolean;
+  readonly completionNotificationSound: boolean;
   readonly proxy: string;
   readonly proxyMode: string;
   readonly isChinaProxy: boolean;
@@ -82,6 +84,8 @@ export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = Object.freeze({
   dateFormat: "YYYY-MM-DD",
   launchAtStartup: false,
   startMinimized: false,
+  completionNotificationsEnabled: true,
+  completionNotificationSound: false,
   proxy: "http://127.0.0.1:7890",
   proxyMode: "system",
   isChinaProxy: false,
@@ -151,7 +155,7 @@ function normalizeChoice(value: unknown, allowed: ReadonlySet<string>, fallback:
 }
 
 /**
- * Normalize untrusted or legacy system settings into the stable Core contract.
+ * 将旧设置和通知偏好规范为稳定协议。 / Normalize legacy settings and notification preferences into the stable Core contract.
  *
  * @param value Candidate settings object.
  * @returns Complete bounded system settings.
@@ -171,6 +175,8 @@ export function normalizeSystemSettings(value: unknown): SystemSettings {
     dateFormat: normalizeChoice(record.dateFormat, DATE_FORMATS, DEFAULT_SYSTEM_SETTINGS.dateFormat),
     launchAtStartup: record.launchAtStartup === true,
     startMinimized: record.startMinimized === true,
+    completionNotificationsEnabled: record.completionNotificationsEnabled !== false,
+    completionNotificationSound: record.completionNotificationSound === true,
     proxy: normalizeText(record.proxy, DEFAULT_SYSTEM_SETTINGS.proxy, 2_048),
     proxyMode: normalizeChoice(record.proxyMode, PROXY_MODES, DEFAULT_SYSTEM_SETTINGS.proxyMode),
     isChinaProxy: record.isChinaProxy === true,

@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { createOpsBridge } from './opsBridge';
+import StorageLibrary from './StorageLibrary.vue';
+import MemoryWorkspace from './MemoryWorkspace.vue';
+import './skin-settings.css';
 
 const props = defineProps({
   surface: {
@@ -10,7 +13,13 @@ const props = defineProps({
 });
 
 const bridge = createOpsBridge();
+const memoryWorkspace = ref(null);
 const snapshot = ref(bridge.snapshot(props.surface));
+const surfaceIcon = computed(() => ({
+  storage: 'fa-solid fa-database', system: 'fa-solid fa-sliders',
+  enterprise: 'fa-solid fa-building', deploy: 'fa-solid fa-robot',
+  workbench: 'fa-solid fa-terminal', kernel: 'fa-solid fa-microchip',
+}[props.surface] || 'fa-solid fa-layer-group'));
 
 let refreshTimer = null;
 let lastActive = false;
@@ -32,6 +41,10 @@ function handleSelectTab(tabId) {
 }
 
 function handleRefresh() {
+  if (props.surface === 'storage' && snapshot.value?.activeTab === 'memory-v3' && memoryWorkspace.value) {
+    memoryWorkspace.value.refresh().catch(() => {}).finally(refreshSnapshot);
+    return;
+  }
   bridge.refreshSurface(props.surface).finally(refreshSnapshot);
 }
 
@@ -45,6 +58,24 @@ function handleSystemOpenAbout() {
 
 function handleSystemSettingChange(key, value) {
   bridge.updateSystemSetting(key, value).finally(refreshSnapshot);
+}
+
+function handleOpenSkinStudio() {
+  bridge.openSkinStudio().finally(refreshSnapshot);
+}
+
+function handleActivateSkin(id) {
+  bridge.activateSkin(id).finally(refreshSnapshot);
+}
+
+function skinPreviewStyle(skin = {}) {
+  return {
+    '--skin-preview-primary': skin.primary || '#21859c',
+    '--skin-preview-background': skin.background || '#f1f7fa',
+    '--skin-preview-surface': skin.surface || '#ffffff',
+    '--skin-preview-text': skin.text || '#263f4a',
+    '--skin-preview-radius': `${skin.radius ?? 14}px`,
+  };
 }
 
 function handleSystemSettingEvent(key, event) {
@@ -205,7 +236,7 @@ function handlePrimaryAction() {
     bridge.openTaskCenter().finally(refreshSnapshot);
   } else if (props.surface === 'storage') {
     if (snapshot.value?.activeTab === 'memory-v3') {
-      openMemoryCreateEditor();
+      memoryWorkspace.value?.openCreate();
     } else {
       bridge.jumpToMenu('storage', 'text').finally(refreshSnapshot);
     }
@@ -248,25 +279,6 @@ const enterpriseKbDraft = ref({
 const sandboxSelectedWorkspaceId = ref('');
 const sandboxSelectedProjectId = ref('');
 const sandboxSelectedAgentId = ref('');
-const memoryQuery = ref('');
-const memoryActorAgent = ref('');
-const memoryIncludeRetired = ref(false);
-const memoryEditorOpen = ref(false);
-const memoryEditorMode = ref('create');
-const memoryActionBusy = ref(false);
-const memoryActionError = ref('');
-const memoryDraft = ref({
-  memoryId: '',
-  baseVersion: 0,
-  taskId: '',
-  title: '',
-  content: '',
-  qualityScore: 0.8,
-  permissionsText: '',
-  tagsText: '',
-  reason: '',
-});
-
 function handleVrmStart() {
   bridge.startVrm().finally(refreshSnapshot);
 }
@@ -483,281 +495,6 @@ function handleEnterpriseKbDelete(row) {
   });
 }
 
-function parseMemoryListInput(value) {
-  return [...new Set(String(value || '')
-    .split(/[,，\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean))];
-}
-
-function openMemoryCreateEditor() {
-  memoryEditorMode.value = 'create';
-  memoryActionError.value = '';
-  memoryDraft.value = {
-    memoryId: '',
-    baseVersion: 0,
-    taskId: '',
-    title: '',
-    content: '',
-    qualityScore: 0.8,
-    permissionsText: '',
-    tagsText: '',
-    reason: '',
-  };
-  memoryEditorOpen.value = true;
-}
-
-function openMemoryEditEditor() {
-  const selected = data.value.memoryV3?.selectedMemory;
-  if (!selected) return;
-  memoryEditorMode.value = 'edit';
-  memoryActionError.value = '';
-  memoryDraft.value = {
-    memoryId: String(selected.memoryId || ''),
-    baseVersion: Number(selected.version || 0),
-    taskId: String(selected.taskId || ''),
-    title: String(selected.title || ''),
-    content: String(selected.content || ''),
-    qualityScore: Number(selected.qualityScore ?? 0.8),
-    permissionsText: (selected.permissions || []).join(', '),
-    tagsText: (selected.tags || []).join(', '),
-    reason: '',
-  };
-  memoryEditorOpen.value = true;
-}
-
-async function submitMemoryEditor() {
-  const draft = memoryDraft.value;
-  if (!String(draft.title || '').trim() || !String(draft.content || '').trim()) return;
-  if (memoryEditorMode.value === 'create' && !String(draft.taskId || '').trim()) return;
-  memoryActionBusy.value = true;
-  memoryActionError.value = '';
-  try {
-    const payload = {
-      ...draft,
-      qualityScore: Number(draft.qualityScore ?? 0.8),
-      permissions: parseMemoryListInput(draft.permissionsText),
-      tags: parseMemoryListInput(draft.tagsText),
-    };
-    if (memoryEditorMode.value === 'edit') {
-      await bridge.editSynapxnetMemory(payload);
-    } else {
-      await bridge.createSynapxnetMemory(payload);
-    }
-    memoryEditorOpen.value = false;
-    refreshSnapshot();
-  } catch (error) {
-    memoryActionError.value = String(error?.message || 'Memory operation failed.');
-  } finally {
-    memoryActionBusy.value = false;
-  }
-}
-
-async function applyMemoryFilters() {
-  memoryActionBusy.value = true;
-  memoryActionError.value = '';
-  try {
-    await bridge.loadSynapxnetMemories({
-      actorAgent: memoryActorAgent.value,
-      query: memoryQuery.value,
-      includeRetired: memoryIncludeRetired.value,
-    });
-    refreshSnapshot();
-  } catch (error) {
-    memoryActionError.value = String(error?.message || 'Memory list could not be loaded.');
-  } finally {
-    memoryActionBusy.value = false;
-  }
-}
-
-async function handleMemorySelect(memoryId) {
-  memoryActionError.value = '';
-  try {
-    await bridge.selectSynapxnetMemory(memoryId);
-    refreshSnapshot();
-  } catch (error) {
-    memoryActionError.value = String(error?.message || 'Memory history could not be loaded.');
-  }
-}
-
-async function handleMemoryRollback(version) {
-  const selected = data.value.memoryV3?.selectedMemory;
-  if (!selected || Number(version?.version) === Number(selected.version)) return;
-  const confirmed = window.confirm(
-    isZh.value
-      ? `确认从 v${version.version} 创建一个新的回滚版本？历史版本不会被覆盖。`
-      : `Create a new rollback version from v${version.version}? Existing history will remain unchanged.`
-  );
-  if (!confirmed) return;
-  memoryActionBusy.value = true;
-  try {
-    await bridge.rollbackSynapxnetMemory(selected.memoryId, version.version, isZh.value ? '用户从版本时间线回滚' : 'User rollback from version timeline');
-    refreshSnapshot();
-  } catch (error) {
-    memoryActionError.value = String(error?.message || 'Rollback failed.');
-  } finally {
-    memoryActionBusy.value = false;
-  }
-}
-
-async function handleMemoryRetire() {
-  const selected = data.value.memoryV3?.selectedMemory;
-  if (!selected) return;
-  const confirmed = window.confirm(isZh.value ? '确认退役当前记忆？历史版本仍会保留。' : 'Retire this memory? Its version history will be preserved.');
-  if (!confirmed) return;
-  memoryActionBusy.value = true;
-  try {
-    await bridge.retireSynapxnetMemory(selected.memoryId);
-    refreshSnapshot();
-  } catch (error) {
-    memoryActionError.value = String(error?.message || 'Retire failed.');
-  } finally {
-    memoryActionBusy.value = false;
-  }
-}
-
-async function handleMemoryVerify() {
-  memoryActionBusy.value = true;
-  try {
-    await bridge.verifySynapxnetMemory('');
-    refreshSnapshot();
-  } catch (error) {
-    memoryActionError.value = String(error?.message || 'Integrity verification failed.');
-  } finally {
-    memoryActionBusy.value = false;
-  }
-}
-
-async function handleMemoryExport() {
-  const selected = data.value.memoryV3?.selectedMemory;
-  if (!selected) return;
-  memoryActionBusy.value = true;
-  try {
-    const document = await bridge.exportSynapxnetMemories([selected.memoryId]);
-    const blob = new Blob([JSON.stringify(document, null, 2)], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = window.document.createElement('a');
-    anchor.href = url;
-    anchor.download = `openxnet-memory-${selected.memoryId.slice(0, 12)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    memoryActionError.value = String(error?.message || 'Memory export failed.');
-  } finally {
-    memoryActionBusy.value = false;
-  }
-}
-
-function handleMemoryImport() {
-  const input = window.document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json,application/json';
-  input.addEventListener('change', async () => {
-    const file = input.files?.[0];
-    if (!file) return;
-    memoryActionBusy.value = true;
-    try {
-      const document = JSON.parse(await file.text());
-      await bridge.importSynapxnetMemories(document);
-      refreshSnapshot();
-    } catch (error) {
-      memoryActionError.value = String(error?.message || 'Memory import failed.');
-    } finally {
-      memoryActionBusy.value = false;
-    }
-  }, { once: true });
-  input.click();
-}
-
-function formatMemoryTime(value) {
-  return value ? new Date(value).toLocaleString() : '--';
-}
-
-function shortMemoryHash(value) {
-  const normalized = String(value || '');
-  return normalized ? `${normalized.slice(0, 8)}...${normalized.slice(-6)}` : '--';
-}
-
-/**
- * 将稳定记忆类型转换为当前语言的用户可读标签。
- *
- * @param {string} value Memory V3 返回的稳定类型。
- * @returns {string} 当前语言下的类型名称。
- */
-function getMemoryTypeLabel(value) {
-  const labels = {
-    skill: isZh.value ? '技能记忆' : 'Skill',
-    incident: isZh.value ? '事件记忆' : 'Incident',
-    collaboration: isZh.value ? '协作记忆' : 'Collaboration',
-    decision: isZh.value ? '决策记忆' : 'Decision',
-    manual: isZh.value ? '人工记忆' : 'Manual',
-  };
-  return labels[String(value || 'manual')] || labels.manual;
-}
-
-/**
- * 为不同记忆类型选择稳定图标，便于快速识别来源。
- *
- * @param {string} value Memory V3 返回的稳定类型。
- * @returns {string} Font Awesome 图标类名。
- */
-function getMemoryTypeIcon(value) {
-  return {
-    skill: 'fa-solid fa-wand-magic-sparkles',
-    incident: 'fa-solid fa-circle-nodes',
-    collaboration: 'fa-solid fa-people-group',
-    decision: 'fa-solid fa-code-branch',
-    manual: 'fa-solid fa-pen-to-square',
-  }[String(value || 'manual')] || 'fa-solid fa-pen-to-square';
-}
-
-/**
- * 过滤内部类型标签并翻译常用业务标签，技术标识保持原值。
- *
- * @param {object} memory Memory V3 记忆记录。
- * @returns {Array<{key: string, label: string}>} 可直接渲染的标签列表。
- */
-function getMemoryDisplayTags(memory) {
-  const labels = {
-    competition: isZh.value ? '比赛闭环' : 'Competition',
-    'goai-staging': isZh.value ? '复赛验证环境' : 'GOAI staging',
-    'resolved-incident': isZh.value ? '已验证事件' : 'Verified incident',
-    'recommendation-capacity': isZh.value ? '推荐容量治理' : 'Recommendation capacity',
-    'quantitative-iteration': isZh.value ? '量化模型迭代' : 'Quantitative iteration',
-    'feature-drift': isZh.value ? '跨域特征漂移' : 'Feature drift',
-  };
-  return (memory?.tags || [])
-    .filter((tag) => !String(tag).startsWith('memory-type:'))
-    .map((tag) => ({ key: String(tag), label: labels[String(tag)] || String(tag) }));
-}
-
-/**
- * 生成记忆完整性与恢复来源文案；输入 Memory V3 快照，返回简短可验证状态。
- *
- * @param {object} memoryData Memory V3 界面快照。
- * @returns {string} 当前语言下的完整性和恢复结果。
- */
-function getMemoryIntegrityMessage(memoryData) {
-  const integrity = memoryData?.integrity;
-  if (!integrity?.healthy) {
-    return isZh.value ? '完整性校验发现异常' : 'Integrity verification found problems';
-  }
-  const recovery = memoryData?.recovery;
-  if (recovery?.source === 'bundled-transfer' && Number(recovery.importedVersions || 0) > 0) {
-    return isZh.value
-      ? `已恢复 ${recovery.importedVersions} 个可信版本，记录链与审计链完整`
-      : `${recovery.importedVersions} trusted versions restored; record and audit chains are healthy`;
-  }
-  if (recovery?.source === 'competition-history' && Number(recovery.reconciledMemories || 0) > 0) {
-    return isZh.value
-      ? `已补投影 ${recovery.reconciledMemories} 条成功闭环，记录链与审计链完整`
-      : `${recovery.reconciledMemories} resolved workflows reconciled; record and audit chains are healthy`;
-  }
-  return isZh.value
-    ? `已校验 ${integrity.checkedVersions} 个版本，记录链与审计链完整`
-    : `${integrity.checkedVersions} versions verified; record and audit chains are healthy`;
-}
-
 async function handleEnterpriseKbVersions(row) {
   enterpriseKbEditorOpen.value = false;
   enterpriseKbSideMode.value = 'versions';
@@ -783,10 +520,6 @@ const enterpriseWorkspacePanel = computed(() => data.value.workspacePanel || {})
 const enterpriseSandboxPanel = computed(() => data.value.sandboxPanel || {});
 const enterpriseKnowledgePanel = computed(() => data.value.knowledgePanel || {});
 const synapxnetMemoryData = computed(() => data.value.memoryV3 || {});
-const canEditSelectedMemory = computed(() => {
-  const selected = synapxnetMemoryData.value.selectedMemory;
-  return !!selected && String(selected.ownerAgent || '') === String(synapxnetMemoryData.value.actorAgent || '');
-});
 const enterpriseRoleCategories = computed(() => {
   const seen = new Set();
   const categories = [];
@@ -986,16 +719,6 @@ watch(
   { deep: true }
 );
 
-watch(
-  synapxnetMemoryData,
-  (memory) => {
-    if (!memoryActorAgent.value) memoryActorAgent.value = String(memory?.actorAgent || '');
-    if (!memoryQuery.value && memory?.query) memoryQuery.value = String(memory.query);
-    memoryIncludeRetired.value = !!memory?.includeRetired;
-  },
-  { deep: true, immediate: true }
-);
-
 onMounted(() => {
   refreshSnapshot();
   refreshTimer = window.setInterval(refreshSnapshot, 800);
@@ -1010,7 +733,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="ox-vite-ops-shell" :class="`surface-${props.surface}`">
+  <div class="ox-vite-ops-shell" :class="[`surface-${props.surface}`, { 'is-memory-workspace': props.surface === 'storage' && data.activeTab === 'memory-v3' }]" :data-active-tab="data.activeTab">
     <template v-if="props.surface === 'task'">
       <div class="ox-vite-ops-header">
         <div>
@@ -1537,18 +1260,20 @@ onBeforeUnmount(() => {
 
     <template v-else>
       <div class="ox-vite-ops-header">
-        <div>
-          <div class="ox-vite-ops-header__kicker">{{ data.meta?.title || data.title }}</div>
-          <h1>{{ data.title }}</h1>
-          <p>{{ data.subtitle }}</p>
+        <div class="ox-ops-page-identity">
+          <span class="ox-ops-page-icon" aria-hidden="true"><i :class="surfaceIcon"></i></span>
+          <div class="ox-ops-page-copy">
+            <h1>{{ data.title }}</h1>
+            <p>{{ props.surface === 'storage' ? (data.meta?.summary || data.subtitle) : data.subtitle }}</p>
+          </div>
         </div>
         <div class="ox-vite-ops-header__actions">
-          <button type="button" class="ox-vite-ops-secondary-btn" @click="handleRefresh">
+          <button v-if="!(props.surface === 'storage' && data.activeTab === 'memory-v3')" type="button" class="ox-vite-ops-secondary-btn" @click="handleRefresh">
             <i class="fa-solid fa-rotate-right"></i>
             <span>{{ isZh ? '同步状态' : 'Sync Status' }}</span>
           </button>
           <button
-            v-if="['deploy', 'workbench', 'storage', 'kernel', 'system'].includes(props.surface)"
+            v-if="['deploy', 'workbench', 'kernel', 'system'].includes(props.surface)"
             type="button"
             class="ox-vite-ops-primary-btn"
             @click="handlePrimaryAction"
@@ -1697,26 +1422,60 @@ onBeforeUnmount(() => {
               </section>
             </div>
 
-            <div v-else-if="data.activeTab === 'appearance'" class="ox-vite-settings-stack">
-              <section class="ox-vite-settings-section">
-                <div class="ox-vite-settings-section__label">{{ isZh ? '主题模式' : 'Theme Mode' }}</div>
+            <div v-else-if="data.activeTab === 'appearance'" class="ox-vite-settings-stack ox-skin-settings">
+              <section class="ox-skin-current" :style="skinPreviewStyle(data.skinCurrent)">
+                <div class="ox-skin-current__copy">
+                  <span class="ox-skin-eyebrow">{{ isZh ? '当前皮肤' : 'Current skin' }}</span>
+                  <h2>{{ data.skinCurrent?.name }}</h2>
+                  <div class="ox-skin-current__meta">
+                    <span><i :class="data.skinCurrent?.mode === 'dark' ? 'fa-regular fa-moon' : 'fa-regular fa-sun'"></i>{{ data.skinCurrent?.mode === 'dark' ? (isZh ? '深色' : 'Dark') : (isZh ? '浅色' : 'Light') }}</span>
+                    <span>{{ data.skinCurrent?.density === 'compact' ? (isZh ? '紧凑布局' : 'Compact layout') : (isZh ? '舒适布局' : 'Comfortable layout') }}</span>
+                    <span v-if="data.skinCurrent?.hasWallpaper"><i class="fa-regular fa-image"></i>{{ isZh ? '自选背景' : 'Custom background' }}</span>
+                  </div>
+                  <p>{{ isZh ? '调整主色、背景与圆角，找到适合自己的工作空间。' : 'Make the workspace yours with colors, backgrounds, and softer corners.' }}</p>
+                  <button type="button" class="ox-skin-settings-open" :disabled="!data.skinStudioAvailable" @click="handleOpenSkinStudio">
+                    <i class="fa-solid fa-sliders"></i><span>{{ isZh ? '自定义皮肤' : 'Customize skin' }}</span>
+                  </button>
+                </div>
+                <div class="ox-skin-workspace-preview" :class="{ 'has-wallpaper': data.skinCurrent?.hasWallpaper }" aria-hidden="true">
+                  <div class="ox-skin-workspace-preview__top"><span></span><b>OpenXnet</b><i></i></div>
+                  <div class="ox-skin-workspace-preview__sidebar"><i></i><i></i><i></i><i></i></div>
+                  <div class="ox-skin-workspace-preview__content"><b></b><i></i><div><span></span><span></span></div><em></em></div>
+                </div>
+              </section>
+              <section v-if="data.skinLibrary?.length" class="ox-skin-library">
+                <div class="ox-skin-library__heading">
+                  <h3>{{ isZh ? '皮肤库' : 'Your skins' }}</h3>
+                  <p>{{ isZh ? '选择即可应用，随时继续调整。' : 'Choose a skin to apply it. You can fine-tune it anytime.' }}</p>
+                </div>
+                <div class="ox-skin-library__grid">
+                  <button v-for="skin in data.skinLibrary" :key="skin.id" type="button" class="ox-skin-library-card"
+                    :class="{ 'is-active': data.skinCurrent?.id === skin.id }" :data-skin-id="skin.id"
+                    :aria-pressed="data.skinCurrent?.id === skin.id" @click="handleActivateSkin(skin.id)">
+                    <span class="ox-skin-library-card__preview" :class="{ 'has-wallpaper': skin.hasWallpaper }" :style="skinPreviewStyle(skin)" aria-hidden="true"><i></i><b></b><em></em></span>
+                    <span class="ox-skin-library-card__label"><strong>{{ skin.name }}</strong><i v-if="data.skinCurrent?.id === skin.id" class="fa-solid fa-circle-check" aria-hidden="true"></i></span>
+                    <small>{{ skin.mode === 'dark' ? (isZh ? '深色' : 'Dark') : (isZh ? '浅色' : 'Light') }}<span v-if="data.skinCurrent?.id === skin.id"> · {{ isZh ? '当前使用' : 'In use' }}</span></small>
+                  </button>
+                </div>
+              </section>
+              <details class="ox-skin-classic-themes">
+                <summary>{{ isZh ? '经典主题' : 'Classic themes' }}<i class="fa-solid fa-chevron-down"></i></summary>
                 <div class="ox-vite-theme-grid">
                   <button
                     v-for="theme in data.themeOptions || []"
                     :key="theme.value"
                     type="button"
                     class="ox-vite-theme-card"
-                    :class="{ active: data.settings?.theme === theme.value }"
                     @click="handleSystemSettingChange('theme', theme.value)"
                   >
                     <span class="ox-vite-theme-card__preview" :class="`theme-${theme.value}`">
                       <i></i><i></i><i></i>
                     </span>
                     <strong>{{ theme.label }}</strong>
-                    <small>{{ data.settings?.theme === theme.value ? (isZh ? '当前使用' : 'Current') : (isZh ? '点击切换' : 'Switch') }}</small>
+                    <small>{{ isZh ? '应用经典主题' : 'Apply classic theme' }}</small>
                   </button>
                 </div>
-              </section>
+              </details>
             </div>
 
             <div v-else-if="data.activeTab === 'shortcuts'" class="ox-vite-settings-stack">
@@ -2047,8 +1806,8 @@ onBeforeUnmount(() => {
         </main>
       </div>
 
-      <div v-else>
-        <div :class="props.surface === 'enterprise' ? 'ox-vite-system-layout' : 'ox-vite-ops-main'">
+      <div v-else class="ox-ops-content-body">
+        <div class="ox-ops-content-layout" :class="props.surface === 'enterprise' ? 'ox-vite-system-layout' : 'ox-vite-ops-main'">
           <aside v-if="props.surface === 'enterprise'" class="ox-vite-side-tabs">
             <button
               v-for="tab in data.tabs || []"
@@ -2063,7 +1822,7 @@ onBeforeUnmount(() => {
             </button>
           </aside>
 
-          <main class="ox-vite-ops-main">
+          <main class="ox-vite-ops-main ox-ops-primary-workspace">
             <div v-if="props.surface !== 'kernel'" class="ox-vite-tab-strip">
               <button
                 v-for="tab in (props.surface === 'enterprise' ? [] : data.tabs || [])"
@@ -2078,7 +1837,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
-            <section v-if="data.meta?.summary && !(props.surface === 'enterprise' || (props.surface === 'workbench' && data.activeTab === 'develop'))" class="ox-vite-summary-card">
+            <section v-if="data.meta?.summary && !(['enterprise', 'storage'].includes(props.surface) || (props.surface === 'workbench' && data.activeTab === 'develop'))" class="ox-vite-summary-card">
               <p>{{ data.meta.summary }}</p>
               <div class="ox-vite-chip-grid">
                 <span
@@ -2092,7 +1851,7 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <section v-if="data.stats?.length && !(props.surface === 'enterprise' || (props.surface === 'workbench' && data.activeTab === 'develop'))" class="ox-vite-stat-grid">
+            <section v-if="data.stats?.length && !(['enterprise', 'storage'].includes(props.surface) || (props.surface === 'workbench' && data.activeTab === 'develop'))" class="ox-vite-stat-grid">
               <article v-for="card in data.stats || []" :key="card.label" class="ox-vite-stat-card" :class="{ emphasis: card.emphasis }">
                 <span>{{ card.label }}</span>
                 <strong>{{ card.value }}</strong>
@@ -3399,272 +3158,48 @@ onBeforeUnmount(() => {
             </template>
 
             <template v-else-if="props.surface === 'storage'">
-              <section class="ox-vite-chip-grid">
-                <span v-for="item in data.overviewStats || []" :key="item.id" class="ox-vite-detail-chip">
-                  <i :class="item.icon"></i>
-                  <span>{{ item.label }} {{ item.value }}</span>
-                </span>
-              </section>
-
-              <section v-if="data.activeTab === 'memory-v3'" class="ox-vite-memory-workbench">
-                <div class="ox-vite-memory-toolbar">
-                  <label class="ox-vite-memory-actor">
-                    <i class="fa-solid fa-user-gear"></i>
-                    <select v-model="memoryActorAgent" @change="applyMemoryFilters">
-                      <option v-for="agent in synapxnetMemoryData.agentOptions || []" :key="agent.id" :value="agent.id">
-                        {{ agent.name }}
-                      </option>
-                    </select>
-                  </label>
-                  <label class="ox-vite-memory-search">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input
-                      v-model="memoryQuery"
-                      type="search"
-                      :placeholder="isZh ? '搜索标题、内容、任务或标签' : 'Search title, content, task, or tags'"
-                      @keyup.enter="applyMemoryFilters"
-                    />
-                  </label>
-                  <label class="ox-vite-memory-check">
-                    <input v-model="memoryIncludeRetired" type="checkbox" @change="applyMemoryFilters" />
-                    <span>{{ isZh ? '显示已退役' : 'Show retired' }}</span>
-                  </label>
-                  <div class="ox-vite-memory-toolbar__actions">
-                    <button type="button" class="ox-vite-icon-btn" :title="isZh ? '校验完整性' : 'Verify integrity'" :disabled="memoryActionBusy" @click="handleMemoryVerify">
-                      <i class="fa-solid fa-shield-halved"></i>
-                    </button>
-                    <button type="button" class="ox-vite-icon-btn" :title="isZh ? '导入记忆' : 'Import memory'" :disabled="memoryActionBusy" @click="handleMemoryImport">
-                      <i class="fa-solid fa-file-import"></i>
-                    </button>
-                    <button type="button" class="ox-vite-ops-primary-btn" :disabled="memoryActionBusy" @click="openMemoryCreateEditor">
-                      <i class="fa-solid fa-plus"></i>
-                      <span>{{ isZh ? '新建记忆' : 'New Memory' }}</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div v-if="memoryActionError || synapxnetMemoryData.error" class="ox-vite-memory-notice is-error">
-                  <i class="fa-solid fa-circle-exclamation"></i>
-                  <span>{{ memoryActionError || synapxnetMemoryData.error }}</span>
-                </div>
-                <div v-else-if="synapxnetMemoryData.integrity" class="ox-vite-memory-notice" :class="{ 'is-ok': synapxnetMemoryData.integrity.healthy }">
-                  <i :class="synapxnetMemoryData.integrity.healthy ? 'fa-solid fa-circle-check' : 'fa-solid fa-triangle-exclamation'"></i>
-                  <span>{{ getMemoryIntegrityMessage(synapxnetMemoryData) }}</span>
-                </div>
-
-                <div class="ox-vite-memory-layout" :class="{ 'is-loading': synapxnetMemoryData.loading || memoryActionBusy }">
-                  <aside class="ox-vite-memory-library">
-                    <div class="ox-vite-memory-pane-head">
-                      <div>
-                        <span>{{ isZh ? '记忆池' : 'Memory Pool' }}</span>
-                        <strong>{{ (synapxnetMemoryData.items || []).length }}</strong>
-                      </div>
-                      <button type="button" class="ox-vite-icon-btn" :title="isZh ? '刷新' : 'Refresh'" @click="applyMemoryFilters">
-                        <i class="fa-solid fa-rotate-right"></i>
-                      </button>
-                    </div>
-                    <div v-if="(synapxnetMemoryData.items || []).length" class="ox-vite-memory-list">
-                      <button
-                        v-for="item in synapxnetMemoryData.items || []"
-                        :key="item.memoryId"
-                        type="button"
-                        class="ox-vite-memory-row"
-                        :class="{ active: synapxnetMemoryData.selectedMemoryId === item.memoryId }"
-                        @click="handleMemorySelect(item.memoryId)"
-                      >
-                        <div class="ox-vite-memory-row__head">
-                          <strong>{{ item.title }}</strong>
-                          <div class="ox-vite-memory-row__badges">
-                            <span class="ox-vite-memory-type-badge" :data-memory-type="item.memoryType">
-                              <i :class="getMemoryTypeIcon(item.memoryType)"></i>
-                              {{ getMemoryTypeLabel(item.memoryType) }}
-                            </span>
-                            <span>v{{ item.version }}</span>
-                          </div>
-                        </div>
-                        <p>{{ item.contentPreview || (isZh ? '暂无摘要' : 'No preview') }}</p>
-                        <div class="ox-vite-memory-row__meta">
-                          <span><i class="fa-regular fa-user"></i>{{ item.ownerAgent }}</span>
-                          <span :class="{ 'is-retired': item.status === 'RETIRED' }">{{ item.status === 'RETIRED' ? (isZh ? '已退役' : 'Retired') : (isZh ? '生效中' : 'Active') }}</span>
-                        </div>
-                      </button>
-                    </div>
-                    <div v-else class="ox-vite-memory-empty">
-                      <i class="fa-regular fa-folder-open"></i>
-                      <span>{{ isZh ? '当前 Agent 暂无可见记忆' : 'No visible memory for this agent' }}</span>
-                    </div>
-                  </aside>
-
-                  <main class="ox-vite-memory-inspector">
-                    <template v-if="memoryEditorOpen">
-                      <div class="ox-vite-memory-pane-head">
-                        <div>
-                          <span>{{ memoryEditorMode === 'edit' ? (isZh ? '编辑为新版本' : 'Edit as New Version') : (isZh ? '新建长期记忆' : 'Create Long-term Memory') }}</span>
-                          <strong>{{ memoryEditorMode === 'edit' ? `v${memoryDraft.baseVersion + 1}` : 'V3' }}</strong>
-                        </div>
-                        <button type="button" class="ox-vite-icon-btn" :title="isZh ? '关闭' : 'Close'" @click="memoryEditorOpen = false">
-                          <i class="fa-solid fa-xmark"></i>
-                        </button>
-                      </div>
-                      <div class="ox-vite-memory-form">
-                        <label v-if="memoryEditorMode === 'create'" class="ox-vite-field">
-                          <span>{{ isZh ? '任务标识' : 'Task ID' }}</span>
-                          <input v-model="memoryDraft.taskId" type="text" />
-                        </label>
-                        <label class="ox-vite-field ox-vite-field--wide">
-                          <span>{{ isZh ? '标题' : 'Title' }}</span>
-                          <input v-model="memoryDraft.title" type="text" />
-                        </label>
-                        <label class="ox-vite-field ox-vite-field--wide">
-                          <span>{{ isZh ? '记忆内容' : 'Memory Content' }}</span>
-                          <textarea v-model="memoryDraft.content" rows="10"></textarea>
-                        </label>
-                        <label class="ox-vite-field">
-                          <span>{{ isZh ? '共享 Agent' : 'Shared Agents' }}</span>
-                          <input v-model="memoryDraft.permissionsText" type="text" :placeholder="isZh ? '用逗号分隔，* 表示公开' : 'Comma-separated; * means public'" />
-                        </label>
-                        <label class="ox-vite-field">
-                          <span>{{ isZh ? '标签' : 'Tags' }}</span>
-                          <input v-model="memoryDraft.tagsText" type="text" :placeholder="isZh ? '用逗号分隔' : 'Comma-separated'" />
-                        </label>
-                        <label class="ox-vite-field">
-                          <span>{{ isZh ? '质量评分' : 'Quality Score' }} {{ Number(memoryDraft.qualityScore).toFixed(2) }}</span>
-                          <input v-model.number="memoryDraft.qualityScore" type="range" min="0" max="1" step="0.05" />
-                        </label>
-                        <label v-if="memoryEditorMode === 'edit'" class="ox-vite-field ox-vite-field--wide">
-                          <span>{{ isZh ? '修改原因' : 'Change Reason' }}</span>
-                          <input v-model="memoryDraft.reason" type="text" />
-                        </label>
-                      </div>
-                      <div class="ox-vite-memory-actions">
-                        <button type="button" class="ox-vite-ops-secondary-btn" @click="memoryEditorOpen = false">
-                          <span>{{ isZh ? '取消' : 'Cancel' }}</span>
-                        </button>
-                        <button
-                          type="button"
-                          class="ox-vite-ops-primary-btn"
-                          :disabled="memoryActionBusy || !memoryDraft.title || !memoryDraft.content || (memoryEditorMode === 'create' && !memoryDraft.taskId)"
-                          @click="submitMemoryEditor"
-                        >
-                          <i class="fa-solid fa-check"></i>
-                          <span>{{ isZh ? '提交版本' : 'Commit Version' }}</span>
-                        </button>
-                      </div>
-                    </template>
-
-                    <template v-else-if="synapxnetMemoryData.selectedMemory">
-                      <div class="ox-vite-memory-pane-head">
-                        <div>
-                          <span>{{ synapxnetMemoryData.selectedMemory.taskId }}</span>
-                          <strong>v{{ synapxnetMemoryData.selectedMemory.version }}</strong>
-                        </div>
-                        <div class="ox-vite-memory-header-actions">
-                          <button type="button" class="ox-vite-icon-btn" :title="isZh ? '导出迁移包' : 'Export transfer package'" @click="handleMemoryExport">
-                            <i class="fa-solid fa-file-export"></i>
-                          </button>
-                          <button v-if="canEditSelectedMemory" type="button" class="ox-vite-icon-btn" :title="isZh ? '编辑' : 'Edit'" @click="openMemoryEditEditor">
-                            <i class="fa-solid fa-pen"></i>
-                          </button>
-                        </div>
-                      </div>
-                      <div class="ox-vite-memory-document">
-                        <h2>{{ synapxnetMemoryData.selectedMemory.title }}</h2>
-                        <div class="ox-vite-memory-tags">
-                          <span class="ox-vite-memory-type-badge" :data-memory-type="synapxnetMemoryData.selectedMemory.memoryType">
-                            <i :class="getMemoryTypeIcon(synapxnetMemoryData.selectedMemory.memoryType)"></i>
-                            {{ getMemoryTypeLabel(synapxnetMemoryData.selectedMemory.memoryType) }}
-                          </span>
-                          <span v-for="tag in getMemoryDisplayTags(synapxnetMemoryData.selectedMemory)" :key="tag.key">{{ tag.label }}</span>
-                        </div>
-                        <p>{{ synapxnetMemoryData.selectedMemory.content }}</p>
-                      </div>
-                      <dl class="ox-vite-memory-facts">
-                        <div><dt>{{ isZh ? '所有者' : 'Owner' }}</dt><dd>{{ synapxnetMemoryData.selectedMemory.ownerAgent }}</dd></div>
-                        <div><dt>{{ isZh ? '共享范围' : 'Shared With' }}</dt><dd>{{ (synapxnetMemoryData.selectedMemory.permissions || []).join(', ') || (isZh ? '仅所有者' : 'Owner only') }}</dd></div>
-                        <div><dt>{{ isZh ? '记录哈希' : 'Record Hash' }}</dt><dd :title="synapxnetMemoryData.selectedMemory.recordSha256">{{ shortMemoryHash(synapxnetMemoryData.selectedMemory.recordSha256) }}</dd></div>
-                        <div><dt>{{ isZh ? '提交时间' : 'Committed' }}</dt><dd>{{ formatMemoryTime(synapxnetMemoryData.selectedMemory.committedAtUtc) }}</dd></div>
-                      </dl>
-                      <div v-if="canEditSelectedMemory && synapxnetMemoryData.selectedMemory.status !== 'RETIRED'" class="ox-vite-memory-actions">
-                        <button type="button" class="ox-vite-ops-secondary-btn is-danger" @click="handleMemoryRetire">
-                          <i class="fa-solid fa-box-archive"></i>
-                          <span>{{ isZh ? '退役记忆' : 'Retire Memory' }}</span>
-                        </button>
-                      </div>
-                    </template>
-
-                    <div v-else class="ox-vite-memory-empty">
-                      <i class="fa-solid fa-brain"></i>
-                      <span>{{ isZh ? '选择或新建一条记忆' : 'Select or create a memory' }}</span>
-                    </div>
-                  </main>
-
-                  <aside class="ox-vite-memory-history">
-                    <div class="ox-vite-memory-pane-head">
-                      <div>
-                        <span>{{ isZh ? '版本时间线' : 'Version Timeline' }}</span>
-                        <strong>{{ (synapxnetMemoryData.history || []).length }}</strong>
-                      </div>
-                    </div>
-                    <div v-if="(synapxnetMemoryData.history || []).length" class="ox-vite-memory-version-list">
-                      <article v-for="version in synapxnetMemoryData.history || []" :key="version.recordSha256" class="ox-vite-memory-version">
-                        <div class="ox-vite-memory-version__rail"><span></span></div>
-                        <div class="ox-vite-memory-version__body">
-                          <div class="ox-vite-memory-version__head">
-                            <strong>v{{ version.version }}</strong>
-                            <span>{{ version.operation }}</span>
-                          </div>
-                          <p>{{ formatMemoryTime(version.committedAtUtc) }}</p>
-                          <small :title="version.recordSha256">{{ shortMemoryHash(version.recordSha256) }}</small>
-                          <button
-                            v-if="canEditSelectedMemory && version.version !== synapxnetMemoryData.selectedMemory?.version"
-                            type="button"
-                            class="ox-vite-memory-version__rollback"
-                            @click="handleMemoryRollback(version)"
-                          >
-                            <i class="fa-solid fa-clock-rotate-left"></i>
-                            <span>{{ isZh ? '回滚至此版本' : 'Rollback to this version' }}</span>
-                          </button>
-                        </div>
-                      </article>
-                    </div>
-                    <div v-else class="ox-vite-memory-empty is-compact">
-                      <span>{{ isZh ? '暂无版本记录' : 'No version history' }}</span>
-                    </div>
-                  </aside>
-                </div>
-              </section>
-
-              <section v-else-if="data.activeTab === 'text'" class="ox-vite-panel-card">
-                <div class="ox-vite-list">
-                  <article v-for="file in data.textFiles || []" :key="file.id" class="ox-vite-list-row">
-                    <div><strong>{{ file.name }}</strong><p>{{ file.ext }} · {{ file.size }}</p></div>
-                    <span>{{ file.time }}</span>
+              <section v-if="data.activeTab !== 'memory-v3'" class="ox-ops-storage-overview" :aria-label="isZh ? '存储概览' : 'Storage overview'">
+                <div class="ox-ops-storage-metrics">
+                  <article v-for="(card, index) in data.stats || []" :key="card.label" class="ox-ops-storage-metric" :class="{ 'is-text-value': !/^[0-9.,]+$/.test(String(card.value)) }">
+                    <span class="ox-ops-storage-metric__icon" aria-hidden="true"><i :class="['fa-solid fa-database', 'fa-solid fa-layer-group', 'fa-solid fa-share-nodes', 'fa-solid fa-clock-rotate-left'][index % 4]"></i></span>
+                    <div><span>{{ card.label }}</span><strong>{{ card.value }}</strong><small v-if="card.meta">{{ card.meta }}</small></div>
                   </article>
                 </div>
+                <div class="ox-ops-storage-overview__footer">
+                  <span class="ox-ops-storage-overview__label">{{ isZh ? '资源库' : 'Asset library' }}</span>
+                  <span v-for="item in data.overviewStats || []" :key="item.id" class="ox-ops-storage-counter">
+                    <i :class="item.icon"></i><span>{{ item.label }}</span><strong>{{ item.value }}</strong>
+                  </span>
+                  <span v-for="chip in data.meta?.chips || []" :key="chip.icon + chip.text" class="ox-ops-storage-counter"><i :class="chip.icon"></i><span>{{ chip.text }}</span></span>
+                </div>
               </section>
 
-              <section v-else-if="data.activeTab === 'image'" class="ox-vite-media-grid">
-                <article v-for="file in data.imageFiles || []" :key="file.id" class="ox-vite-media-card">
-                  <div class="ox-vite-media-card__thumb"><i class="fa-regular fa-image"></i></div>
-                  <strong>{{ file.name }}</strong>
-                  <small>{{ file.size }}</small>
-                </article>
-              </section>
+              <MemoryWorkspace
+                v-show="data.activeTab === 'memory-v3'"
+                ref="memoryWorkspace"
+                :memory="synapxnetMemoryData"
+                :bridge="bridge"
+                :is-zh="isZh"
+                :active="data.isActive && data.activeTab === 'memory-v3'"
+                @refresh="refreshSnapshot"
+              />
 
-              <section v-else-if="data.activeTab === 'video'" class="ox-vite-media-grid">
-                <article v-for="file in data.videoFiles || []" :key="file.id" class="ox-vite-media-card">
-                  <div class="ox-vite-media-card__thumb"><i class="fa-solid fa-play"></i></div>
-                  <strong>{{ file.name }}</strong>
-                  <small>{{ file.duration }} · {{ file.size }}</small>
-                </article>
-              </section>
+              <StorageLibrary
+                v-if="['text', 'image', 'video'].includes(data.activeTab)"
+                :library="data.fileLibrary"
+                :bridge="bridge"
+                :is-zh="isZh"
+                @refresh="refreshSnapshot"
+              />
 
-              <section v-else class="ox-vite-panel-card">
+              <section v-else-if="data.activeTab !== 'memory-v3'" class="ox-vite-panel-card">
+                <div class="ox-vite-panel-card__head"><h2>{{ isZh ? '续接记录' : 'Recall history' }}</h2><p>{{ isZh ? '查看任务上下文，继续未完成的工作。' : 'Review task context and continue your work.' }}</p></div>
                 <div class="ox-vite-list">
                   <article v-for="item in data.recallItems || []" :key="item.id" class="ox-vite-list-row">
                     <div><strong>{{ item.title }}</strong><p>{{ item.note }}</p></div>
                   </article>
                 </div>
+                <div v-if="!data.recallItems?.length" class="ox-ops-vault-empty"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><strong>{{ isZh ? '还没有续接记录' : 'No recall history yet' }}</strong><p>{{ isZh ? '任务产生可续接的上下文后，会在这里集中展示。' : 'Continuable task context will appear here when available.' }}</p></div>
               </section>
             </template>
 

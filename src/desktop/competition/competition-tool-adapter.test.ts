@@ -1,7 +1,77 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { FixtureCompetitionToolAdapter, HttpCompetitionToolAdapter } from "./competition-tool-adapter";
+import { FixtureCompetitionToolAdapter, HttpCompetitionToolAdapter, type CompetitionToolAdapterRequest } from "./competition-tool-adapter";
+
+/** 通过公开只读接口获取证据，不预置已修复状态。 / Read evidence through the public adapter without seeding a remediated state. */
+async function readFixtureEvidence(
+  adapter: FixtureCompetitionToolAdapter,
+  toolName: CompetitionToolAdapterRequest["toolName"],
+  argumentsValue: Readonly<Record<string, unknown>>,
+) {
+  return adapter.invoke({ requestId: `summary-${toolName}`, workspaceId: "workspace-summary", incidentId: "incident-summary", traceId: "trace-summary", actorId: "evidence-worker", toolName, arguments: argumentsValue, governance: null });
+}
+
+/** 特征漂移的业务预测故障不能被错写成基础设施或副本故障。 / Feature drift degrades predictions without implying infrastructure or replica failures. */
+test("Fixture feature drift summaries keep healthy infrastructure separate from degraded predictions", async () => {
+  const adapter = new FixtureCompetitionToolAdapter();
+  const health = await readFixtureEvidence(adapter, "aiops.service.health", { serviceUid: "service_risk_inference" });
+  assert.equal(health.data?.health, "HEALTHY");
+  assert.equal(health.data?.errorRate, 0.001);
+  assert.equal(health.data?.p95Ms, 95);
+  assert.match(health.meta.summary, /基础设施健康/u);
+  assert.match(health.meta.summary, /0\.1%/u);
+  assert.match(health.meta.summary, /95ms/u);
+  assert.doesNotMatch(health.meta.summary, /错误率和延迟异常|服务健康度恢复正常/u);
+  const workload = await readFixtureEvidence(adapter, "aiops.k8s.workload.get", { clusterId: "3", namespace: "risk-prod", kind: "Deployment", name: "risk-inference" });
+  assert.equal(workload.data?.readyReplicas, 3);
+  assert.equal(workload.data?.replicas, 3);
+  assert.equal(workload.data?.restartCount, 0);
+  assert.match(workload.meta.summary, /3\/3 副本全部就绪，重启 0 次/u);
+  assert.doesNotMatch(workload.meta.summary, /存在未就绪副本和重启/u);
+  const alert = await readFixtureEvidence(adapter, "aiops.alert.get", { alertUid: "alert_risk_error_rate" });
+  assert.equal(alert.data?.status, "FIRING");
+  assert.equal(alert.data?.metric, "prediction_error_rate");
+  assert.match(alert.meta.summary, /业务预测退化.*18\.4%.*5%/u);
+});
+
+/** 容量场景继续保持高延迟与GPU拥塞，但不虚构副本重启。 / Preserve capacity degradation and GPU congestion without inventing replica restarts. */
+test("Fixture capacity evidence retains congestion and reports actual workload readiness", async () => {
+  const adapter = new FixtureCompetitionToolAdapter();
+  const health = await readFixtureEvidence(adapter, "aiops.service.health", { serviceUid: "service_recommendation_inference" });
+  assert.equal(health.data?.health, "DEGRADED");
+  assert.equal(health.data?.errorRate, 0.05);
+  assert.equal(health.data?.p95Ms, 2800);
+  assert.equal(health.meta.summary, "服务错误率和延迟异常。");
+  const metrics = await readFixtureEvidence(adapter, "aiops.inference.metrics.get", { serviceUid: "service_recommendation_inference", deploymentUid: "deploy_recommendation_prod" });
+  assert.equal(metrics.data?.gpuSmUtilization, 1);
+  assert.equal(metrics.data?.batchQueueSize, 1000);
+  assert.equal(metrics.meta.summary, "GPU 饱和且推理队列严重积压。");
+  const workload = await readFixtureEvidence(adapter, "aiops.k8s.workload.get", { clusterId: "3", namespace: "rec-prod", kind: "Deployment", name: "recommendation-inference" });
+  assert.equal(workload.data?.readyReplicas, 6);
+  assert.equal(workload.data?.replicas, 6);
+  assert.equal(workload.data?.restartCount, 0);
+  assert.match(workload.meta.summary, /6\/6 副本全部就绪，重启 0 次/u);
+});
+
+/** 未处置的健康工具结果也必须报告通过；事件状态不是单项工具结论。 / Healthy tool results must report success even before remediation; incident state is not a tool verdict. */
+test("Fixture read summaries follow quality workflow and probe results before remediation", async () => {
+  const adapter = new FixtureCompetitionToolAdapter();
+  const quality = await readFixtureEvidence(adapter, "dataops.quality.report.get", { reportUid: "qr_quant_latest" });
+  assert.equal(quality.data?.status, "PASSED");
+  assert.deepEqual(quality.data?.failedRules, []);
+  assert.match(quality.meta.summary, /质量报告通过/u);
+  const workflow = await readFixtureEvidence(adapter, "dataops.workflow.instance.get", { instanceUid: "workflow_quant_latest" });
+  assert.equal(workflow.data?.status, "SUCCEEDED");
+  assert.equal(workflow.data?.warning, null);
+  assert.doesNotMatch(workflow.meta.summary, /发布了破坏性/u);
+  const probe = await readFixtureEvidence(adapter, "mlops.inference.probe", { deploymentUid: "deploy_quant_research", testDatasetRef: "fixture://goai/quant-v1", sampleLimit: 100, timeoutMs: 10000 });
+  assert.equal(probe.data?.passed, true);
+  assert.equal(probe.meta.summary, "推理探针通过。");
+  const driftQuality = await readFixtureEvidence(adapter, "dataops.quality.report.get", { reportUid: "qr_risk_features_120" });
+  assert.equal(driftQuality.data?.status, "FAILED");
+  assert.match(driftQuality.meta.summary, /维度与空值规则失败/u);
+});
 
 test("Fixture competition Adapter rejects stale resource versions", async () => {
   const adapter = new FixtureCompetitionToolAdapter();

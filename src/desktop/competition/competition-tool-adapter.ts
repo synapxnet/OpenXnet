@@ -1,4 +1,5 @@
-import type { ApplicationCompetitionPlatform } from "../contracts/application-competition-runtime";
+import type { ApplicationCompetitionPlatform, ApplicationCompetitionScenarioType } from "../contracts/application-competition-runtime";
+import { assertCompetitionWriteVersion } from "./competition-resource-versions";
 import {
   getCompetitionToolDescriptor,
   parseCompetitionToolArguments,
@@ -161,7 +162,7 @@ export class FixtureCompetitionToolAdapter implements CompetitionToolAdapter {
         ),
         observedAt,
         summary: response.success
-          ? this.summaryFor(request.toolName, currentRevision, argumentsValue, this.remediatedIncidents.has(request.incidentId))
+          ? this.summaryFor(request.toolName, currentRevision, argumentsValue, this.remediatedIncidents.has(request.incidentId), response.data ?? {})
           : response.error?.message ?? "调用失败",
       },
     };
@@ -200,12 +201,7 @@ export class FixtureCompetitionToolAdapter implements CompetitionToolAdapter {
   ): CompetitionToolAdapterResponse {
     const recovered = this.remediatedIncidents.has(request.incidentId);
     const completedTools = this.completedToolsByIncident.get(request.incidentId) ?? new Set<CompetitionToolName>();
-    const identityText = JSON.stringify(argumentsValue);
-    const scenarioType = identityText.includes("recommendation") || identityText.includes("rec_")
-      ? "recommendation-capacity"
-      : identityText.includes("quant")
-        ? "quantitative-iteration"
-        : "feature-drift";
+    const scenarioType = this.fixtureScenarioType(argumentsValue);
     const desiredReplicas = this.desiredReplicasByIncident.get(request.incidentId) ?? (recovered ? 3 : 1);
     const forcedVerificationFailure = recovered
       && argumentsValue.testDatasetRef === "fixture://goai/verification-failure-v1";
@@ -691,20 +687,36 @@ export class FixtureCompetitionToolAdapter implements CompetitionToolAdapter {
     };
   }
 
-  /** 返回工具结果的人类可读摘要；输入工具名和修订，返回不含敏感信息的中文文本。 */
+  /** 数据与摘要使用同一场景判定，避免基础设施健康状态被事件状态覆盖。 / Share scenario classification between data and summaries so incident state cannot override infrastructure health. */
+  private fixtureScenarioType(argumentsValue: Readonly<Record<string, unknown>>): ApplicationCompetitionScenarioType {
+    const identityText = JSON.stringify(argumentsValue);
+    return identityText.includes("recommendation") || identityText.includes("rec_")
+      ? "recommendation-capacity"
+      : identityText.includes("quant") ? "quantitative-iteration" : "feature-drift";
+  }
+
+  /** 按实际工具数据生成摘要，区分领域状态与整个事件是否已处置。 / Summarize actual tool data, separating domain observations from incident remediation status. */
   private summaryFor(
     toolName: CompetitionToolName,
     revision: number,
     argumentsValue: Readonly<Record<string, unknown>>,
     remediated: boolean,
+    data: Readonly<Record<string, unknown>>,
   ): string {
     const recovered = remediated;
-    const forcedVerificationFailure = recovered
-      && argumentsValue.testDatasetRef === "fixture://goai/verification-failure-v1";
+    const scenarioType = this.fixtureScenarioType(argumentsValue);
+    const predictionAlert = data.metric === "prediction_error_rate";
+    const replicasReady = Number(data.readyReplicas) === Number(data.replicas);
     const summaries: Record<CompetitionToolName, string> = {
-      "aiops.alert.get": recovered ? "告警已恢复。" : "错误率告警仍在触发。",
-      "aiops.service.health": recovered ? "服务健康度恢复正常。" : "服务错误率和延迟异常。",
-      "aiops.k8s.workload.get": recovered ? "工作负载副本已全部就绪。" : "工作负载存在未就绪副本和重启。",
+      "aiops.alert.get": data.status === "RECOVERED" ? "告警已恢复。"
+        : predictionAlert ? `业务预测退化：预测错误率 ${Number(data.value) * 100}% 高于阈值 ${Number(data.threshold) * 100}%，告警仍在触发。`
+          : "错误率告警仍在触发。",
+      "aiops.service.health": data.health === "HEALTHY"
+        ? `基础设施健康，服务错误率 ${Number(data.errorRate) * 100}%，P95 ${data.p95Ms}ms。${scenarioType === "feature-drift" && !recovered ? "服务可用不代表业务预测已恢复，需继续核对特征与预测证据。" : ""}`
+        : "服务错误率和延迟异常。",
+      "aiops.k8s.workload.get": replicasReady && data.restartCount === 0
+        ? `工作负载 ${data.readyReplicas}/${data.replicas} 副本全部就绪，重启 0 次，未见副本可用性故障。`
+        : `工作负载就绪副本 ${data.readyReplicas}/${data.replicas}，重启 ${data.restartCount} 次，需检查副本状态。`,
       "aiops.inference.metrics.get": recovered ? "推理队列、GPU 水位和 P99 已恢复。" : "GPU 饱和且推理队列严重积压。",
       "aiops.inference.recovery.status": recovered ? "推理恢复计划已经收敛到稳定状态。" : "推理恢复计划尚未完成。",
       "aiops.gpu.capacity.ensure": "GPU 节点池容量步骤已完成。",
@@ -713,16 +725,16 @@ export class FixtureCompetitionToolAdapter implements CompetitionToolAdapter {
       "aiops.inference.traffic.shift": "推理流量已按审批阶梯完成切换。",
       "aiops.inference.autoscaling.policy.update": "队列感知弹性策略已更新。",
       "aiops.inference.capacity.converge": "推理临时容量已收敛。",
-      "dataops.quality.report.get": "质量报告发现特征维度与空值规则失败。",
+      "dataops.quality.report.get": data.status === "PASSED" ? "质量报告通过，未发现失败规则。" : "质量报告发现特征维度与空值规则失败。",
       "dataops.schema.snapshot.get": "Schema 快照确认特征维度从 128 变为 120。",
       "dataops.lineage.get": "血缘已关联特征工作流与模型部署。",
-      "dataops.workflow.instance.get": "工作流成功但发布了破坏性 Schema 变更。",
+      "dataops.workflow.instance.get": data.status === "SUCCEEDED_WITH_WARNINGS" ? "工作流成功但发布了破坏性 Schema 变更。" : "工作流执行成功，未返回 Schema 变更警告。",
       "dataops.training.dataset.build": "版本化训练数据集已经构建。",
       "dataops.feature.backfill.start": "修正版历史特征数据已经完成回填。",
       "dataops.dataset.validation.get": "训练数据集质量与契约验证已返回。",
       "mlops.deployment.get": `当前部署修订为 ${revision}。`,
       "mlops.attribution.report.get": recovered ? "候选模型归因与风险指标达到门槛。" : "低波动与量能基线弱于多周期动量候选。",
-      "mlops.inference.probe": recovered && !forcedVerificationFailure
+      "mlops.inference.probe": data.passed === true
         ? "推理探针通过。"
         : "推理探针确认输入契约不匹配。",
       "mlops.model.iteration.start": "模型受控迭代动作已受理。",
@@ -744,6 +756,11 @@ export class FixtureCompetitionToolAdapter implements CompetitionToolAdapter {
 /** Live HTTP Adapter 的依赖和安全预算。 */
 export interface HttpCompetitionToolAdapterOptions {
   readonly resolveEndpoint: (platform: ApplicationCompetitionPlatform) => Promise<string>;
+  /** 受控网关保存平台凭据；桌面只发送限权 Live 授权。 / The governed gateway owns platform credentials; desktop sends only scoped Live access. */
+  readonly gateway?: {
+    readonly resolveEndpoint: (request: CompetitionToolAdapterRequest) => Promise<string>;
+    readonly resolveAccessCode: (request: CompetitionToolAdapterRequest) => Promise<string>;
+  };
   readonly resolveDelegationToken?: (
     platform: ApplicationCompetitionPlatform,
     request: CompetitionToolAdapterRequest,
@@ -767,12 +784,30 @@ export class HttpCompetitionToolAdapter implements CompetitionToolAdapter {
   public async invoke(request: CompetitionToolAdapterRequest): Promise<CompetitionToolAdapterResponse> {
     const descriptor = getCompetitionToolDescriptor(request.toolName);
     const argumentsValue = parseCompetitionToolArguments(descriptor, request.arguments);
-    const origin = this.requireEndpoint(await this.options.resolveEndpoint(descriptor.platform));
-    const token = (await this.options.resolveDelegationToken?.(descriptor.platform, request))?.trim() ?? "";
+    const { origin, token, gateway } = await this.resolveTransport(request);
+    const payload = gateway ? { ...request, arguments: argumentsValue } : {
+      requestId: request.requestId,
+      toolName: request.toolName,
+      arguments: argumentsValue,
+      dryRun: request.governance?.dryRun ?? false,
+      ...(request.governance === null ? {} : {
+        approvalId: request.governance.approvalId,
+        planId: request.governance.planId,
+        planDigest: request.governance.planDigest,
+        stepId: request.governance.stepId,
+        resourceId: request.governance.resourceId,
+        targetRevision: request.governance.targetRevision,
+        expectedResourceVersion: request.governance.expectedResourceVersion,
+        argumentsDigest: request.governance.argumentsDigest,
+        compensation: request.governance.compensation,
+        reason: request.governance.reason,
+        idempotencyKey: request.governance.idempotencyKey,
+      }),
+    };
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), descriptor.timeoutMs);
     try {
-      const response = await this.fetchResource(new URL(descriptor.path, origin), {
+      const response = await this.fetchResource(new URL(gateway ? "api/v1/live/tools/invoke" : descriptor.path, origin), {
         method: "POST",
         redirect: "manual",
         signal: controller.signal,
@@ -786,31 +821,12 @@ export class HttpCompetitionToolAdapter implements CompetitionToolAdapter {
           "Idempotency-Key": request.governance?.idempotencyKey ?? request.requestId,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({
-          requestId: request.requestId,
-          toolName: request.toolName,
-          arguments: argumentsValue,
-          dryRun: request.governance?.dryRun ?? false,
-          ...(request.governance === null ? {} : {
-            approvalId: request.governance.approvalId,
-            planId: request.governance.planId,
-            planDigest: request.governance.planDigest,
-            stepId: request.governance.stepId,
-            resourceId: request.governance.resourceId,
-            targetRevision: request.governance.targetRevision,
-            expectedResourceVersion: request.governance.expectedResourceVersion,
-            argumentsDigest: request.governance.argumentsDigest,
-            compensation: request.governance.compensation,
-            reason: request.governance.reason,
-            idempotencyKey: request.governance.idempotencyKey,
-          }),
-        }),
+        body: JSON.stringify(payload),
       });
       if (response.status >= 300 && response.status < 400) {
         throw new Error("Competition platform redirects are not allowed.");
       }
-      const bytes = Buffer.from(await response.arrayBuffer());
-      if (bytes.length > this.maxResponseBytes) throw new Error("Competition platform response is too large.");
+      const bytes = await this.readBoundedResponse(response, this.maxResponseBytes);
       const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
       return this.parseResponse(value, request, descriptor.platform, response.ok);
     } finally {
@@ -827,19 +843,19 @@ export class HttpCompetitionToolAdapter implements CompetitionToolAdapter {
       throw new Error("Competition action ID is invalid.");
     }
     const descriptor = getCompetitionToolDescriptor(request.toolName);
-    const origin = this.requireEndpoint(await this.options.resolveEndpoint(descriptor.platform));
-    const token = (await this.options.resolveDelegationToken?.(descriptor.platform, request))?.trim() ?? "";
+    const { origin, token, gateway } = await this.resolveTransport(request);
     const deadline = Date.now() + 90_000;
     while (Date.now() < deadline) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 3_000);
       try {
-        const response = await this.fetchResource(new URL(`/api/agent/v1/actions/${actionId}`, origin), {
-          method: "GET",
+        const response = await this.fetchResource(new URL(gateway ? "api/v1/live/actions/read" : `/api/agent/v1/actions/${actionId}`, origin), {
+          method: gateway ? "POST" : "GET",
           redirect: "manual",
           signal: controller.signal,
           headers: {
             Accept: "application/json",
+            ...(gateway ? { "Content-Type": "application/json; charset=utf-8" } : {}),
             "X-OpenXnet-Workspace-Id": request.workspaceId,
             "X-OpenXnet-Incident-Id": request.incidentId,
             "X-OpenXnet-Trace-Id": request.traceId,
@@ -847,12 +863,12 @@ export class HttpCompetitionToolAdapter implements CompetitionToolAdapter {
             "Idempotency-Key": `${request.requestId}:action`,
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
+          ...(gateway ? { body: JSON.stringify({ request: { ...request, arguments: parseCompetitionToolArguments(descriptor, request.arguments) }, actionId }) } : {}),
         });
         if (!response.ok || (response.status >= 300 && response.status < 400)) {
           throw new Error(`Competition action status returned HTTP ${response.status}.`);
         }
-        const bytes = Buffer.from(await response.arrayBuffer());
-        if (bytes.length > 128 * 1024) throw new Error("Competition action response is too large.");
+        const bytes = await this.readBoundedResponse(response, 128 * 1024);
         const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
         const state = this.parseActionState(value, actionId);
         if (state.status === "SUCCEEDED") return state;
@@ -865,6 +881,46 @@ export class HttpCompetitionToolAdapter implements CompetitionToolAdapter {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
     throw new Error("Competition action timed out.");
+  }
+
+  /** 选择受控网关或既有部署路径，禁止把原始密钥当作 Live 授权。 / Select the gateway or legacy deployment path, rejecting raw secrets as Live access. */
+  private async resolveTransport(request: CompetitionToolAdapterRequest): Promise<{ origin: URL; token: string; gateway: boolean }> {
+    const gateway = this.options.gateway;
+    if (gateway) {
+      const origin = this.requireEndpoint(await gateway.resolveEndpoint(request));
+      origin.pathname = `${origin.pathname.replace(/\/+$/u, "")}/`;
+      const token = (await gateway.resolveAccessCode(request)).trim();
+      if (!/^oxlive_[a-f0-9]{64}$/u.test(token)) throw new Error("Competition Live access is invalid.");
+      return { origin, token, gateway: true };
+    }
+    const platform = getCompetitionToolDescriptor(request.toolName).platform;
+    return {
+      origin: this.requireEndpoint(await this.options.resolveEndpoint(platform)),
+      token: (await this.options.resolveDelegationToken?.(platform, request))?.trim() ?? "",
+      gateway: false,
+    };
+  }
+
+  /** 流式限制响应大小，避免先下载任意大响应再检查。 / Bound the response while streaming instead of downloading unbounded content first. */
+  private async readBoundedResponse(response: Response, maximum: number): Promise<Buffer> {
+    if (Number(response.headers.get("content-length") ?? "0") > maximum) {
+      await response.body?.cancel();
+      throw new Error("Competition platform response is too large.");
+    }
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Competition platform response is empty.");
+    const chunks: Uint8Array[] = [];
+    let length = 0;
+    try {
+      while (true) {
+        const part = await reader.read();
+        if (part.done) break;
+        length += part.value.byteLength;
+        if (length > maximum) { await reader.cancel(); throw new Error("Competition platform response is too large."); }
+        chunks.push(part.value);
+      }
+      return Buffer.concat(chunks);
+    } finally { reader.releaseLock(); }
   }
 
   /** 校验平台根地址；输入保存 URL，返回无凭据、查询和片段的安全 origin。 */
@@ -903,6 +959,7 @@ export class HttpCompetitionToolAdapter implements CompetitionToolAdapter {
     if (!(value.auditReceipt === null || isRecord(value.auditReceipt))) {
       throw new Error("Competition platform audit receipt is invalid.");
     }
+    if (value.success && request.governance !== null) this.validateGovernedReceipt(value, request);
     const error = value.error === null ? null : this.parseError(value.error);
     if ((value.success && error !== null) || (!value.success && error === null)) {
       throw new Error("Competition platform response outcome is inconsistent.");
@@ -953,6 +1010,24 @@ export class HttpCompetitionToolAdapter implements CompetitionToolAdapter {
         )),
       },
     };
+  }
+
+  /** 校验真实写回执的作用域、参数摘要和前后版本，再允许形成成功证据。 / Validate the actual write receipt's scope, parameter digest and version transition before recording success evidence. */
+  private validateGovernedReceipt(value: Record<string, unknown>, request: CompetitionToolAdapterRequest): void {
+    const governance = request.governance;
+    const receipt = value.auditReceipt;
+    if (governance === null || !isRecord(receipt) || !isRecord(value.meta)) throw new Error("Competition governed receipt is missing.");
+    assertCompetitionWriteVersion(governance.expectedResourceVersion, value.meta.resourceVersion);
+    if (receipt.requestId !== request.requestId || receipt.workspaceId !== request.workspaceId
+      || receipt.incidentId !== request.incidentId || receipt.traceId !== request.traceId
+      || receipt.toolName !== request.toolName || receipt.actorId !== request.actorId
+      || receipt.approvalId !== governance.approvalId || receipt.requestDigest !== governance.argumentsDigest
+      || receipt.beforeResourceVersion !== governance.expectedResourceVersion
+      || receipt.afterResourceVersion !== value.meta.resourceVersion
+      || typeof receipt.approverId !== "string" || !receipt.approverId || receipt.approverId === request.actorId
+      || !["SUCCEEDED", "ACCEPTED", "DRY_RUN"].includes(String(receipt.actionStatus))) {
+      throw new Error("Competition governed receipt does not match the approved write.");
+    }
   }
 
   /** 校验平台错误包络；输入未知值，返回脱敏固定结构，无效时抛出 Error。 */

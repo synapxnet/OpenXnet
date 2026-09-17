@@ -36,6 +36,10 @@ import aiofiles.os
 from pydantic import BaseModel, Field
 
 from py.memory.provider import get_workspace_memory_provider
+from py.conversation_automation import (
+    append_automation_run, automation_active, automation_delivery_allowed,
+    bounded_text, conversation_identity, NOTIFICATION_POLICIES,
+)
 from py.task_planning import (
     DELIVERY_TARGET_NONE,
     DELIVERY_TARGET_TASK_CENTER,
@@ -239,6 +243,8 @@ class TaskCenter:
             else str(previous_status or "")
         )
         task.context["previous_summary"] = previous_summary
+        if isinstance(task.context.get("automation"), dict):
+            task.context["automation"] = {**task.context["automation"], "current_run_pending": True}
         task.context["last_progress"] = previous_progress
         task.context["resume_requested"] = False
         task.context["resume_reason"] = ""
@@ -489,7 +495,9 @@ class TaskCenter:
                     record_status = "configured"
                 record["last_error"] = ""
             else:
-                if is_terminal and record_status not in {
+                if is_terminal and not automation_delivery_allowed(task.context):
+                    record_status = "disabled"
+                elif is_terminal and record_status not in {
                     "delivered", "failed", "disabled", "retry_scheduled",
                 }:
                     record_status = "queued"
@@ -1794,15 +1802,24 @@ class TaskCenter:
         status: Optional[TaskStatus] = None,
         result: Optional[str] = None,
         error: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        automation_receipt: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """更新任务进度和上下文"""
+        """更新进度并原子记录自动任务回执。 / Update progress and atomically record automation receipts."""
         async with self._lock:
             task = await self.get_task(task_id)
             if not task:
                 return False
 
             self._ensure_task_context(task)
+            if automation_receipt is not None:
+                automation = task.context.get("automation")
+                if not isinstance(automation, dict):
+                    raise ValueError("Task is not an automation")
+                expected_session = str(automation_receipt.get("session_id") or "")
+                actual_session = str(task.context.get("executor_session_id") or "")
+                if not expected_session or expected_session != actual_session:
+                    raise ValueError("Execution session does not own this automation")
             previous_status = task.status
             previous_progress = task.progress
             previous_result = task.result
@@ -1842,6 +1859,20 @@ class TaskCenter:
             if context is not None:
                 task.context.update(context)
 
+            if automation_receipt is not None:
+                run_id = str(task.context.get("executor_session_id") or task.context.get("activation_requested_at") or task.updated_at)
+                automation = append_automation_run(
+                    task.context["automation"], run_id=run_id,
+                    outcome=automation_receipt.get("outcome"), result=result or "",
+                    evidence=automation_receipt.get("evidence"),
+                    observation_key=automation_receipt.get("observation_key"),
+                    finished_at=task.updated_at,
+                )
+                automation["current_run_pending"] = False
+                task.context["automation"] = automation
+                if not automation_active(task.context):
+                    task.context["next_run_at"] = None
+
             if status is not None:
                 task.status = target_status
                 if target_status == TaskStatus.RUNNING and not task.started_at:
@@ -1860,6 +1891,18 @@ class TaskCenter:
                 task.completed_at = task.completed_at or datetime.now().isoformat()
                 task.context["last_error"] = error
                 task.context["resume_reason"] = self._build_preview(error, 220)
+
+            if automation_receipt is None and isinstance(task.context.get("automation"), dict) and previous_status in {TaskStatus.PENDING, TaskStatus.RUNNING} and task.status in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
+                run_id = str(task.context.get("executor_session_id") or task.context.get("activation_requested_at") or "")
+                if run_id:
+                    # 普通文字只表示本轮终止，不证明监控完成。 / Plain text only terminates this run and cannot prove automation completion.
+                    task.context["automation"] = append_automation_run(
+                        task.context["automation"], run_id=run_id,
+                        outcome="failed" if task.status in {TaskStatus.FAILED, TaskStatus.CANCELLED} else "action_required",
+                        result=result or error or "Execution ended without a structured automation outcome",
+                        evidence=[], observation_key="", finished_at=task.updated_at,
+                    )
+                    task.context["automation"]["current_run_pending"] = False
 
             self._ensure_task_context(task)
             if task.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
@@ -2164,6 +2207,8 @@ class TaskCenter:
             self._ensure_task_context(task)
             if context_updates:
                 task.context.update(context_updates)
+            if not automation_active(task.context):
+                task.context["next_run_at"] = None
             if touch_updated_at:
                 task.updated_at = datetime.now().isoformat()
             self._sync_task_plan_runtime(task, now=task.updated_at)
@@ -2258,6 +2303,8 @@ class TaskCenter:
                 return None
 
             self._ensure_task_context(task)
+            if not automation_active(task.context):
+                return None
             requested_at = datetime.now().isoformat()
             current_status = self._normalize_status(task.status)
             schedule_type = str(task.context.get("schedule_type") or SCHEDULE_TYPE_MANUAL).strip()
@@ -2300,6 +2347,77 @@ class TaskCenter:
     async def start_task(self, task_id: str, trigger_source: str = "manual_run_now") -> Optional[SubTask]:
         """Queue a pending task for execution without resetting prior state."""
         return await self.activate_task(task_id, trigger_source=trigger_source)
+
+    async def manage_automation(self, task_id: str, conversation_id: str, action: str, updates: Optional[Dict[str, Any]] = None) -> SubTask:
+        """在同一锁中验证会话归属并修改监控生命周期。 / Validate conversation ownership and mutate automation lifecycle under one lock."""
+        from py.task_schedule_policy import compute_next_run_from_expression, parse_schedule_datetime
+
+        owner = conversation_identity(conversation_id)
+        async with self._lock:
+            task = await self.get_task(task_id)
+            if task is None or not owner or task.context.get("origin_conversation_id") != owner:
+                raise ValueError("Automation is not owned by the current conversation")
+            automation = task.context.get("automation")
+            if not isinstance(automation, dict) or action not in {"update", "pause", "resume", "complete"}:
+                raise ValueError("Unsupported automation action")
+            if automation.get("state") == "completed" and action != "complete":
+                raise ValueError("Completed automation cannot be reactivated")
+            automation = dict(automation)
+            changes = dict(updates or {})
+            now = datetime.now()
+            if action == "update":
+                for field, maximum in [("title", 300), ("description", 16000)]:
+                    if field in changes:
+                        value = bounded_text(changes[field], maximum)
+                        if not value:
+                            raise ValueError(f"{field} cannot be empty")
+                        setattr(task, field, value)
+                if "notification_policy" in changes:
+                    if changes["notification_policy"] not in NOTIFICATION_POLICIES:
+                        raise ValueError("Unsupported notification policy")
+                    automation["notification_policy"] = changes["notification_policy"]
+                if "completion_condition" in changes:
+                    condition = bounded_text(changes["completion_condition"], 2000)
+                    if not condition and automation.get("completion_policy") == "until_done":
+                        raise ValueError("Completion condition cannot be empty")
+                    automation["completion_condition"] = condition
+                if "schedule_expression" in changes:
+                    expression = bounded_text(changes["schedule_expression"], 240)
+                    projected = compute_next_run_from_expression(expression, now)
+                    if task.context.get("schedule_type") != "recurring" or projected is None:
+                        raise ValueError("A supported recurring schedule is required")
+                    task.context.update({"schedule_expression": expression, "next_run_at": projected.isoformat()})
+                if "next_run_at" in changes:
+                    projected = parse_schedule_datetime(changes["next_run_at"])
+                    if projected is None:
+                        raise ValueError("Invalid next run timestamp")
+                    task.context["next_run_at"] = projected.isoformat()
+            elif action == "pause":
+                automation["state"] = "paused"
+                task.context["next_run_at"] = None
+            elif action == "resume":
+                projected = compute_next_run_from_expression(task.context.get("schedule_expression", ""), now)
+                if projected is None:
+                    projected = parse_schedule_datetime(changes.get("next_run_at"))
+                if projected is None:
+                    raise ValueError("A supported next run time is required")
+                automation["state"] = "active"
+                task.context["next_run_at"] = projected.isoformat()
+            else:
+                automation["state"] = "completed"
+                task.context["next_run_at"] = None
+                if task.status in {TaskStatus.PENDING, TaskStatus.RUNNING}:
+                    task.status = TaskStatus.CANCELLED
+                    task.completed_at = now.isoformat()
+                    task.context["cancel_reason"] = "Automation ended by its conversation owner"
+            task.context["automation"] = automation
+            if automation.get("state") != "active":
+                task.context["next_run_at"] = None
+            task.updated_at = now.isoformat()
+            self._sync_task_plan_runtime(task, now=task.updated_at)
+            self._append_trace_event(task, event_type="automation", title=f"Automation {action}", message=task.title)
+            await self._save_task(task)
+            return task
 
     async def claim_execution_session(
         self,

@@ -37,6 +37,7 @@ from py.overlay_router import overlay_manager
 from py.get_setting import get_port
 from py.sub_agent import run_subtask_in_background
 from py.task_center import TaskStatus, get_task_center
+from py.conversation_automation import automation_active, automation_delivery_allowed
 from py.task_planning import (
     DELIVERY_TARGET_DESKTOP_NOTIFICATION,
     DELIVERY_TARGET_DYNAMIC_ISLAND,
@@ -47,6 +48,7 @@ from py.task_planning import (
     get_delivery_target_label,
 )
 from py.task_schedule_policy import (
+    collect_due_task_executions,
     compute_next_run_from_expression,
     parse_schedule_datetime,
 )
@@ -188,6 +190,8 @@ class TaskSchedulerRuntime:
         now: datetime,
     ) -> None:
         for task in tasks:
+            if not automation_active(task.context):
+                continue
             schedule_type = str((task.context or {}).get("schedule_type") or "").strip()
             if schedule_type != SCHEDULE_TYPE_RECURRING:
                 continue
@@ -227,52 +231,10 @@ class TaskSchedulerRuntime:
             )
 
     def _collect_due_tasks(self, tasks: List[Any], now: datetime) -> List[Dict[str, Any]]:
-        due_tasks: List[Dict[str, Any]] = []
-        for task in tasks:
-            task_context = getattr(task, "context", {}) or {}
-            schedule_type = str(task_context.get("schedule_type") or "").strip()
-            if schedule_type not in {SCHEDULE_TYPE_ONCE, SCHEDULE_TYPE_RECURRING}:
-                continue
-
-            next_run_at = self._parse_iso_datetime(task_context.get("next_run_at"))
-            if not next_run_at or next_run_at > now:
-                continue
-
-            status = getattr(task, "status", None)
-            if status == TaskStatus.RUNNING:
-                continue
-            if (
-                status == TaskStatus.PENDING
-                and self._parse_iso_datetime(task_context.get("activation_requested_at"))
-            ):
-                activation_requested_at = self._parse_iso_datetime(
-                    task_context.get("activation_requested_at")
-                )
-                if activation_requested_at and (now - activation_requested_at).total_seconds() < 90:
-                    continue
-
-            if schedule_type == SCHEDULE_TYPE_ONCE and status != TaskStatus.PENDING:
-                continue
-
-            schedule_expression = str(task_context.get("schedule_expression") or "").strip()
-            next_after = None
-            if schedule_type == SCHEDULE_TYPE_RECURRING:
-                next_after_dt = self._compute_next_run_from_expression(schedule_expression, now)
-                if not next_after_dt:
-                    continue
-                next_after = next_after_dt.isoformat()
-
-            due_tasks.append(
-                {
-                    "task": task,
-                    "matched_at": now.isoformat(),
-                    "next_run_at": next_after,
-                    "due_at": next_run_at,
-                }
-            )
-
-        due_tasks.sort(key=lambda item: item["due_at"])
-        return due_tasks
+        """复用 Worker 的时间和生命周期策略。 / Reuse Worker timing and lifecycle policy."""
+        by_id = {str(task.task_id): task for task in tasks}
+        records = [{"task_id": str(task.task_id), "status": getattr(task.status, "value", task.status), "context": getattr(task, "context", {})} for task in tasks]
+        return [{"task": by_id[item.task_id], "matched_at": item.matched_at, "next_run_at": item.next_run_at, "due_at": item.due_at} for item in collect_due_task_executions(records, now)]
 
     async def _mark_scheduler_blocked(
         self,
@@ -302,6 +264,8 @@ class TaskSchedulerRuntime:
 
     async def _dispatch_pending_deliveries(self, task_center: Any, tasks: List[Any]) -> None:
         for task in tasks:
+            if not automation_delivery_allowed(getattr(task, "context", {})):
+                continue
             if getattr(task, "status", None) not in (
                 TaskStatus.COMPLETED,
                 TaskStatus.FAILED,

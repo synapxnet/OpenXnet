@@ -219,6 +219,42 @@ function sanitizeProtocolMessage(message, fallback = 'tool') {
 
 const ALL_ALLOWED_EXTENSIONS = [...new Set([...ALLOWED_EXTENSIONS, ...ALLOWED_IMAGE_EXTENSIONS])];
 let vue_methods = {
+    /** Open one existing toolkit manager without changing the active workspace. */
+    openToolkitConfigDialog(tabId) {
+      const target = String(tabId || '');
+      if (!['mcp', 'a2a', 'llmTool', 'customHttpTool', 'sticker', 'comfyui'].includes(target)) {
+        showNotification(this.isCurrentLanguageZh() ? '无法打开此工具的配置窗口。' : 'This tool has no configuration window.', 'error');
+        return false;
+      }
+      this.toolkitConfigDialogTab = target;
+      this.toolkitConfigDialogOpen = true;
+      return true;
+    },
+    /** Close toolkit windows without saving or changing any configured tools. */
+    closeToolkitConfigDialog() {
+      this.toolkitConfigDialogOpen = false;
+      this.showAddMCPDialog = false;
+      this.showMCPConfirm = false;
+      this.showAddA2ADialog = false;
+      this.showLLMForm = false;
+      this.showCustomHttpToolForm = false;
+      this.showStickerDialog = false;
+      this.showWorkflowUploadDialog = false;
+      this.dialogVisible = false;
+    },
+    /** Return the localized name of the active dedicated toolkit manager. */
+    getToolkitConfigDialogTitle() {
+      const labels = {
+        mcp: ['MCP 服务器配置', 'MCP Server Configuration'],
+        a2a: ['A2A 服务器配置', 'A2A Server Configuration'],
+        llmTool: ['LLM 工具配置', 'LLM Tool Configuration'],
+        customHttpTool: ['HTTP 工具配置', 'HTTP Tool Configuration'],
+        sticker: ['表情包配置', 'Sticker Pack Configuration'],
+        comfyui: ['ComfyUI 配置', 'ComfyUI Configuration'],
+      };
+      const label = labels[this.toolkitConfigDialogTab] || ['工具配置', 'Tool Configuration'];
+      return label[this.isCurrentLanguageZh() ? 0 : 1];
+    },
   handleUpdateAction() {
     this.openUpdateDialog();
   },
@@ -849,42 +885,70 @@ let vue_methods = {
       // ⚠️ 必须用 String() 比较：早期 conversations 用 Date.now()+Math.random() (数字) 做 id，
       // 新代码用 uuid.v4() (字符串)；chat-vite 桥接层传进来的 id 永远是字符串。
       // 严格 !== 比较会让 number 和 string 永远不相等，导致看似"删除无效"。
-      const target = String(convId);
+      const target = String(convId ?? '');
+      const previousConversations = Array.isArray(this.conversations) ? this.conversations : [];
+      if (!target || !previousConversations.some(c => String(c?.id) === target)) return false;
+      this.conversations = previousConversations.filter(c => String(c?.id) !== target);
+      try {
+        await this.saveConversations();
+      } catch (error) {
+        this.conversations = previousConversations;
+        throw error;
+      }
       if (target === String(this.conversationId)) {
         this.messages = [{ id: Date.now() + Math.random(), role: 'system', content: this.system_prompt }];
         this.conversationId = null;
       }
-
-      this.conversations = this.conversations.filter(c => String(c?.id) !== target);
-      await this.saveConversations(); // 保存对话列表
+      return true;
     },
     async renameConversationById(convId, newTitle) {
-      const target = String(convId);
+      const target = String(convId ?? '');
       const title = String(newTitle || '').trim();
       if (!target || !title) return false;
       const list = Array.isArray(this.conversations) ? this.conversations : [];
       const item = list.find(c => String(c?.id) === target);
       if (!item) return false;
+      const hadTitle = Object.prototype.hasOwnProperty.call(item, 'title');
+      const previousTitle = item.title;
       item.title = title;
-      try { await this.saveConversations(); } catch (e) { /* websocket 不在线时不报错 */ }
+      try {
+        await this.saveConversations();
+      } catch (error) {
+        if (hadTitle) item.title = previousTitle;
+        else delete item.title;
+        throw error;
+      }
       return true;
     },
     async archiveConversationToMemory(convId) {
-      const target = String(convId);
+      const target = String(convId ?? '');
       if (!target) return false;
       const list = Array.isArray(this.conversations) ? this.conversations : [];
       const item = list.find(c => String(c?.id) === target);
       if (!item) return false;
-      // 标记归档 + 时间戳；后端可以基于 archived 字段把它转入长期记忆库
+      const hadArchived = Object.prototype.hasOwnProperty.call(item, 'archived');
+      const hadArchivedAt = Object.prototype.hasOwnProperty.call(item, 'archivedAt');
+      const previousArchived = item.archived;
+      const previousArchivedAt = item.archivedAt;
       item.archived = true;
       item.archivedAt = new Date().toISOString();
-      try { await this.saveConversations(); } catch (e) { /* ignore */ }
+      try {
+        await this.saveConversations();
+      } catch (error) {
+        if (hadArchived) item.archived = previousArchived;
+        else delete item.archived;
+        if (hadArchivedAt) item.archivedAt = previousArchivedAt;
+        else delete item.archivedAt;
+        throw error;
+      }
       if (typeof this.showNotification === 'function') {
-        this.showNotification(this.isCurrentLanguageZh() ? '对话已归档为永久记忆' : 'Conversation archived to memory', 'success');
+        this.showNotification(this.isCurrentLanguageZh() ? '对话已归档' : 'Conversation archived', 'success');
       }
       return true;
     },
+    /** 载入已保存会话并恢复原模型，保留消息与恢复元数据。 / Load a saved conversation with its original model while preserving messages and recovery metadata. */
     async loadConversation(convId) {
+      this.ensureConversationConnectionSignals?.();
       const conversation = this.conversations.find(c => c.id === convId);
       if (conversation) {
         console.log("convid:"+convId);
@@ -905,6 +969,7 @@ let vue_methods = {
         } else if (this.settings) {
           this.settings.model = String(conversation.model || this.settings.model || '').trim();
         }
+        if (this.settings && String(conversation.model || '').trim()) this.settings.model = String(conversation.model).trim();
       }
       else {
         this.system_prompt = " ";
@@ -1279,16 +1344,19 @@ let vue_methods = {
       const numeric = Number(value || 0);
       return `${Math.round(numeric * 100)}%`;
     },
-    /** 读取技能生命周期；输入静默开关，无返回；失败时保留现有列表并按需提示。 */
+    /** 读取生命周期并保留可重试错误，失败不清旧列表。Read lifecycle data with a persistent retryable error while retaining existing records on failure. */
     async fetchSkillLifecycle(silent = false) {
       this.skillLifecycleLoading = true;
+      this.skillLifecycleError = '';
       try {
         const data = await this.fetchKernelJson('skill-lifecycle', { limit: 120, status: '' });
         this.skillLifecycleSummary = data.summary || {};
         this.skillLifecycleItems = Array.isArray(data.skills) ? data.skills : [];
+        this.skillLifecycleError = '';
       } catch (error) {
+        this.skillLifecycleError = `${this.isCurrentLanguageZh() ? '技能生命周期加载失败' : 'Failed to load skill lifecycle'}: ${error?.message || 'Unknown error'}`;
         if (!silent) {
-          showNotification(`${this.isCurrentLanguageZh() ? '技能生命周期加载失败' : 'Failed to load skill lifecycle'}: ${error.message}`, 'error');
+          showNotification(this.skillLifecycleError, 'error');
         }
       } finally {
         this.skillLifecycleLoading = false;
@@ -1532,7 +1600,7 @@ let vue_methods = {
     handleAuthViewModeChange(mode) {
       this.authViewMode = String(mode || 'password');
       this.registerStep = 1;
-      this.smsState.purpose = this.authViewMode === 'register' ? 'register' : 'login';
+      this.smsState.purpose = this.authViewMode === 'register' ? 'register' : (this.authViewMode === 'reset' ? 'reset_password' : 'login');
       this.smsState.requestId = '';
       this.smsState.debugCode = '';
       this.loginForm.code = '';
@@ -1542,6 +1610,13 @@ let vue_methods = {
         this.loginForm.password = '';
         this.loginForm.confirmPassword = '';
       }
+    },
+    openPasswordReset() {
+      if (this.authUi.submitting || this.authUi.loggingOut) return;
+      const identity = String(this.loginForm.identity || '').trim();
+      this.handleAuthViewModeChange('reset');
+      this.loginForm.secret = '';
+      if (/^\+?[\d\s-]{7,20}$/.test(identity)) this.loginForm.phone = identity;
     },
     getCurrentAccessLegalLocale() {
       return this.isCurrentLanguageZh() ? 'zh' : 'en';
@@ -2266,6 +2341,7 @@ let vue_methods = {
       return persistence;
     },
     extractAccessErrorMessage(payload, fallback = '') {
+      const localizedMessages = { 'Invalid credentials': '手机号或密码错误' };
       if (payload && typeof payload === 'object') {
         const candidates = [
           payload.detail,
@@ -2285,7 +2361,7 @@ let vue_methods = {
                 ? '请先勾选并同意《服务协议》与《隐私协议》后再继续。'
                 : 'Please check the box to accept the Terms of Service and Privacy Policy before continuing.';
             }
-            return normalized;
+            return this.isCurrentLanguageZh() ? (localizedMessages[normalized] || normalized) : normalized;
           }
         }
       }
@@ -2299,7 +2375,7 @@ let vue_methods = {
             ? '请先勾选并同意《服务协议》与《隐私协议》后再继续。'
             : 'Please check the box to accept the Terms of Service and Privacy Policy before continuing.';
         }
-        return normalized;
+        return this.isCurrentLanguageZh() ? (localizedMessages[normalized] || normalized) : normalized;
       }
       return String(fallback || '').trim() || (this.isCurrentLanguageZh() ? '请求失败' : 'Request failed');
     },
@@ -3584,6 +3660,9 @@ let vue_methods = {
       if (this.authViewMode === 'sms') {
         return this.isCurrentLanguageZh() ? '手机号登录' : 'Sign in with phone';
       }
+      if (this.authViewMode === 'reset') {
+        return this.isCurrentLanguageZh() ? '验证并重设密码' : 'Verify & Reset Password';
+      }
       return this.isCurrentLanguageZh() ? '登录' : 'Sign in';
     },
     getSmsButtonLabel(purpose = 'login') {
@@ -3598,9 +3677,13 @@ let vue_methods = {
       if (purpose === 'register') {
         return this.isCurrentLanguageZh() ? '发送注册验证码' : 'Send Register Code';
       }
+      if (purpose === 'reset_password') {
+        return this.isCurrentLanguageZh() ? '发送重设验证码' : 'Send Reset Code';
+      }
       return this.isCurrentLanguageZh() ? '发送登录验证码' : 'Send Login Code';
     },
     async sendAccessSmsCode(purpose = 'login') {
+      if (this.smsState.sending || this.smsState.cooldownRemaining > 0) return;
       if (purpose === 'register' && this.authViewMode === 'register' && this.registerStep !== 2) {
         showNotification(
           this.isCurrentLanguageZh()
@@ -3662,7 +3745,51 @@ let vue_methods = {
       if (this.authViewMode === 'sms') {
         return this.submitSmsLogin();
       }
+      if (this.authViewMode === 'reset') {
+        return this.submitPasswordReset();
+      }
       return this.submitPasswordLogin();
+    },
+    async submitPasswordReset() {
+      if (this.authUi.submitting || this.authUi.loggingOut) return;
+      const phone = String(this.loginForm.phone || '').trim();
+      const code = String(this.loginForm.code || '').trim();
+      const password = String(this.loginForm.password || '');
+      const confirmation = String(this.loginForm.confirmPassword || '');
+      if (!phone || !code) {
+        showNotification(this.isCurrentLanguageZh() ? '请输入绑定手机号与短信验证码。' : 'Enter the account phone number and SMS code.', 'warning');
+        return;
+      }
+      if (password.length < 8 || password !== confirmation) {
+        showNotification(this.isCurrentLanguageZh() ? '新密码至少 8 位，且两次输入必须一致。' : 'Use at least 8 characters and enter the same password twice.', 'warning');
+        return;
+      }
+      if (!this.ensureAccessLegalAgreementAccepted()) return;
+      this.authUi.submitting = true;
+      try {
+        const pendingAction = this.pendingPostLoginAction;
+        const pendingEnterpriseTab = this.pendingEnterpriseTab || 'usage';
+        const payload = await this.requestAccessApi('/v1/access/auth/password/reset', {
+          method: 'POST',
+          body: {
+            phone, code, new_password: password,
+            terms_accepted: true,
+            privacy_accepted: true,
+            agreements_locale: this.getCurrentAccessLegalLocale(),
+          },
+          retryOnUnauthorized: false,
+          timeoutMs: 45000,
+        });
+        await this.finalizeSuccessfulAccessAuth(payload, {
+          pendingAction,
+          pendingEnterpriseTab,
+          successMessage: this.isCurrentLanguageZh() ? '密码已重设，已登录。' : 'Password reset. You are now signed in.',
+        });
+      } catch (error) {
+        showNotification(this.extractAccessErrorMessage(error?.message || error), 'error');
+      } finally {
+        this.authUi.submitting = false;
+      }
     },
     async submitPasswordLogin() {
       const identity = String(this.loginForm.identity || '').trim();
@@ -7504,9 +7631,10 @@ let vue_methods = {
           truncate: true
         },
         {
-          label: isZh ? '当前主题' : 'Theme',
-          value: this.getPrototypeThemeLabel(),
-          meta: isZh ? '会同步影响全局界面配色。' : 'Directly affects the global interface theme.'
+          label: isZh ? '当前皮肤' : 'Skin',
+          value: this.getSkinCurrentSummary?.().name || this.getPrototypeThemeLabel(),
+          meta: isZh ? '保存在此设备，切换即生效。' : 'Saved on this device and applied immediately.',
+          truncate: true
         },
         {
           label: isZh ? '网络模式' : 'Network',
@@ -7938,6 +8066,7 @@ let vue_methods = {
         ? `当前引擎：${engineLabels[engine] || engine.toUpperCase()}`
         : `Current engine: ${engineLabels[engine] || engine.toUpperCase()}`;
     },
+    /** 补全旧工作区设置，保留用户明确关闭代码智能的状态。 / Fill legacy workspace defaults while preserving an explicitly disabled CLI. */
     normalizeCliWorkspaceSettings() {
       if (!this.CLISettings) {
         this.CLISettings = {};
@@ -7948,7 +8077,7 @@ let vue_methods = {
       if (!this.CLISettings.engine) {
         this.CLISettings.engine = 'local';
       }
-      if (String(this.CLISettings.cc_path || '').trim()) {
+      if (this.CLISettings.enabled === undefined && String(this.CLISettings.cc_path || '').trim()) {
         this.CLISettings.enabled = true;
       }
     },
@@ -11388,6 +11517,11 @@ let vue_methods = {
       this.SystemPromptsList = data.SystemPromptsList || [];
       this.conversations = data.conversations || this.conversations;
       this.conversationId = data.conversationId || this.conversationId;
+      // 新会话先持久化于会话库，即使设置中的活动ID尚未来得及更新也能找到。 / Find a newly checkpointed conversation even when settings have not yet saved its active ID.
+      const mostRecentConversation = [...(this.conversations || [])].sort((left, right) => Number(right.timestamp || 0) - Number(left.timestamp || 0))[0];
+      const configuredConversation = (this.conversations || []).find((item) => String(item.id) === String(this.conversationId || ''));
+      if (mostRecentConversation?.recovery?.schema === 'openxnet.conversation-recovery.v1' && ['streaming', 'interrupted'].includes(mostRecentConversation.recovery.state)
+        && Number(mostRecentConversation.timestamp || 0) >= Number(configuredConversation?.timestamp || 0)) this.conversationId = mostRecentConversation.id;
       this.chatRecentProjects = Array.isArray(data.chatRecentProjects) ? data.chatRecentProjects : this.chatRecentProjects;
       this.agents = data.agents || this.agents;
       this.mainAgent = data.mainAgent || this.mainAgent;
@@ -11880,16 +12014,414 @@ let vue_methods = {
         return this.conversationId;
     },
 
+    /** 捕获原会话与模型身份，使后续检查点不会串入新会话。 / Capture the original conversation and model identity so later checkpoints cannot cross conversations. */
+    createConversationCheckpointContext(targetAgentId = this.mainAgent, targetAgentName = '') {
+        const conversationId = this.ensureConversationId();
+        const existing = (this.conversations || []).find((item) => String(item.id) === String(conversationId));
+        const provider = typeof this.getPrototypeCurrentMainProvider === 'function' ? this.getPrototypeCurrentMainProvider() : null;
+        return {
+            conversationId: String(conversationId), messages: this.messages, fileLinks: this.fileLinks || [],
+            requestId: `${Date.now()}-${Math.random().toString(36).slice(2)}`, startedAt: Date.now(), state: 'streaming',
+            targetAgentId: String(targetAgentId || 'openxnet-model'), targetAgentName: String(targetAgentName || ''),
+            workspacePath: String(this.CLISettings?.cc_path || ''),
+            metadata: { title: existing?.title || (typeof this.generateConversationTitle === 'function' ? this.generateConversationTitle(this.messages) : 'Conversation'),
+                mainAgent: this.mainAgent, system_prompt: this.system_prompt || '', selectedProvider: String(this.settings?.selectedProvider || ''), model: String(this.settings?.model || ''),
+                providerVendor: String(provider?.vendor || ''), providerName: typeof this.getPrototypeProviderDisplayName === 'function' ? this.getPrototypeProviderDisplayName(provider) : String(provider?.vendor || '') },
+        };
+    },
+
+    /** 先登记完整会话再保存，流式写入保留一秒尾随检查点。 / Register the complete conversation before saving, retaining a one-second trailing streaming checkpoint. */
+    async checkpointConversation(context, force = false) {
+        if (!context?.conversationId || !Array.isArray(context.messages)) return false;
+        if (!Array.isArray(this.conversations)) this.conversations = [];
+        let conversation = this.conversations.find((item) => String(item.id) === context.conversationId);
+        if (context.registered && (!conversation || conversation.recovery?.requestId !== context.requestId)) return false;
+        if (!conversation) { conversation = { id: context.conversationId, ...context.metadata }; this.conversations.unshift(conversation); }
+        context.registered = true;
+        const retainedTitle = conversation.title;
+        Object.assign(conversation, context.metadata, { messages: context.messages, fileLinks: context.fileLinks, timestamp: Date.now() });
+        if (retainedTitle) conversation.title = retainedTitle;
+        conversation.recovery = { schema: 'openxnet.conversation-recovery.v1', requestId: context.requestId, startedAt: context.startedAt, state: context.state,
+            assistantMessageId: String(context.assistantMessageId || ''), targetAgentId: context.targetAgentId, targetAgentName: context.targetAgentName,
+            workspacePath: context.workspacePath, checkpointAt: Date.now() };
+        if (!this._conversationCheckpointTimers) this._conversationCheckpointTimers = new Map();
+        const oldTimer = this._conversationCheckpointTimers.get(context.conversationId);
+        const elapsed = Date.now() - Number(context.lastSaveAttempt || 0);
+        if (!force && elapsed < 1000) {
+            if (!oldTimer) {
+                /** 保存最后一批增量，即使后面暂时没有新事件。 / Save the final batch even when no more events arrive immediately. */
+                const timer = setTimeout(() => { this._conversationCheckpointTimers.delete(context.conversationId); void this.checkpointConversation(context, true); }, Math.max(1, 1000 - elapsed));
+                this._conversationCheckpointTimers.set(context.conversationId, timer);
+            }
+            return true;
+        }
+        if (oldTimer) { clearTimeout(oldTimer); this._conversationCheckpointTimers.delete(context.conversationId); }
+        context.lastSaveAttempt = Date.now();
+        try {
+            const result = await this.saveConversations();
+            if (result === false || result?.success === false) throw new Error('会话保存未获确认 / Conversation save was not confirmed.');
+            if (this.conversationRecoverySaveError?.conversationId === context.conversationId) this.conversationRecoverySaveError = null;
+            context.savedAt = Date.now();
+            return true;
+        } catch (error) {
+            this.conversationRecoverySaveError = { conversationId: context.conversationId, message: error?.message || '会话尚未保存 / Conversation not saved.', checkpointAt: Date.now() };
+            return false;
+        }
+    },
+
+    /** 监听本机网络信号，不据此推断服务或模型恢复。 / Observe device network signals without inferring service or model recovery. */
+    ensureConversationConnectionSignals() {
+        if (this._conversationConnectionSignalHandler) return;
+        /** 读取当前设备信号，不替换会话错误。 / Read the current device signal without replacing conversation errors. */
+        const update = () => { this.conversationNetworkOnline = typeof navigator === 'undefined' || navigator.onLine !== false; };
+        this._conversationConnectionSignalHandler = update;
+        window.addEventListener?.('online', update);
+        window.addEventListener?.('offline', update);
+        update();
+    },
+
+    /** 为实际生成登记独立连接状态，新请求替换同会话旧检查。 / Register connection state for an actual generation and supersede old checks in that conversation. */
+    beginConversationConnection(context, message) {
+        this.ensureConversationConnectionSignals();
+        const scope = { conversationId: String(context?.conversationId || this.conversationId || ''), requestId: String(context?.requestId || `${Date.now()}-${Math.random().toString(36).slice(2)}`), messageId: String(message?.id || ''), workspacePath: String(context?.workspacePath ?? this.CLISettings?.cc_path ?? ''), message };
+        if (!scope.conversationId) return null;
+        const record = { conversationId: scope.conversationId, requestId: scope.requestId, messageId: scope.messageId, workspacePath: scope.workspacePath, state: 'idle', kind: '', httpStatus: null, attempt: 0, maxAttempts: 5, detail: '', retryable: false, checkedAt: null, runtimeState: null, updatedAt: Date.now() };
+        this.conversationConnectionStates = { ...(this.conversationConnectionStates || {}), [scope.conversationId]: record };
+        if (message) message.connectionFeedback = { ...record };
+        return scope;
+    },
+
+    /** 仅更新原会话原请求，保留正文、工具回执和输入草稿。 / Update only the original conversation and request while retaining text, receipts and drafts. */
+    setConversationConnectionFeedback(context, patch) {
+        if (!context?.conversationId || !context.requestId) return false;
+        const previous = this.conversationConnectionStates?.[context.conversationId];
+        if (!previous || previous.requestId !== context.requestId) return false;
+        const record = { ...previous, ...patch, conversationId: context.conversationId, requestId: context.requestId, updatedAt: Date.now() };
+        this.conversationConnectionStates = { ...this.conversationConnectionStates, [context.conversationId]: record };
+        const message = context.message || (this.conversations || []).find(item => String(item.id) === context.conversationId)?.messages?.find(item => String(item.id) === record.messageId);
+        if (message) {
+            const { checkId, ...persisted } = record;
+            message.connectionFeedback = persisted;
+        }
+        return true;
+    },
+
+    /** 分类连接错误且不泄露原始服务响应。 / Classify connection failures without exposing raw service responses. */
+    classifyConversationConnectionFailure(error, options = {}) {
+        return window.OpenXnetConversationModel?.classifyConnectionFailure?.(error, options)
+            || { kind: options.userCanceled ? 'canceled' : 'transport', httpStatus: null, retryable: !options.userCanceled, detail: options.userCanceled ? 'user_cancelled' : 'transport_unavailable' };
+    },
+
+    /** 投影当前会话的有界状态，网络恢复不会清除未恢复的错误。 / Project bounded current-conversation state without clearing unresolved errors on network restoration. */
+    getConversationConnectionState() {
+        const conversationId = String(this.conversationId || '');
+        const recovery = this.getConversationRecoveryState?.() || {};
+        const message = (this.messages || []).find(item => String(item.id) === recovery.messageId);
+        let record = this.conversationConnectionStates?.[conversationId] || message?.connectionFeedback;
+        const workspacePath = String(this.CLISettings?.cc_path || '');
+        const savedWorkspace = (this.conversations || []).find(item => String(item.id) === conversationId)?.recovery?.workspacePath;
+        if (String(record?.workspacePath ?? savedWorkspace ?? '').replace(/[\\/]+$/, '').toLowerCase() !== workspacePath.replace(/[\\/]+$/, '').toLowerCase()) record = null;
+        if (record?.conversationId !== conversationId || (recovery.requestId && record?.requestId !== recovery.requestId)) record = null;
+        const networkOnline = this.conversationNetworkOnline !== false;
+        let state = !networkOnline && (record?.state !== 'idle' || this.isSending || this.isTyping) ? 'offline'
+            : (record?.state === 'checking' && !record?.checkId) || (record?.state === 'offline' && networkOnline) ? 'interrupted' : record?.state || 'idle';
+        if (!['idle', 'offline', 'interrupted', 'checking', 'reachable', 'failed'].includes(state)) state = 'interrupted';
+        const kind = ['', 'offline', 'http', 'timeout', 'stream', 'transport', 'auth', 'quota', 'application'].includes(record?.kind) ? record.kind : state === 'offline' ? 'offline' : 'transport';
+        const httpStatus = Number.isInteger(record?.httpStatus) && record.httpStatus >= 400 && record.httpStatus <= 599 ? record.httpStatus : null;
+        const reasons = { offline: 'device_offline', http: 'service_response', timeout: 'request_timeout', stream: 'response_stream_interrupted', transport: 'transport_unavailable', auth: 'authentication_required', quota: 'quota_or_billing', application: 'request_not_started' };
+        const projected = { conversationId, workspacePath, requestId: String(record?.requestId || recovery.requestId || ''), messageId: String(record?.messageId || recovery.messageId || ''),
+            state, kind, httpStatus,
+            attempt: Math.min(5, Math.max(0, Math.floor(Number(record?.attempt) || 0))), maxAttempts: 5, detail: state === 'idle' ? '' : `${httpStatus ? `HTTP ${httpStatus} · ` : ''}${reasons[kind] || 'transport_unavailable'}`,
+            checkedAt: Number.isFinite(record?.checkedAt) ? record.checkedAt : null, networkOnline,
+            canCheck: !!record && networkOnline && !['idle', 'checking'].includes(state) && !this.isSending && !this.isTyping && !recovery.pending,
+            canContinue: !!record && !!recovery.available && !recovery.pending && networkOnline && state !== 'checking' && record.runtimeState === 'idle' && !['auth', 'quota', 'application'].includes(record.kind) };
+        projected.message = window.OpenXnetConversationModel?.connectionFeedbackMessage?.({ ...projected, runtimeState: record?.runtimeState }, this.isCurrentLanguageZh()) || '';
+        return projected;
+    },
+
+    /** 有界读取原回复状态，超时取消探测且绝不发送聊天 POST。 / Read prior reply status with a bounded timeout and never send a chat POST. */
+    async readConversationConnectionStatus(conversationId) {
+        const controller = new AbortController();
+        let timer;
+        /** 到期拒绝本次只读检查，并取消底层等待。 / Reject this read-only check at its deadline and cancel its underlying wait. */
+        const timeout = new Promise((resolve, reject) => {
+            /** 超时拥有独立原因，不能标为用户停止。 / Timeouts have a distinct cause and cannot be labeled as user stops. */
+            timer = setTimeout(() => {
+                const error = new Error('Recovery status check timed out'); error.code = 'ETIMEDOUT';
+                reject(error); controller.abort();
+            }, 8000);
+        });
+        /** 校验公开恢复合同，不暴露完整错误响应。 / Validate the public recovery contract without exposing complete error bodies. */
+        const read = async () => {
+            const response = await window.openxnetChatFetch(`/v1/chat/recovery-status?conversation_id=${encodeURIComponent(conversationId)}`, { method: 'GET', signal: controller.signal });
+            if (!response.ok) { const error = new Error(`HTTP ${response.status}`); error.statusCode = response.status; throw error; }
+            const runtime = await response.json();
+            if (runtime?.conversationId !== conversationId || !['running', 'idle', 'unknown'].includes(runtime.state)) { const error = new Error('Recovery status could not be verified'); error.code = 'RECOVERY_STATUS_INVALID'; throw error; }
+            return runtime;
+        };
+        try { return await Promise.race([read(), timeout]); }
+        finally { clearTimeout(timer); controller.abort(); }
+    },
+
+    /** 对同一会话进行最多五次真实只读检查，成功后仍等待显式继续。 / Perform at most five actual read-only checks and still require explicit continuation after success. */
+    async checkConversationConnection(conversationId = this.conversationId, requestId = '') {
+        this.ensureConversationConnectionSignals();
+        const state = this.getConversationConnectionState();
+        if (!state.canCheck || String(conversationId) !== state.conversationId || (requestId && String(requestId) !== state.requestId)) return false;
+        const scope = { conversationId: state.conversationId, requestId: state.requestId };
+        if (!this.conversationConnectionStates?.[scope.conversationId]) {
+            const message = (this.messages || []).find(item => String(item.id) === state.messageId);
+            if (!message?.connectionFeedback) return false;
+            this.conversationConnectionStates = { ...(this.conversationConnectionStates || {}), [scope.conversationId]: { ...message.connectionFeedback } };
+        }
+        const checkId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const workspace = String(this.CLISettings?.cc_path || '');
+        /** 验证原检查仍拥有会话、请求和工作区。 / Verify that the original check still owns its conversation, request and workspace. */
+        const current = () => String(this.conversationId || '') === scope.conversationId
+            && String(this.CLISettings?.cc_path || '') === workspace
+            && this.conversationConnectionStates?.[scope.conversationId]?.requestId === scope.requestId
+            && this.conversationConnectionStates?.[scope.conversationId]?.checkId === checkId
+            && (!this.getConversationRecoveryState?.().requestId || this.getConversationRecoveryState().requestId === scope.requestId);
+        this.setConversationConnectionFeedback(scope, { state: 'checking', attempt: 0, checkId, runtimeState: null });
+        try {
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
+                if (!current()) return false;
+                if (this.conversationNetworkOnline === false) { this.setConversationConnectionFeedback(scope, { state: 'offline' }); return false; }
+                this.setConversationConnectionFeedback(scope, { state: 'checking', attempt });
+                try {
+                    const runtime = await this.readConversationConnectionStatus(scope.conversationId);
+                    if (!current()) return false;
+                    this.setConversationConnectionFeedback(scope, { state: 'reachable', runtimeState: runtime.state, checkedAt: Date.now() });
+                    return true;
+                } catch (error) {
+                    if (!current()) return false;
+                    const failure = this.classifyConversationConnectionFailure(error, { online: this.conversationNetworkOnline });
+                    this.setConversationConnectionFeedback(scope, { ...failure, state: failure.kind === 'offline' ? 'offline' : 'failed', checkedAt: Date.now() });
+                    if (!failure.retryable || failure.kind === 'offline' || attempt === 5) return false;
+                    this.setConversationConnectionFeedback(scope, { state: 'checking' });
+                    /** 退避只安排下一次读取，不安排模型生成。 / Backoff schedules only the next read and never a model generation. */
+                    await new Promise(resolve => setTimeout(resolve, Math.min(4000, 500 * 2 ** (attempt - 1))));
+                }
+            }
+            return false;
+        } finally {
+            const record = this.conversationConnectionStates?.[scope.conversationId];
+            if (record?.requestId === scope.requestId && record.checkId === checkId) this.setConversationConnectionFeedback(scope, { checkId: null, state: record.state === 'checking' ? 'interrupted' : record.state });
+        }
+    },
+
+    /** 从已持久化状态识别意外中断，明确停止与正常完成不提供恢复入口。 / Detect unexpected interruption from persisted state, excluding explicit stops and normal completion. */
+    getConversationRecoveryState() {
+        const conversation = (this.conversations || []).find((item) => String(item.id) === String(this.conversationId || ''));
+        const recovery = conversation?.recovery;
+        const last = (this.messages || []).filter((message) => message.role === 'assistant').at(-1);
+        const explicit = recovery?.schema === 'openxnet.conversation-recovery.v1';
+        const interrupted = explicit ? ['streaming', 'interrupted'].includes(recovery.state) : last?.generationFinished === false && !last?.activityEndedAt;
+        const error = this.conversationRecoverySaveError?.conversationId === String(this.conversationId || '') ? this.conversationRecoverySaveError.message : '';
+        return { available: !!interrupted && !this.isSending && !this.isTyping, pending: !!this.conversationRecoveryPending, error,
+            conversationId: String(this.conversationId || ''), requestId: String(recovery?.requestId || ''),
+            messageId: String(explicit ? (recovery.assistantMessageId || '') : (last?.id || '')), checkpointAt: recovery?.checkpointAt || null,
+            state: recovery?.state || (interrupted ? 'interrupted' : ''), reason: this.conversationRecoveryNotice?.conversationId === String(this.conversationId || '') ? this.conversationRecoveryNotice.message : '' };
+    },
+
+    /** 明确点击后核对旧执行，再沿用原消息续写；未知工具绝不盲目重放。 / Reconcile prior execution after an explicit click, then continue the original message without blindly replaying unknown tools. */
+    async resumeInterruptedConversation(conversationId, requestId = '') {
+        const state = this.getConversationRecoveryState();
+        if (!state.available || state.pending || String(conversationId) !== state.conversationId || String(requestId) !== state.requestId) return false;
+        const conversation = this.conversations.find((item) => String(item.id) === state.conversationId);
+        const workspace = String(this.CLISettings?.cc_path || '').replace(/[\\/]+$/, '').toLowerCase();
+        const originalWorkspace = String(conversation.recovery?.workspacePath || '').replace(/[\\/]+$/, '').toLowerCase();
+        const message = this.messages.find((item) => String(item.id) === state.messageId);
+        let recoveryController = null;
+        this.conversationRecoveryPending = true;
+        this.conversationRecoveryNotice = null;
+        /** 只让核对结果进入原会话和原恢复检查点。 / Apply reconciliation only to its original conversation and recovery checkpoint. */
+        const current = () => String(this.conversationId) === state.conversationId && String(conversation.recovery?.requestId || '') === state.requestId && String(this.CLISettings?.cc_path || '').replace(/[\\/]+$/, '').toLowerCase() === workspace;
+        /** 给出需要处理的真实原因，而不宣称已经恢复。 / Explain the actual unresolved condition without claiming recovery succeeded. */
+        const unresolved = (reason) => { if (current()) this.conversationRecoveryNotice = { conversationId: state.conversationId, message: reason }; return false; };
+        try {
+            if ((message && this.messages.at(-1) !== message) || (!message && (state.messageId || this.messages.at(-1)?.role !== 'user'))) return unresolved('原回复后已有新消息，请在当前上下文中继续。 / Newer messages exist after the interrupted reply.');
+            if (originalWorkspace !== workspace) return unresolved('请先回到原工作区再继续。 / Return to the original workspace before continuing.');
+            let runtime;
+            if (typeof this.readConversationConnectionStatus === 'function') runtime = await this.readConversationConnectionStatus(state.conversationId);
+            else {
+                const response = await window.openxnetChatFetch(`/v1/chat/recovery-status?conversation_id=${encodeURIComponent(state.conversationId)}`);
+                runtime = response.ok ? await response.json() : null;
+            }
+            if (!current()) return false;
+            if (runtime?.conversationId !== state.conversationId || !['running', 'idle'].includes(runtime.state)) return unresolved('尚不能确认原回复是否结束，请稍后重试。 / The prior reply state could not be verified. Try again later.');
+            if (runtime.state === 'running') return unresolved('原回复仍在执行，暂不重复启动。 / The original reply is still running; no duplicate was started.');
+            const taskIds = [...new Set([...(message?.taskRefs || []).map((ref) => String(ref.taskId || '')), ...(message?.activityLog || []).map((step) => String(step.taskId || step.task_id || ''))].filter(Boolean))];
+            const reconciledTasks = new Set();
+            if (taskIds.length) {
+                let snapshot;
+                if (typeof window.openxnetDesktop?.refreshTaskExecutions === 'function' && originalWorkspace) snapshot = await window.openxnetDesktop.refreshTaskExecutions({ workspacePath: conversation.recovery.workspacePath });
+                else if (typeof window.openxnetDesktop?.listTasks === 'function') snapshot = await window.openxnetDesktop.listTasks(originalWorkspace ? { workspacePath: conversation.recovery.workspacePath } : {});
+                // 缺少可信任务接口时保留待核对状态，不绕过原生边界续跑。 / Keep verification pending when trusted task APIs are unavailable; never bypass the native boundary to resume.
+                else return unresolved('当前无法通过可信接口核对原任务，请先在任务中心确认结果。 / Trusted verification of the prior task is unavailable; confirm its result in the task center.');
+                if (!current()) return false;
+                if (snapshot?.error || !Array.isArray(snapshot?.tasks)) return unresolved('原任务结果仍待核对，未启动新的任务。 / Prior task results remain unverified; no new task was started.');
+                for (const taskId of taskIds) {
+                    const task = snapshot.tasks.find((item) => [item.id, item.task_id, item.legacyTaskId, item.legacy_task_id].some((id) => String(id || '') === taskId));
+                    const context = task?.context || task?.details?.context || {};
+                    const origin = String(task?.originConversationId || task?.origin_conversation_id || context.origin_conversation_id || '');
+                    const automation = task?.automation || context.automation;
+                    const taskWorkspace = String(task?.workspacePath || task?.workspace_dir || '').replace(/[\\/]+$/, '').toLowerCase();
+                    if (!task || origin !== state.conversationId || (taskWorkspace && taskWorkspace !== workspace)) return unresolved('未找到原任务的可信记录，请先核对任务中心。 / No trusted record of the prior task was found. Check the task center.');
+                    const taskStatus = String(task.status || 'unknown');
+                    const terminal = ['completed', 'failed', 'cancelled', 'canceled', 'error', 'done'].includes(taskStatus);
+                    const nextRun = new Date(task.nextRunAt || task.next_run_at || '').getTime();
+                    const scheduledAutomation = !!automation && ['pending', 'paused', 'scheduled'].includes(taskStatus) && (automation.state === 'paused' || (automation.state === 'active' && Number.isFinite(nextRun) && nextRun > Date.now()));
+                    if (!terminal && !scheduledAutomation) return unresolved('关联任务仍在执行或等待结果，请在任务中心查看。 / A related task is still active or unresolved. Check the task center.');
+                    reconciledTasks.add(taskId);
+                    for (const ref of message.taskRefs || []) if (String(ref.taskId) === taskId) ref.status = taskStatus;
+                    for (const step of message.activityLog || []) if (String(step.taskId || step.task_id || '') === taskId) step.status = taskStatus;
+                }
+            }
+            const pendingTool = (message?.activityLog || []).find((step) => step.kind === 'tool' && !['done', 'completed', 'failed', 'error', 'denied', 'cancelled', 'canceled', 'skipped'].includes(String(step.status)) && !reconciledTasks.has(String(step.taskId || step.task_id || '')));
+            if (pendingTool) return unresolved(pendingTool.status === 'awaiting_approval' ? '仍有操作等待审批，请先处理原审批。 / An existing operation still awaits approval.' : '有工具结果尚未确认，请先查看执行详情并核对实际结果。 / A tool outcome remains unverified. Review its activity and actual result first.');
+            const receipts = new Set((message?.backend_content || []).filter((item) => item.role === 'tool' && item.tool_call_id).map((item) => String(item.tool_call_id)));
+            const unmatched = (message?.backend_content || []).flatMap((item) => item.tool_calls || []).some((call) => !call.id || !receipts.has(String(call.id)));
+            if (unmatched) return unresolved('仍有未收到结果的工具调用，请先核对实际执行状态。 / A tool call still has no result. Verify its actual execution first.');
+            if (!current()) return false;
+            if (String(this.settings?.selectedProvider || '') !== String(conversation.selectedProvider || '') || String(this.settings?.model || '') !== String(conversation.model || '')) return unresolved('请先选回这条会话原来的模型和服务商再继续。 / Select this conversation’s original model and provider before continuing.');
+            const target = conversation.recovery?.targetAgentId || conversation.mainAgent || 'openxnet-model';
+            const name = conversation.recovery?.targetAgentName || message?.agentName || message?.identity?.name || '';
+            this._conversationRecoveryContinuation = { conversationId: state.conversationId, messageId: state.messageId };
+            recoveryController = new AbortController();
+            this.isSending = true; this.isTyping = true; this.abortController = recoveryController;
+            await this.generateAIResponse(target, name, !!message);
+            return true;
+        } catch (error) {
+            const failure = this.classifyConversationConnectionFailure?.(error, { online: this.conversationNetworkOnline });
+            if (failure && current()) this.setConversationConnectionFeedback?.({ conversationId: state.conversationId, requestId: state.requestId }, { ...failure, state: failure.kind === 'offline' ? 'offline' : 'failed', runtimeState: null });
+            const message = failure && window.OpenXnetConversationModel?.connectionFeedbackMessage?.({ ...failure, state: 'interrupted' }, this.isCurrentLanguageZh());
+            return unresolved(message || '恢复核对失败，请重试。 / Recovery verification failed. Please retry.');
+        }
+        finally { this.conversationRecoveryPending = false; this._conversationRecoveryContinuation = null; if (recoveryController && this.abortController === recoveryController) this.abortController = null; }
+    },
+
+    /** 重试保存当前会话，不触发模型或工具执行。 / Retry saving the current conversation without invoking models or tools. */
+    async retryConversationCheckpoint() {
+        try { await this.saveConversations(); this.conversationRecoverySaveError = null; return true; }
+        catch (error) { this.conversationRecoverySaveError = { conversationId: String(this.conversationId || ''), message: error?.message || '会话保存失败 / Conversation save failed.' }; return false; }
+    },
+
+    /** 通知只使用有界公开摘要，不发送工具参数、系统提示或隐藏推理。 / Notifications use bounded public summaries without tool parameters, system prompts or hidden reasoning. */
+    getPublicCompletionSummary(value, limit = 400) {
+        const input = String(value || '');
+        let text = ''; let offset = 0; let stack = [];
+        const tags = /<\s*(\/?)\s*(think|thought|thinking|analysis|reasoning|system|script|style)\b[^>]*>/gi;
+        for (const match of input.matchAll(tags)) {
+            if (!stack.length) text += input.slice(offset, match.index);
+            const tag = match[2].toLowerCase();
+            if (match[1]) { const index = stack.lastIndexOf(tag); if (index >= 0) stack = stack.slice(0, index); }
+            else if (!match[0].trimEnd().endsWith('/>')) stack.push(tag);
+            offset = match.index + match[0].length;
+        }
+        if (!stack.length) text += input.slice(offset).replace(/<\s*(?:think|thought|thinking|analysis|reasoning|system|script|style)\b[^>]*$/gi, '');
+        const summary = text.replace(/<[^>]*>/g, ' ').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, limit);
+        return /[\ud800-\udbff]$/.test(summary) ? summary.slice(0, -1) : summary;
+    },
+
+    /** 只发布当前运行真实完成的公开回复；不从历史快照重播。 / Publish a genuinely completed public reply from the current run without replaying historical snapshots. */
+    async publishChatCompletionNotice(context, message) {
+        if (!context || context.state !== 'completed' || message?.generationFinished !== true || typeof window.openxnetDesktop?.publishCompletionNotice !== 'function') return false;
+        if ((message.activityLog || []).some((step) => ['tool', 'subagent'].includes(step.kind) && ['running', 'pending', 'unknown', 'interrupted', 'awaiting_approval'].includes(step.status))) return false;
+        const summary = this.getPublicCompletionSummary(message.pure_content);
+        if (!summary) return false;
+        const resultId = `chat:${context.requestId}:${message.id}`;
+        if (!this._chatCompletionNotices) this._chatCompletionNotices = new Set();
+        if (this._chatCompletionNotices.has(resultId)) return false;
+        this._chatCompletionNotices.add(resultId);
+        while (this._chatCompletionNotices.size > 128) this._chatCompletionNotices.delete(this._chatCompletionNotices.values().next().value);
+        try {
+            return await window.openxnetDesktop.publishCompletionNotice({ resultId, source: 'chat', conversationId: context.conversationId,
+                title: `${this.isCurrentLanguageZh() ? '回复已完成' : 'Reply complete'} · ${this.getPublicCompletionSummary(context.metadata?.title, 90)}`.slice(0, 120),
+                summary, status: 'completed', occurredAt: new Date(message.activityEndedAt || Date.now()).toISOString(), notify: true });
+        } catch (error) { console.warn('Completion notice was not delivered:', error); return false; }
+    },
+
+    /** 监听已有真实任务快照，只对新终态或新运行记录发布一次完成事件。 / Observe existing actual task snapshots and publish only new terminal states or run records once. */
+    observeTaskCompletionSnapshot(snapshot, live = false) {
+        if (!Array.isArray(snapshot?.tasks)) return;
+        if (!this._taskCompletionBaseline) this._taskCompletionBaseline = new Map();
+        if (!this._completionObserverStartedAt) this._completionObserverStartedAt = Date.now();
+        for (const task of snapshot.tasks) {
+            const id = String(task?.id || task?.task_id || '').trim();
+            if (!id) continue;
+            const targetId = String(task.legacyTaskId || task.legacy_task_id || id).trim();
+            const context = task.context || task.details?.context || {};
+            const automation = task.automation || context.automation;
+            const origin = String(task.originConversationId || task.origin_conversation_id || context.origin_conversation_id || '').trim();
+            const key = `${String(task.workspacePath || task.workspace_dir || '')}:${id}`;
+            const previous = this._taskCompletionBaseline.get(key);
+            const runs = Array.isArray(automation?.runs) ? automation.runs : [];
+            const occurredAt = String(task.completedAt || task.completed_at || '');
+            const signature = `${task.status}:${occurredAt}`;
+            const current = { signature, runs: new Set(runs.map((run) => String(run.id || ''))) };
+            if (!previous || live) this._taskCompletionBaseline.set(key, current);
+            if (!live || typeof window.openxnetDesktop?.publishCompletionNotice !== 'function') continue;
+            /** 使用真实结果时间识别订阅之后的新事件。 / Identify events created after subscription using their actual result timestamp. */
+            const newResult = (timestamp) => previous || (Number.isFinite(Date.parse(timestamp)) && Date.parse(timestamp) >= this._completionObserverStartedAt);
+            /** 发布单个有界结果，原生失败不改变任务状态。 / Publish one bounded result without changing task state on native delivery failure. */
+            const publish = (notice) => { Promise.resolve().then(() => window.openxnetDesktop.publishCompletionNotice(notice)).catch((error) => console.warn('Task completion notice was not delivered:', error)); };
+            if (automation) {
+                for (const run of runs) {
+                    const runId = String(run.id || '');
+                    if (!runId || previous?.runs.has(runId) || !newResult(run.finished_at)) continue;
+                    publish({ resultId: `task:${targetId}:${runId}`, source: 'task', taskId: targetId, ...(origin ? { conversationId: origin } : {}),
+                        title: this.getPublicCompletionSummary(task.title || 'Task', 120), summary: this.getPublicCompletionSummary(run.summary),
+                        status: String(run.outcome || 'unknown'), occurredAt: String(run.finished_at || ''), notificationPolicy: String(automation.notification_policy || 'changes_only'), notify: run.notify === true });
+                }
+            } else if (['completed', 'failed'].includes(task.status) && previous?.signature !== signature && newResult(occurredAt)) {
+                publish({ resultId: `task:${targetId}:${signature}`, source: 'task', taskId: targetId, ...(origin ? { conversationId: origin } : {}), title: this.getPublicCompletionSummary(task.title || 'Task', 120),
+                    summary: this.getPublicCompletionSummary(task.resultSummary || task.result || task.errorMessage || task.error), status: task.status, occurredAt, notify: true });
+            }
+        }
+        while (this._taskCompletionBaseline.size > 400) this._taskCompletionBaseline.delete(this._taskCompletionBaseline.keys().next().value);
+    },
+
+    /** 订阅原生通知点击，仅导航到已存在的会话或任务，不自动执行。 / Subscribe to native notification clicks and navigate only to existing conversations or tasks without executing them. */
+    connectCompletionNoticeNavigation() {
+        this._completionObserverStartedAt = Date.now();
+        this.completionNoticeUnsubscribe?.();
+        if (typeof window.openxnetDesktop?.onCompletionNoticeNavigate !== 'function') return;
+        this.completionNoticeUnsubscribe = window.openxnetDesktop.onCompletionNoticeNavigate((target) => { void this.openCompletionNoticeTarget(target); });
+    },
+
+    /** 点击结果后沿用既有加载入口，草稿由会话范围保留。 / Follow existing loading paths after a result click while drafts remain isolated by conversation. */
+    async openCompletionNoticeTarget(target) {
+        if (target?.source === 'enterprise_run') return this.openOperationsNoticeTarget(target);
+        if (!target || typeof target.resultId !== 'string' || !['chat', 'task'].includes(target.source)) return false;
+        const conversationId = String(target.conversationId || '');
+        const conversation = (this.conversations || []).find((item) => String(item.id) === conversationId);
+        try {
+            if (conversation) { await this.loadConversation(conversation.id); this.activeMenu = 'chat'; this.chatAreaOpen = true; return true; }
+            const taskId = String(target.taskId || '');
+            if (!taskId || typeof window.openxnetDesktop?.listTasks !== 'function') return false;
+            const workspacePath = String(this.CLISettings?.cc_path || '');
+            const snapshot = await window.openxnetDesktop.listTasks(workspacePath ? { workspacePath } : {});
+            if (workspacePath !== String(this.CLISettings?.cc_path || '')) return false;
+            const task = (snapshot?.tasks || []).find((item) => [item.id, item.legacyTaskId, item.task_id, item.legacy_task_id].some((id) => String(id || '') === taskId));
+            if (!task) return false;
+            this.openTaskCenter();
+            await this.fetchTaskDetail(task.id || task.task_id);
+            return true;
+        } catch (error) { console.warn('Completion target could not be opened:', error); return false; }
+    },
+
+    /** 返回宿主接受结果；return the host's actual acceptance result. */
     async handleSendOrGuidance() {
         if (this.isSending || this.isTyping) {
             if ((this.userInput || '').trim()) {
-                await this.sendLiveGuidance(this.userInput);
+                return await this.sendLiveGuidance(this.userInput) === true;
             } else {
                 this.stopGenerate();
             }
-            return;
+            return false;
         }
-        await this.sendMessage();
+        return await this.sendMessage() === true;
     },
 
     detectLiveGuidanceMode(text = '') {
@@ -11960,21 +12492,64 @@ let vue_methods = {
         return this.isSending ? (zh ? '运行中' : 'Active') : (zh ? '就绪' : 'Ready');
     },
 
-    /** 刷新实时指导队列；输入静默开关，返回队列数据或 null；失败时不覆盖现有状态。 */
-    async refreshLiveGuidanceStatus(silent = true) {
-        try {
-            const queryId = this.conversationId || (this.isSending ? '__default__' : '');
-            const data = await this.fetchKernelJson('guidance-list', { conversationId: queryId });
-            this.liveGuidancePending = Array.isArray(data.pending) ? data.pending : [];
-            this.liveGuidanceQueueStatus = data.status || this.liveGuidanceQueueStatus || {};
-            if (!this.liveGuidanceSending) this.liveGuidanceError = '';
-            return data;
-        } catch (error) {
-            if (!silent) {
-                console.error('Live guidance status failed:', error);
-            }
-            return null;
+    /** 按会话及工作区隔离引导缓存，读取快照不创建请求。 / Isolate guidance caches by conversation and workspace without requesting data during snapshots. */
+    getLiveGuidanceCache(create = false) {
+        const conversationId = String(this.conversationId || '');
+        const scope = JSON.stringify([conversationId, String(this.CLISettings?.cc_path || '')]);
+        if (!conversationId) return null;
+        if (!this._liveGuidanceScopes && create) this._liveGuidanceScopes = new Map();
+        let cache = this._liveGuidanceScopes?.get(scope);
+        if (!cache && create) {
+            cache = { scope, conversationId, runtimeId: '', items: [], lost: [], error: '', notice: '', loaded: false, loading: false, sending: false, mutations: new Set(), requests: new Map(), version: 0, lastAttempt: 0 };
+            this._liveGuidanceScopes.set(scope, cache);
+            for (const [key, item] of this._liveGuidanceScopes) if (this._liveGuidanceScopes.size > 24 && key !== scope && !item.sending && !item.loading && !item.mutations.size) this._liveGuidanceScopes.delete(key);
         }
+        return cache || null;
+    },
+
+    /** 只投影真实引导状态，进程重启后未接收原文保留为待重新提交。 / Project actual guidance state, retaining unreceived text for explicit resubmission after runtime restart. */
+    getLiveGuidanceState() {
+        const cache = this.getLiveGuidanceCache();
+        return { scope: cache?.scope || JSON.stringify([String(this.conversationId || ''), String(this.CLISettings?.cc_path || '')]), conversationId: String(this.conversationId || ''),
+            available: !!cache?.runtimeId && cache?.capability?.supported !== false, supported: cache?.capability?.supported ?? null, unavailableReason: String(cache?.capability?.reason || ''), loading: !!cache?.loading, sending: !!cache?.sending, error: cache?.error || '', notice: cache?.notice || '',
+            items: [...(cache?.lost || []), ...(cache?.items || [])].map((item) => ({ ...item, mutationPending: !!cache?.mutations.has(item.guidance_id) })) };
+    },
+
+    /** 合并精确归属回执，旧进程待接收文本不自动重放。 / Merge exactly owned receipts without replaying unreceived text from an old runtime. */
+    applyLiveGuidanceSnapshot(cache, data) {
+        if (!data || data.ok === false || data.conversation_id !== cache.conversationId || typeof data.runtime_id !== 'string' || !data.runtime_id || !Array.isArray(data.items)) throw new Error('引导队列未返回有效状态 / Guidance queue returned no valid state.');
+        if (cache.runtimeId && cache.runtimeId !== data.runtime_id) {
+            cache.lost = [...cache.lost, ...cache.items.filter((item) => item.state === 'pending').map((item) => ({ ...item, state: 'lost' }))].slice(-200);
+            cache.notice = '执行服务已重启，未接收的引导需要重新提交。 / The execution service restarted; unreceived guidance needs explicit resubmission.';
+            cache.requests.clear();
+        }
+        cache.runtimeId = data.runtime_id;
+        cache.capability = { supported: [true, false].includes(data.capability?.supported) ? data.capability.supported : null, reason: String(data.capability?.reason || '') };
+        cache.items = data.items.filter((item) => item && item.conversation_id === cache.conversationId && typeof item.guidance_id === 'string').slice(-200).map((item) => ({ ...item }));
+        if (this.getLiveGuidanceCache() === cache) {
+            this.liveGuidancePending = cache.items.filter((item) => item.state === 'pending');
+            this.liveGuidanceQueueStatus = data.status || {};
+        }
+    },
+
+    /** 刷新原会话真实队列，过期读取不能覆盖写入结果或其他会话。 / Refresh the original conversation queue without stale reads replacing mutations or another conversation. */
+    async refreshLiveGuidanceStatus(silent = true, force = true) {
+        const cache = this.getLiveGuidanceCache(true);
+        if (!cache) return null;
+        if (cache.loading) return cache.readPromise || null;
+        if (!force && cache.loaded && (Date.now() - cache.lastAttempt < 2500 || (!this.isSending && !this.isTyping && !cache.items.some((item) => item.state === 'pending')))) return null;
+        cache.loading = true; cache.loaded = true; cache.lastAttempt = Date.now();
+        const version = cache.version;
+        /** 共享同一次在途读取，使初次发送等待已有握手。 / Share an in-flight read so initial submission waits for the existing handshake. */
+        cache.readPromise = (async () => { try {
+            const data = await this.fetchKernelJson('guidance-list', { conversationId: cache.conversationId, ...(cache.runtimeId ? { runtimeId: cache.runtimeId } : {}) });
+            if (version !== cache.version) return null;
+            this.applyLiveGuidanceSnapshot(cache, data);
+            if (!cache.sending && !cache.mutations.size) cache.error = '';
+            return data;
+        } catch (error) { if (version === cache.version) cache.error = error?.message || '引导状态读取失败 / Guidance status unavailable.'; if (!silent) console.warn('Live guidance status failed:', error); return null; }
+        finally { cache.loading = false; cache.readPromise = null; } })();
+        return cache.readPromise;
     },
 
     startLiveGuidancePolling() {
@@ -11996,42 +12571,71 @@ let vue_methods = {
         }
     },
 
-    /** 追加实时指导；输入文本，返回是否入队；空文本不产生副作用，失败时保留输入并记录错误。 */
+    /** 追加引导而不中止当前生成；只在真实回执确认后清理原输入。 / Append guidance without aborting generation and clear original input only after an actual receipt confirms it. */
     async sendLiveGuidance(text = this.userInput) {
         const guidanceText = String(text || '').trim();
-        if (!guidanceText) return false;
-
-        const conversationId = this.ensureConversationId();
+        if (!guidanceText || guidanceText.length > 16000 || (!this.isSending && !this.isTyping)) return false;
+        const cache = this.getLiveGuidanceCache(true);
+        if (!cache || cache.sending) return false;
         const mode = this.getActiveLiveGuidanceMode(guidanceText);
-        this.liveGuidanceSending = true;
-        this.liveGuidanceError = '';
+        cache.sending = true; cache.error = ''; this.liveGuidanceSending = true;
         try {
-            const data = await this.fetchKernelJson('guidance-add', {
-                text: guidanceText,
-                conversationId: conversationId || '',
-                turnId: '',
-                traceId: '',
-                mode,
-                priority: mode === 'soft' ? 0 : 10,
-            });
-            this.userInput = '';
-            this.liveGuidanceLastReceipt = data.guidance || { mode, text: guidanceText, created_at: new Date().toISOString() };
-            this.liveGuidanceQueueStatus = data.queue || this.liveGuidanceQueueStatus || {};
-            await this.refreshLiveGuidanceStatus(true);
-            if (typeof showNotification === 'function') {
-                showNotification(this.isCurrentLanguageZh() ? '已追加引导，将在下一步生效' : 'Guidance queued for the next step', 'success');
-            }
+            if (!cache.runtimeId) await this.refreshLiveGuidanceStatus(true);
+            if (!cache.runtimeId || this.getLiveGuidanceCache() !== cache) throw new Error('引导连接不可用或会话已变化 / Guidance is unavailable or the conversation changed.');
+            if (cache.capability?.supported === false) throw new Error(cache.capability.reason || '当前执行方式不支持实时引导 / The current execution mode does not support live guidance.');
+            await this.mutateLiveGuidance(cache, 'add', { text: guidanceText, mode, priority: mode === 'soft' ? 0 : 10, turnId: '', traceId: '' });
+            if (this.getLiveGuidanceCache() === cache && String(this.userInput || '').trim() === guidanceText) this.userInput = '';
             return true;
         } catch (error) {
-            console.error('Live guidance failed:', error);
-            this.liveGuidanceError = error?.message || 'live_guidance_failed';
-            if (typeof showNotification === 'function') {
-                showNotification(this.isCurrentLanguageZh() ? '引导发送失败' : 'Failed to queue guidance', 'error');
-            }
+            cache.error = error?.message || '引导发送失败，输入已保留 / Guidance failed; input retained.';
             return false;
         } finally {
-            this.liveGuidanceSending = false;
+            cache.sending = false; if (this.getLiveGuidanceCache() === cache) { this.liveGuidanceSending = false; this.liveGuidanceError = cache.error; }
         }
+    },
+
+    /** 使用稳定操作身份与修订提交，失败重试沿用身份而不重复追加。 / Submit with stable operation identity and revision so failure retries cannot append duplicates. */
+    async mutateLiveGuidance(cache, action, fields) {
+        const signature = JSON.stringify([cache.runtimeId, action, fields]);
+        let requestId = cache.requests.get(signature);
+        if (!requestId) {
+            if (cache.requests.size >= 64) throw new Error('尚有过多操作未确认，请先核对已有引导 / Too many actions remain unconfirmed; reconcile existing guidance first.');
+            requestId = uuid.v4(); cache.requests.set(signature, requestId);
+        }
+        const runtimeId = cache.runtimeId;
+        cache.version += 1;
+        const response = await this.fetchKernelPayload(`guidance-${action}`, { ...fields, conversationId: cache.conversationId, runtimeId, requestId });
+        const data = response?.payload;
+        if (cache.runtimeId !== runtimeId) throw new Error('执行服务已变化，请检查引导状态 / Execution service changed; check guidance state.');
+        const item = data?.guidance;
+        const owned = item?.conversation_id === cache.conversationId && typeof item.guidance_id === 'string' && item.guidance_id && data.runtime_id === runtimeId && (action === 'add' || item.guidance_id === fields.guidanceId);
+        if (owned) {
+            const index = cache.items.findIndex((value) => value.guidance_id === item.guidance_id);
+            if (index < 0) cache.items.push({ ...item }); else cache.items[index] = { ...item };
+        }
+        cache.version += 1;
+        if (!response?.ok || data?.ok !== true || !owned || !['pending', 'consumed', 'canceled'].includes(item.state) || !Number.isInteger(item.revision) || item.revision < 1 || (action === 'cancel' && item.state !== 'canceled')) {
+            if (data?.ok === false && typeof data?.error?.code === 'string') cache.requests.delete(signature);
+            if (data?.error?.code === 'guidance_runtime_changed' && this.getLiveGuidanceCache() === cache) await this.refreshLiveGuidanceStatus(true);
+            throw new Error(data?.error?.message || data?.detail || '操作未确认，请刷新后重试 / Action unconfirmed; refresh before retrying.');
+        }
+        cache.requests.delete(signature);
+        cache.error = '';
+        return { success: true, guidance: { ...item } };
+    },
+
+    /** 仅修改或撤回当前范围内待接收的确切修订。 / Edit or withdraw only the exact pending revision in the current scope. */
+    async updateLiveGuidance(reference, action, text = '') {
+        const cache = this.getLiveGuidanceCache();
+        if (!cache || reference?.scope !== cache.scope || !['edit', 'cancel'].includes(action)) throw new Error('引导会话已变化 / Guidance conversation changed.');
+        const item = cache.items.find((value) => value.guidance_id === reference.guidance_id);
+        if (!item || item.state !== 'pending' || item.revision !== reference.revision || cache.mutations.has(item.guidance_id)) throw new Error('引导已接收或状态已变化，请刷新 / Guidance was received or changed; refresh its state.');
+        const editedText = String(text || '').trim();
+        if (action === 'edit' && (!editedText || editedText.length > 16000)) throw new Error('引导内容需为1–16000字符 / Guidance needs 1–16000 characters.');
+        cache.mutations.add(item.guidance_id); cache.error = '';
+        try { return await this.mutateLiveGuidance(cache, action, { guidanceId: item.guidance_id, expectedRevision: item.revision, ...(action === 'edit' ? { text: editedText, mode: item.mode, priority: item.priority } : {}) }); }
+        catch (error) { cache.error = error?.message || '引导操作失败 / Guidance action failed.'; throw error; }
+        finally { cache.mutations.delete(item.guidance_id); }
     },
 
     looksLikeKernelConfigIntent(text = '') {
@@ -12200,22 +12804,22 @@ let vue_methods = {
     },
 
     /**
-     * 发送当前聊天消息；输入消息角色，无返回，会导入附件、更新会话状态并调用 typed Chat/兼容传输，上传或模型失败时提示并保留错误状态。
+     * 发送当前聊天消息并返回接受状态；send through the existing transport and return whether the draft was accepted.
      */
     async sendMessage(role = 'user') { 
         // 基础校验
         const pendingText = (this.userInput || '').trim();
         const hasFiles = !!(this.files && this.files.length > 0);
         const hasImages = !!(this.images && this.images.length > 0);
-        if (!pendingText && !hasFiles && !hasImages) return;
+        if (!pendingText && !hasFiles && !hasImages) return false;
         if (this.isTyping || this.isSending) {
             if (role === 'user' && pendingText && !hasFiles && !hasImages) {
-                await this.sendLiveGuidance(pendingText);
+                return await this.sendLiveGuidance(pendingText) === true;
             }
-            return;
+            return false;
         }
         if (role === 'user' && pendingText && !hasFiles && !hasImages) {
-            if (await this.maybeHandleKernelConfigIntent(pendingText)) return;
+            if (await this.maybeHandleKernelConfigIntent(pendingText)) return true;
         }
         this.ensureConversationId();
         this.liveGuidanceLastReceipt = null;
@@ -12292,7 +12896,9 @@ let vue_methods = {
             } catch (error) {
                 console.error('Upload chat documents failed:', error);
                 showNotification(error?.message || this.t('file_upload_failed'), 'error');
-                fileLinks = [];
+                this.isTyping = false;
+                this.stopTimer();
+                return false;
             }
         }
 
@@ -12307,7 +12913,9 @@ let vue_methods = {
             } catch (error) {
                 console.error('Upload chat images failed:', error);
                 showNotification(error?.message || this.t('file_upload_failed'), 'error');
-                imageLinks = [];
+                this.isTyping = false;
+                this.stopTimer();
+                return false;
             }
         }
 
@@ -12317,15 +12925,29 @@ let vue_methods = {
         this.fileLinks = this.fileLinks.concat(fileLinks_list)
 
         // --- 推送用户消息到界面 ---
-        this.messages.push({
+        const submittedMessage = {
             id: Date.now() + Math.random(),
             role: role,
             content: userInput,
             fileLinks: fileLinks,
             fileLinks_content: fileLinks_content,
             imageLinks: imageLinks || [],
-            agentName: this.memorySettings.userName || 'User' 
-        });
+            agentName: this.memorySettings.userName || 'User',
+            conversationId: this.conversationId,
+            identity: { id: '', name: this.memorySettings.userName || 'User', image: '', text: '', kind: 'user', source: 'message-snapshot' },
+        };
+        this.messages.push(submittedMessage);
+        if (typeof this.createConversationCheckpointContext === 'function') {
+            const submissionCheckpoint = this.createConversationCheckpointContext();
+            if (!await this.checkpointConversation(submissionCheckpoint, true)) {
+                const index = this.messages.indexOf(submittedMessage);
+                if (index >= 0) this.messages.splice(index, 1);
+                const unsaved = this.conversations.find((item) => String(item.id) === submissionCheckpoint.conversationId);
+                if (unsaved?.recovery?.requestId === submissionCheckpoint.requestId) unsaved.recovery.state = 'canceled';
+                this.isTyping = false; this.stopTimer();
+                return false;
+            }
+        }
 
         this.sendMessagesToExtension();
         this.files = [];
@@ -12337,6 +12959,10 @@ let vue_methods = {
         // --- 调度逻辑：群聊 vs 单聊 ---
         this.isSending = true; 
         this.abortController = new AbortController(); 
+        const dispatchController = this.abortController;
+        const dispatchConversationId = String(this.conversationId || '');
+        /** 群聊调度和收尾仍归属原控制器与会话。 / Group dispatch and cleanup remain owned by the original controller and conversation. */
+        const ownsDispatch = () => this.abortController === dispatchController && String(this.conversationId || '') === dispatchConversationId;
         this.startLiveGuidancePolling();
 
         try {
@@ -12352,7 +12978,7 @@ let vue_methods = {
 
                     // 遍历打乱后的列表
                     for (const targetId of executionList) {
-                        if (this.abortController.signal.aborted) break;
+                        if (dispatchController.signal.aborted || !ownsDispatch()) break;
 
                         let agentDisplayName = "Unknown";
                         
@@ -12369,6 +12995,8 @@ let vue_methods = {
 
                         // 调用生成函数
                         await this.generateAIResponse(targetId, agentDisplayName);
+                        const connection = this.getConversationConnectionState?.();
+                        if (connection && connection.state !== 'idle') break;
                     }
                 } else {
                 // == 单聊模式 ==
@@ -12381,21 +13009,30 @@ let vue_methods = {
         } catch (e) {
             console.error("Chat dispatch error:", e);
         } finally {
-            this.stopLiveGuidancePolling();
-            await this.refreshLiveGuidanceStatus(true);
-            this.isTyping = false;
-            this.isSending = false;
-            this.abortController = null;
-            await this.autoSaveSettings();
-            await this.saveConversations();
+            if (ownsDispatch()) {
+                this.stopLiveGuidancePolling();
+                await this.refreshLiveGuidanceStatus(true);
+                if (ownsDispatch()) { this.isTyping = false; this.isSending = false; this.abortController = null; }
+            }
+            try { await this.autoSaveSettings(); } catch (error) { console.error('Settings save after accepted chat failed:', error); }
+            try { await this.saveConversations(); }
+            catch (error) { this.conversationRecoverySaveError = { conversationId: String(submittedMessage.conversationId || ''), message: error?.message || '会话保存失败 / Conversation save failed.' }; }
         }
+        return true;
     },
 
 
     // ==========================================
     // 2. AI 生成与流式处理函数（支持 Human-in-the-loop 审批）
     // ==========================================
+    /** 按消息固化身份并记录真实流事件；snapshot identity and retain authoritative stream activity per message. */
     async generateAIResponse(targetAgentId, agentDisplayName = null, isResume = false) {
+        const generationController = this.abortController;
+        const recoveryContext = typeof this.createConversationCheckpointContext === 'function' ? this.createConversationCheckpointContext(targetAgentId, agentDisplayName) : null;
+        const generationConversationId = String(this.conversationId || '');
+        let streamFinished = false;
+        let connectionRequestStarted = false;
+        let connectionStreamStarted = false;
         this.startTimer(); 
         this.voiceStack = ['default']; 
         let tts_buffer = '';
@@ -12403,7 +13040,7 @@ let vue_methods = {
         this.cur_voice = 'default';
         
         const toolCallStack = [];
-        // 内部函数：准备发送给 API 的消息历史
+        /** 只在发送副本中清理未配对协议，原消息保留完整恢复回执。 / Clean unpaired protocol only in the request copy while retaining complete recovery receipts in original messages. */
         const prepareMessages = (msgs) => {
             const rawMessages = msgs.flatMap(msg => {
 
@@ -12473,11 +13110,17 @@ let vue_methods = {
 
             // ID 修复逻辑 (保持原样 + 补充兜底防止 missing field id)
             const sanitized =[];
+            const confirmedToolIds = new Set(rawMessages.filter((item) => item.role === 'tool' && item.tool_call_id).map((item) => String(item.tool_call_id)));
             for (let i = 0; i < rawMessages.length; i++) {
                 const current = sanitizeProtocolMessage(
-                    rawMessages[i],
+                    JSON.parse(JSON.stringify(rawMessages[i])),
                     rawMessages[i]?.role === 'tool' ? 'tool' : `tool_call_${i + 1}`
                 );
+                if (Array.isArray(current.tool_calls)) {
+                    current.tool_calls = current.tool_calls.filter((call) => call.id && confirmedToolIds.has(String(call.id)));
+                    if (!current.tool_calls.length) delete current.tool_calls;
+                    if (!current.tool_calls && !current.content) continue;
+                }
                 if (current.role === 'tool') {
                     let prev = sanitized.length > 0 ? sanitized[sanitized.length - 1] : null;
                     if (!prev || prev.role !== 'assistant') {
@@ -12505,6 +13148,9 @@ let vue_methods = {
         };
 
         let messagesPayload = prepareMessages(this.messages);
+        if (this._conversationRecoveryContinuation?.conversationId === generationConversationId) {
+            messagesPayload.push({ role: 'user', content: '继续上次意外中断的回复，衔接已保存的正文和上下文。已确认的工具结果与任务 ID 均保留在上下文中；不要重复执行已完成的操作，也不要重新创建已有任务。 / Continue the interrupted reply from the saved text and context. Confirmed tool results and task IDs are retained; do not repeat completed operations or recreate existing tasks.' });
+        }
         console.log(messagesPayload);
         let currentMsg;
 
@@ -12521,10 +13167,18 @@ let vue_methods = {
             // 此时 backend_content 已经包含了 tool_result (由 processToolApproval 插入)
             // messagesPayload 需要包含这个最新的状态，prepareMessages 已经处理了 this.messages，所以上面的 messagesPayload 是对的
         } else {
+            const roleId = String(targetAgentId || '').startsWith('memory/')
+                ? String(targetAgentId).slice(7)
+                : (targetAgentId === 'openxnet-model' && this.memorySettings?.is_memory ? String(this.memorySettings.selectedMemory || '') : '');
+            const roleRecord = roleId ? (this.memories || []).find((item) => String(item?.id || '') === roleId) : null;
+            const identityName = roleRecord?.name || agentDisplayName || 'Assistant';
             const newMsgData = {
                 id: Date.now() + Math.random(),
                 role: 'assistant',
                 agentName: agentDisplayName, 
+                conversationId: this.conversationId || '',
+                identity: { id: roleRecord ? roleId : String(targetAgentId || ''), name: identityName, image: roleRecord?.avatar || '', text: '', kind: roleRecord ? 'role' : 'assistant', source: 'message-snapshot' },
+                memoryContext: [],
                 content: '',
                 pure_content: '', 
                 backend_content: [{ role: 'assistant', content: '' }],
@@ -12549,6 +13203,11 @@ let vue_methods = {
         }
 
         if (!Array.isArray(currentMsg.activityLog)) currentMsg.activityLog = [];
+        if (recoveryContext) recoveryContext.assistantMessageId = currentMsg.id;
+        const connectionContext = this.beginConversationConnection?.(recoveryContext, currentMsg) || null;
+        /** 只允许原请求改变当前视图中的发送状态。 / Only the owning request may change sending state in the current view. */
+        const ownsGenerationView = () => String(this.conversationId || '') === generationConversationId
+            && (!connectionContext || this.conversationConnectionStates?.[generationConversationId]?.requestId === connectionContext.requestId);
         if (!currentMsg.activityStartedAt) currentMsg.activityStartedAt = Date.now();
         currentMsg.activityEndedAt = null;
 
@@ -12564,8 +13223,10 @@ let vue_methods = {
             audioProcess = audioPromise;
         }
 
-        const escapeHtml = (text) => {
-            if (!text) return '';
+        /** 结构化回执仅在旧正文视图转为安全文本，原对象保留在活动中。 / Convert structured receipts to safe legacy display text while retaining activity objects. */
+        const escapeHtml = (value) => {
+            if (value === undefined || value === null) return '';
+            const text = typeof value === 'string' ? value : JSON.stringify(value);
             return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         };
 
@@ -12618,6 +13279,7 @@ let vue_methods = {
             if (normalized.includes('web_search') || normalized.includes('search')) return query ? `search ${query}` : name;
             return raw || name;
         };
+        /** 规范展示字段但保留执行详情；normalize display fields without dropping execution details. */
         const normalizeActivityStep = (step) => ({
             id: String(step.id || `activity-${nowMs()}-${Math.random().toString(36).slice(2, 7)}`),
             kind: step.kind || 'status',
@@ -12625,6 +13287,16 @@ let vue_methods = {
             label: step.label || '',
             title: step.title || '',
             detail: compactActivityText(step.detail || '', 240),
+            input: step.input,
+            output: step.output,
+            error: step.error,
+            toolCallId: step.toolCallId || undefined,
+            toolName: step.toolName || undefined,
+            fileChanges: Array.isArray(step.fileChanges) ? step.fileChanges : undefined,
+            executionEvent: step.executionEvent && typeof step.executionEvent === 'object' ? step.executionEvent : undefined,
+            agentId: step.agentId || undefined,
+            taskId: step.taskId || undefined,
+            taskStatus: step.taskStatus || undefined,
             startedAt: Number(step.startedAt || nowMs()),
             updatedAt: Number(step.updatedAt || nowMs()),
             endedAt: step.endedAt ? Number(step.endedAt) : null,
@@ -12639,6 +13311,7 @@ let vue_methods = {
             }
             return currentMsg.activityLog;
         };
+        /** 按调用ID更新完整记录；upsert complete records by invocation identity. */
         const upsertActivityStep = (step) => {
             const log = ensureActivityLog();
             const normalized = normalizeActivityStep(step);
@@ -12649,7 +13322,7 @@ let vue_methods = {
                 log.push(normalized);
             }
             currentMsg.activityUpdatedAt = nowMs();
-            currentMsg.activityLog = log.slice(-12);
+            currentMsg.activityLog = [...log];
         };
         const updateThinkingActivity = (status, title) => {
             const zh = this.isCurrentLanguageZh();
@@ -12665,7 +13338,8 @@ let vue_methods = {
                 endedAt: running ? null : nowMs(),
             });
         };
-        const recordToolActivity = (toolCallId, toolName, rawArgs, status = 'running', detail = '') => {
+        /** 保存真实参数/结果和任务引用；retain actual arguments, results, and task references. */
+        const recordToolActivity = (toolCallId, toolName, rawArgs, status = 'running', detail = '', evidence = {}) => {
             const zh = this.isCurrentLanguageZh();
             const id = `tool-${toolCallId || toolName || nowMs()}`;
             const existing = ensureActivityLog().find((item) => item && item.id === id);
@@ -12679,16 +13353,41 @@ let vue_methods = {
                     : (status === 'done' ? (zh ? '已运行' : 'Ran') : (zh ? '正在运行' : 'Running')),
                 title,
                 detail,
+                input: rawArgs === '' || rawArgs === undefined ? (existing?.input ?? '') : rawArgs,
+                output: evidence.output === undefined ? existing?.output : evidence.output,
+                error: evidence.error === undefined ? existing?.error : evidence.error,
+                toolCallId: String(toolCallId || existing?.toolCallId || ''),
+                toolName: toolName && toolName !== 'tool_result_stream' ? toolName : (existing?.toolName || ''),
+                fileChanges: Array.isArray(evidence.fileChanges) ? evidence.fileChanges : existing?.fileChanges,
+                executionEvent: evidence.executionEvent || existing?.executionEvent,
+                agentId: existing?.agentId,
+                taskId: existing?.taskId,
                 updatedAt: nowMs(),
-                endedAt: status === 'running' ? null : nowMs(),
+                endedAt: ['running', 'pending', 'awaiting_approval'].includes(status) ? null : nowMs(),
             });
+            if (evidence.taskRef?.taskId) {
+                const reference = { ...evidence.taskRef };
+                if (!Array.isArray(currentMsg.taskRefs)) currentMsg.taskRefs = [];
+                const referenceIndex = currentMsg.taskRefs.findIndex((item) => item.taskId === reference.taskId);
+                if (referenceIndex < 0) currentMsg.taskRefs.push(reference);
+                else currentMsg.taskRefs.splice(referenceIndex, 1, reference);
+                if (reference.automation) return;
+                upsertActivityStep({
+                    id: `task-${reference.taskId}`, kind: 'subagent', status: reference.status || 'unknown',
+                    title: reference.title || reference.taskId, taskId: reference.taskId,
+                    detail: this.isCurrentLanguageZh() ? '任务中心返回的状态；打开任务查看最新进度' : 'Task Center receipt; open the task for current progress',
+                    startedAt: nowMs(), updatedAt: nowMs(),
+                    endedAt: ['completed', 'failed', 'cancelled'].includes(reference.status) ? nowMs() : null,
+                });
+            }
         };
-        const finishOpenActivities = () => {
+        /** 终止无回执记录但不宣称成功；close unresolved activity without inventing success. */
+        const finishOpenActivities = (reason = 'unknown') => {
             const log = ensureActivityLog();
             const endedAt = nowMs();
             currentMsg.activityEndedAt = endedAt;
             currentMsg.activityLog = log.map((item) => {
-                if (!item || item.status !== 'running') return item;
+                if (!item || item.status !== 'running' || item.kind === 'subagent') return item;
                 if (item.kind === 'thinking') {
                     return {
                         ...item,
@@ -12701,8 +13400,8 @@ let vue_methods = {
                 }
                 return {
                     ...item,
-                    status: 'done',
-                    label: this.isCurrentLanguageZh() ? '已运行' : 'Ran',
+                    status: reason,
+                    label: this.isCurrentLanguageZh() ? '结果未确认' : 'Result unconfirmed',
                     endedAt,
                     updatedAt: endedAt,
                 };
@@ -12712,6 +13411,8 @@ let vue_methods = {
         updateThinkingActivity('running', this.isCurrentLanguageZh() ? '思考下一步' : 'Thinking about the next step');
 
         try {
+            if (recoveryContext && !await this.checkpointConversation(recoveryContext, true)) throw new Error('回复尚未安全保存，未发送模型请求。 / The reply could not be saved; no model request was sent.');
+            connectionRequestStarted = true;
             const response = await window.openxnetChatFetch(`/v1/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -12722,32 +13423,39 @@ let vue_methods = {
                     fileLinks: this.fileLinks,
                     asyncToolsID: this.asyncToolsID || [],
                     reasoning_effort: this.reasoning_effort,
-                    conversationId: this.conversationId || '',
-                    conversation_id: this.conversationId || '',
+                    conversationId: generationConversationId,
+                    conversation_id: generationConversationId,
                 }),
-                signal: this.abortController.signal 
+                signal: generationController?.signal
             });
             
             if (!response.ok) {
                 let errText = await response.text();
+                let errCode;
                 try {
                     const errObj = JSON.parse(errText);
+                    errCode = errObj.error?.code || errObj.code;
                     errText = errObj.error?.message || errText;
                 } catch(e) {}
-                throw new Error(errText);
+                const error = new Error(errText); error.statusCode = response.status;
+                error.code = errCode;
+                throw error;
             }
             
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
                 let errText = await response.text();
+                let errCode;
                 try {
                     const errObj = JSON.parse(errText);
+                    errCode = errObj.error?.code || errObj.code;
                     errText = errObj.error?.message || errText;
                 } catch(e) {}
-                throw new Error(errText);
+                const error = new Error(errText); error.code = errCode; throw error;
             }
 
             const reader = response.body.getReader();
+            connectionStreamStarted = true;
             const decoder = new TextDecoder();
             let buffer = '';
 
@@ -12763,10 +13471,50 @@ let vue_methods = {
                     
                     if (eventData.startsWith('data: ')) {
                         const jsonStr = eventData.slice(6).trim();
-                        if (jsonStr === '[DONE]') break;
+                        if (jsonStr === '[DONE]') { streamFinished = true; break; }
                         const parsed = JSON.parse(jsonStr);
+                        if (parsed.error) {
+                            const error = new Error(typeof parsed.error === 'string' ? parsed.error : (parsed.error.message || 'Response stream error'));
+                            error.code = parsed.error?.code; error.statusCode = parsed.error?.statusCode ?? parsed.error?.status ?? parsed.status;
+                            error.cancelled = parsed.error?.cancelled === true;
+                            throw error;
+                        }
+                        if (parsed.choices?.some((choice) => ['stop', 'length', 'content_filter'].includes(choice.finish_reason))) streamFinished = true;
+                        if (parsed.usage && Number.isFinite(parsed.usage.prompt_tokens)) {
+                            currentMsg.contextUsage = { promptTokens: parsed.usage.prompt_tokens, source: 'provider', actual: true };
+                        }
                         const delta = parsed.choices?.[0]?.delta;
                         if (!delta) continue;
+                        if (delta.memory_context && delta.memory_context.schema === 'openxnet.chat-memory-context.v1'
+                            && String(delta.memory_context.conversationId || '') === String(currentMsg.conversationId || '')) {
+                            if (!Array.isArray(currentMsg.memoryContext)) currentMsg.memoryContext = [];
+                            const receipt = delta.memory_context;
+                            const existingReceipt = currentMsg.memoryContext.findIndex((item) => item.id === receipt.id);
+                            if (existingReceipt < 0) currentMsg.memoryContext.push(receipt);
+                            else currentMsg.memoryContext.splice(existingReceipt, 1, receipt);
+                        }
+                        if (delta.tool_complete?.id) {
+                            const completion = delta.tool_complete;
+                            const prior = ensureActivityLog().find((item) => item.id === `tool-${completion.id}`);
+                            const aliases = { completed: 'done', failed: 'error', cancelled: 'cancelled', interrupted: 'interrupted' };
+                            const status = aliases[completion.status] || completion.status || (['error', 'cancelled', 'interrupted'].includes(prior?.status) ? prior.status : 'done');
+                            recordToolActivity(completion.id, completion.name || '', '', status, '', {
+                                fileChanges: completion.fileChanges ?? completion.file_changes ?? delta.fileChanges ?? delta.file_changes,
+                                executionEvent: completion.executionEvent ?? completion.execution_event,
+                            });
+                            continue;
+                        }
+                        /** 仅把带真实调用 ID 的文件事件归到当前消息，不从模型文本猜测。 / Attach file events with actual invocation IDs to this message without inferring them from model text. */
+                        const fileEvent = delta.file_change || delta.execution_event || delta.executionEvent;
+                        if (fileEvent && (fileEvent.type === 'file_change' || fileEvent.item?.type === 'file_change' || delta.file_change)) {
+                            const invocation = delta.tool_call_id || fileEvent.tool_call_id || fileEvent.toolCallId;
+                            if (invocation) {
+                                const existing = ensureActivityLog().find((item) => item.id === `tool-${invocation}`);
+                                const rawStatus = fileEvent.status || fileEvent.item?.status;
+                                const aliases = { completed: 'done', failed: 'error', in_progress: 'running', queued: 'pending' };
+                                recordToolActivity(invocation, fileEvent.tool_name || fileEvent.toolName || existing?.toolName || '', '', aliases[rawStatus] || rawStatus || existing?.status || 'unknown', '', { executionEvent: fileEvent });
+                            }
+                        }
 
                         if (currentMsg.content === '' && !isResume) { // 只有非 Resume 或者是新内容开始时才算延迟
                             this.stopTimer(); 
@@ -12842,7 +13590,10 @@ let vue_methods = {
                             const blockId = `tool-call-${toolCallId}`;
                             const existingBlock = currentMsg.content.includes(`id="${blockId}"`);
                             const displayArgs = escapeHtml(progress.arguments);
-                            recordToolActivity(toolCallId, progress.name, progress.arguments, 'running');
+                            recordToolActivity(toolCallId, progress.name, progress.arguments, 'running', '', {
+                                fileChanges: progress.fileChanges ?? progress.file_changes,
+                                executionEvent: progress.executionEvent ?? progress.execution_event,
+                            });
                             updateThinkingActivity('running', this.isCurrentLanguageZh() ? '等待工具结果' : 'Waiting for tool result');
                             
                             if (!existingBlock) {
@@ -12888,7 +13639,10 @@ let vue_methods = {
                                     name: toolName, 
                                     resolved: false 
                                 });
-                                recordToolActivity(toolCallId, toolName, tool.content || '', 'running');
+                                recordToolActivity(toolCallId, toolName, tool.content ?? '', 'running', '', {
+                                    fileChanges: delta.fileChanges ?? delta.file_changes ?? tool.fileChanges ?? tool.file_changes,
+                                    executionEvent: delta.executionEvent ?? delta.execution_event ?? tool.executionEvent ?? tool.execution_event,
+                                });
                                 updateThinkingActivity('running', this.isCurrentLanguageZh() ? '等待工具结果' : 'Waiting for tool result');
                             } 
                             else {
@@ -12912,8 +13666,17 @@ let vue_methods = {
                                     toolCallId,
                                     toolName,
                                     '',
-                                    tool.type === 'error' ? 'error' : 'done',
-                                    tool.type === 'error' ? compactActivityText(tool.content || '', 160) : ''
+                                    ['done', 'error', 'pending', 'awaiting_approval', 'unknown'].includes(delta.tool_status)
+                                        ? delta.tool_status
+                                        : (tool.type === 'error' ? 'error' : (tool.type === 'tool_result_stream' ? 'running' : (tool.type === 'tool_result' ? 'done' : 'awaiting_approval'))),
+                                    tool.type === 'error' ? compactActivityText(tool.content || '', 160) : '',
+                                    { output: tool.type === 'tool_result_stream'
+                                        ? `${ensureActivityLog().find((item) => item.id === `tool-${toolCallId}`)?.output || ''}${tool.content || ''}`
+                                        : (tool.type === 'tool_result' ? tool.content : undefined),
+                                      error: tool.type === 'error' ? tool.content : undefined,
+                                      fileChanges: delta.fileChanges ?? delta.file_changes ?? tool.fileChanges ?? tool.file_changes,
+                                      executionEvent: delta.executionEvent ?? delta.execution_event ?? tool.executionEvent ?? tool.execution_event,
+                                      taskRef: delta.task_ref && typeof delta.task_ref.taskId === 'string' ? delta.task_ref : undefined }
                                 );
                                 updateThinkingActivity('running', this.isCurrentLanguageZh() ? '整理工具结果' : 'Reviewing tool result');
                             }
@@ -12949,6 +13712,7 @@ let vue_methods = {
                             }
 
                             if (isApproval && approvalData) {
+                                recordToolActivity(toolCallId, toolName, JSON.stringify(approvalData.tool_params || {}), 'awaiting_approval');
                                 if (this.isThinkOpen) { currentMsg.content += '</div>\n\n'; this.isThinkOpen = false; }
                                 
                                 const blockId = `approval-${toolCallId}`;
@@ -13083,7 +13847,7 @@ let vue_methods = {
                                 } else if (tool.type === 'tool_result' || tool.type === 'tool_result_stream' || tool.type === 'error') {
                                     const toolContent = (this.toolsSettings.hideToolResults.enabled && tool.type === 'tool_result') 
                                         ? '<hide to save token>' 
-                                        : (tool.content || '');
+                                        : (typeof tool.content === 'string' ? tool.content : JSON.stringify(tool.content ?? ''));
                                     
                                     // 【修复】：在 Resume 模式下，如果 backend_content 已经有了这个 ID 的占位符（来自 Approval），应该更新它而不是 push 新的
                                     let updated = false;
@@ -13136,10 +13900,13 @@ let vue_methods = {
                         }
 
                         this.sendMessagesToExtension();
+                        if (recoveryContext) void this.checkpointConversation(recoveryContext);
                     }
                 }
             }
-            // ... (流结束后的处理保持原样)
+            // EOF并非正常结束回执，保留此前文本和工具记录。 / EOF alone is not a completion receipt; retain preceding text and tool records.
+            if (!streamFinished) { const error = new Error('Response stream interrupted before completion'); error.code = 'STREAM_INTERRUPTED'; throw error; }
+            if (connectionContext) this.setConversationConnectionFeedback(connectionContext, { state: 'idle', kind: '', httpStatus: null, detail: '', retryable: false });
             
             if (tts_buffer.trim() && this.ttsSettings.enabled) {
                 currentMsg.chunks_voice.push(this.cur_voice);
@@ -13147,7 +13914,8 @@ let vue_methods = {
             }
             
             finishOpenActivities();
-            currentMsg.generationFinished = true;
+            currentMsg.generationFinished = streamFinished;
+            if (recoveryContext) recoveryContext.state = streamFinished ? 'completed' : 'interrupted';
                         
             this.$nextTick(() => {
                 setTimeout(() => {
@@ -13171,9 +13939,16 @@ let vue_methods = {
             }
 
         } catch (error) {
-            console.error(error);
+            const failure = this.classifyConversationConnectionFailure?.(error, { online: this.conversationNetworkOnline, userCanceled: !!generationController?.signal?.aborted || error?.cancelled === true, streamStarted: connectionStreamStarted, beforeRequest: !connectionRequestStarted })
+                || { kind: error.name === 'AbortError' ? 'canceled' : 'transport', detail: 'transport_unavailable', retryable: false };
+            const canceled = failure.kind === 'canceled';
+            const safeMessage = window.OpenXnetConversationModel?.connectionFeedbackMessage?.({ ...failure, state: 'interrupted' }, this.isCurrentLanguageZh()) || (this.isCurrentLanguageZh() ? '连接中断，当前进度已保留。' : 'Connection interrupted. Your progress is preserved.');
+            if (connectionContext) this.setConversationConnectionFeedback(connectionContext, { ...failure, state: canceled ? 'idle' : failure.kind === 'offline' ? 'offline' : 'interrupted' });
+            if (recoveryContext) recoveryContext.state = canceled ? 'canceled' : 'interrupted';
+            if (currentMsg) currentMsg.generationFinished = canceled;
             if (currentMsg) {
-                if (error.name === 'AbortError') {
+                if (canceled) {
+                    finishOpenActivities('interrupted');
                     updateThinkingActivity('done', this.isCurrentLanguageZh() ? '已停止生成' : 'Stopped');
                 } else {
                     finishOpenActivities();
@@ -13182,7 +13957,7 @@ let vue_methods = {
                         kind: 'error',
                         status: 'error',
                         label: this.isCurrentLanguageZh() ? '发生错误' : 'Error',
-                        title: error?.message || 'response error',
+                        title: safeMessage,
                         startedAt: Date.now(),
                         updatedAt: Date.now(),
                         endedAt: Date.now(),
@@ -13190,85 +13965,30 @@ let vue_methods = {
                 }
                 currentMsg.activityEndedAt = Date.now();
             }
-            if (error.name !== 'AbortError') {
-                showNotification(error.message, 'error');
-                
-                // 【满足需求】：后端返回错误时，助手消息填入占位文本 "response error"
-                if (currentMsg) {
-                    const fallbackText = 'response error';
-                    if (!currentMsg.pure_content && currentMsg.backend_content.length <= 1) {
-                        currentMsg.content = fallbackText;
-                        currentMsg.pure_content = fallbackText;
-                        currentMsg.backend_content = [{ role: 'assistant', content: fallbackText }];
-                    } else {
-                        currentMsg.content += `\n\n<div class="highlight-block-error">${fallbackText}</div>`;
-                        
-                        // 移除最后一个 assistant 块里可能未完成的 tool_calls，防止破坏后续 API 的上下文结构导致二次报错
-                        const lastBackend = currentMsg.backend_content[currentMsg.backend_content.length - 1];
-                        if (lastBackend && lastBackend.role === 'assistant' && lastBackend.tool_calls) {
-                            delete lastBackend.tool_calls;
-                        }
-                        
-                        currentMsg.backend_content.push({ role: 'assistant', content: fallbackText });
-                    }
-                }
-            }
+            // 错误状态独立于模型正文，不追加伪造回答或修改工具协议。 / Keep failures separate from model text without appending fabricated answers or changing tool protocol.
+            if (!canceled && failure.kind === 'application' && ownsGenerationView()) showNotification(safeMessage, 'error');
             if (audioResolve) audioResolve();
         } finally {
 
-            this.isSending = false;
-            this.isTyping = false;
-            this.saveConversations();
+            if (ownsGenerationView()) { this.isSending = false; this.isTyping = false; }
             this.voiceStack = ['default'];
             if (this.allBriefly) currentMsg.briefly = true;
             
-            // Conversation saving logic...
-            if (!this.conversationId) {
-                this.conversationId = uuid.v4();
-            }
-            const currentProvider = typeof this.getPrototypeCurrentMainProvider === 'function'
-                ? this.getPrototypeCurrentMainProvider()
-                : null;
-            const conv = this.conversations.find(conv => conv.id === this.conversationId);
-            if (!conv) {
-                const newConv = {
-                    id: this.conversationId,
-                    title: this.generateConversationTitle(messagesPayload),
-                    mainAgent: this.mainAgent,
-                    timestamp: Date.now(),
-                    messages: this.messages,
-                    fileLinks: this.fileLinks,
-                    system_prompt: this.system_prompt,
-                    selectedProvider: String(this.settings?.selectedProvider || '').trim(),
-                    model: String(this.settings?.model || '').trim(),
-                    providerVendor: String(currentProvider?.vendor || '').trim(),
-                    providerName: typeof this.getPrototypeProviderDisplayName === 'function'
-                        ? this.getPrototypeProviderDisplayName(currentProvider)
-                        : String(currentProvider?.vendor || '').trim(),
-                };
-                this.conversations.unshift(newConv);
-            } else {
-                conv.messages = this.messages;
-                conv.timestamp = Date.now();
-                conv.fileLinks = this.fileLinks;
-                conv.mainAgent = this.mainAgent;
-                conv.system_prompt = this.system_prompt;
-                conv.selectedProvider = String(this.settings?.selectedProvider || '').trim();
-                conv.model = String(this.settings?.model || '').trim();
-                conv.providerVendor = String(currentProvider?.vendor || '').trim();
-                conv.providerName = typeof this.getPrototypeProviderDisplayName === 'function'
-                    ? this.getPrototypeProviderDisplayName(currentProvider)
-                    : String(currentProvider?.vendor || '').trim();
-                if (!conv.title || conv.title === this.t('newChat')) {
-                    conv.title = this.generateConversationTitle(messagesPayload);
-                }
+            if (recoveryContext) await this.checkpointConversation(recoveryContext, true);
+            else await this.saveConversations();
+            if (recoveryContext && typeof this.publishChatCompletionNotice === 'function') await this.publishChatCompletionNotice(recoveryContext, currentMsg);
+            // 自动步骤仅核对已结束请求的状态，不重放模型或工具。 / Automatic follow-up only checks the ended request state; it never replays models or tools.
+            const connectionRecord = connectionContext && this.conversationConnectionStates?.[generationConversationId];
+            if (connectionRecord?.requestId === connectionContext?.requestId && connectionRecord?.state === 'interrupted' && connectionRecord.retryable
+                && String(this.conversationId || '') === generationConversationId && this.conversationNetworkOnline !== false) {
+                void this.checkConversationConnection?.(generationConversationId, connectionContext.requestId).catch(() => {});
             }
 
             if (this.ttsSettings.enabled && audioProcess) {
                 await audioProcess;
             }
 
-            this.isThinkOpen = false;
+            if (ownsGenerationView()) this.isThinkOpen = false;
             
             setTimeout(() => {
                 if (
@@ -13282,13 +14002,40 @@ let vue_methods = {
     },
 
     // === Human-in-the-loop 处理函数 (修复版：支持立即反馈) ===
+    /** 审批回执只更新对应消息；apply approval outcomes only to the owning message and conversation. */
     async processToolApproval(toolCallId, action) {
-        const currentMsg = this.messages[this.messages.length - 1];
-        if (!currentMsg) return;
+        if (!['once', 'always', 'deny'].includes(action) || this.isSending || this.isTyping) return false;
+        const currentMsg = this.messages.find((message) => (message.activityLog || []).some((step) => step.id === `tool-${toolCallId}` && step.status === 'awaiting_approval')
+            || String(message.content || '').includes(`id="approval-${toolCallId}"`));
+        if (!currentMsg || (currentMsg.conversationId && currentMsg.conversationId !== this.conversationId)) return false;
         
         const data = this.approvalMap[toolCallId];
+        if (!data) return false;
         const toolName = data?.tool_name || 'Tool';
         const blockId = `approval-${toolCallId}`;
+        let executionReceipt = null;
+        /** 将回执绑定本次审批，避免全局最后结果串入其他消息。 / Bind receipts to this approval instead of sharing a global last result across messages. */
+        const retainExecutionReceipt = (receipt) => { executionReceipt = receipt; };
+        /** 更新真实执行状态并保留参数；update actual execution state while preserving arguments. */
+        const updateApprovalActivity = (status, output = '', error = '') => {
+            const step = (currentMsg.activityLog || []).find((item) => item.id === `tool-${toolCallId}`);
+            if (!step) return;
+            const fileChanges = executionReceipt?.fileChanges ?? executionReceipt?.file_changes;
+            Object.assign(step, {
+                status, output: executionReceipt?.result ?? output, error,
+                toolCallId: String(toolCallId), toolName, input: data.tool_params ?? step.input,
+                updatedAt: Date.now(), endedAt: status === 'running' ? null : Date.now(),
+            });
+            if (Array.isArray(fileChanges)) step.fileChanges = fileChanges;
+            if (executionReceipt?.executionEvent || executionReceipt?.execution_event) step.executionEvent = executionReceipt.executionEvent || executionReceipt.execution_event;
+            const taskRef = executionReceipt?.taskRef || executionReceipt?.task_ref;
+            if (taskRef?.taskId) {
+                if (!Array.isArray(currentMsg.taskRefs)) currentMsg.taskRefs = [];
+                const index = currentMsg.taskRefs.findIndex((item) => item.taskId === taskRef.taskId);
+                if (index < 0) currentMsg.taskRefs.push({ ...taskRef });
+                else currentMsg.taskRefs.splice(index, 1, { ...taskRef });
+            }
+        };
 
         // --- 第一步：立即更新 UI 为“处理中”状态 ---
         const feedbackTitle = action === 'deny' ? this.t('denying') || 'Denying...' : `${this.t('executing') || 'Executing'} ${toolName}...`;
@@ -13299,24 +14046,28 @@ let vue_methods = {
         // 设置状态，防止用户重复点击其他按钮
         this.isSending = true; 
         this.isTyping = true;
-        this.abortController = new AbortController(); 
+        const approvalController = new AbortController();
+        this.abortController = approvalController;
+        updateApprovalActivity('running');
 
         try {
             // --- 第二步：执行实际的后端逻辑 ---
             let resultText = "";
             if (action === 'deny') {
                 if (data?.approval_id) {
-                    await this.resolveKernelApproval(data.approval_id, 'denied', 'user_denied');
+                    const resolution = await this.resolveKernelApproval(data.approval_id, 'denied', 'user_denied');
+                    if (resolution?.ok === false || resolution?.success === false) throw new Error('Approval resolution failed');
                     this.approvalCenterItems = this.approvalCenterItems.filter((approval) => approval.approval_id !== data.approval_id);
                 }
                 resultText = `User denied the execution of tool '${toolName}'.`;
             } else {
                 // 这里会等待较长时间
-                resultText = await this.executeToolBackend(toolName, data.tool_params, action, data?.approval_id || '', data?.trace_id || data?.kernel_trace_id || '');
+                resultText = await this.executeToolBackend(toolName, data.tool_params, action, data?.approval_id || '', data?.trace_id || data?.kernel_trace_id || '', retainExecutionReceipt);
                 if (data?.approval_id) {
                     this.approvalCenterItems = this.approvalCenterItems.filter((approval) => approval.approval_id !== data.approval_id);
                 }
             }
+            updateApprovalActivity(action === 'deny' ? 'cancelled' : 'done', resultText);
 
             // --- 第三步：后端返回结果后，将“处理中”替换为“最终结果” ---
             const className = action === 'deny' ? 'highlight-block-error' : 'highlight-block';
@@ -13341,13 +14092,25 @@ let vue_methods = {
             }
             
             // 触发下一轮生成
-            await this.generateAIResponse(this.mainAgent, currentMsg.agentName, true);
+            if (this.messages.includes(currentMsg) && (!currentMsg.conversationId || currentMsg.conversationId === this.conversationId)) {
+                const target = currentMsg.identity?.kind === 'role'
+                    ? `memory/${currentMsg.identity.id}` : (currentMsg.identity?.id || this.mainAgent);
+                await this.generateAIResponse(target, currentMsg.identity?.name || currentMsg.agentName, this.messages[this.messages.length - 1] === currentMsg);
+            }
+            return true;
 
         } catch (e) {
+            updateApprovalActivity('error', '', e?.message || 'Tool execution failed');
             console.error("Approval flow failed:", e);
             showNotification("Tool execution failed", 'error');
-            this.isSending = false;
-            this.isTyping = false;
+            return false;
+        } finally {
+            if (this.abortController === approvalController) {
+                this.isSending = false;
+                this.isTyping = false;
+                this.abortController = null;
+            }
+            await this.saveConversations();
         }
     },
 
@@ -13405,8 +14168,8 @@ let vue_methods = {
         }
     },
 
-    async executeToolBackend(name, params, type, approvalId = '', traceId = '') {
-        try {
+    /** 保留调用方需要的结构化回执，同时保持旧文本返回契约；preserve structured receipts for the caller while retaining the existing text return contract. */
+    async executeToolBackend(name, params, type, approvalId = '', traceId = '', onReceipt = null) {
             const res = await window.openxnetChatFetch('/execute_tool_manually', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -13416,13 +14179,13 @@ let vue_methods = {
                     approval_type: type,
                     approval_id: approvalId,
                     trace_id: traceId,
+                    conversationId: this.conversationId || '',
                 })
             });
             const json = await res.json();
-            return json.result || JSON.stringify(json);
-        } catch (e) {
-            return `System Error: ${e.message}`;
-        }
+            if (typeof onReceipt === 'function') onReceipt(json);
+            if (!res.ok || json.success !== true) throw new Error(String(json.result || json.message || 'Tool execution was not confirmed'));
+            return json.result === undefined || json.result === null ? '' : typeof json.result === 'string' ? json.result : JSON.stringify(json.result);
     },
     
     escapeHtml(text) {
@@ -13734,6 +14497,13 @@ let vue_methods = {
     },
     stopGenerate() {
       if (this.abortController) {
+        if (typeof this.createConversationCheckpointContext === 'function') {
+          const stoppedCheckpoint = this.createConversationCheckpointContext();
+          stoppedCheckpoint.state = 'canceled';
+          const stoppedMessage = this.messages.at(-1);
+          if (stoppedMessage?.role === 'assistant') { stoppedMessage.generationFinished = true; stoppedMessage.activityEndedAt = Date.now(); stoppedCheckpoint.assistantMessageId = stoppedMessage.id; }
+          void this.checkpointConversation(stoppedCheckpoint, true);
+        }
         this.abortController.abort();
         // --- [v0.5.3 P0-B] 通知后端中断 LLM 流式请求 ---
         if (this.conversationId) {
@@ -15644,49 +16414,40 @@ let vue_methods = {
       }));
     },
 
+    /** 顺序保存当前完整会话快照，保留失败并清理确认监听器。 / Save complete current conversation snapshots in order, preserving failures and cleaning acknowledgement listeners. */
     async saveConversations() {
-      const sanitizedConversations = this.getSanitizedConversations();
-      if (typeof window.openxnetDesktop?.saveLegacyRendererConversations === 'function') {
-        await window.openxnetDesktop.saveLegacyRendererConversations({
-          conversations: sanitizedConversations,
+      /** 真正发起写入时再取快照，避免较旧的排队快照覆盖新内容。 / Capture at actual write time so stale queued snapshots cannot overwrite newer content. */
+      const persist = async () => {
+        const sanitizedConversations = this.getSanitizedConversations();
+        if (typeof window.openxnetDesktop?.saveLegacyRendererConversations === 'function') {
+          const result = await window.openxnetDesktop.saveLegacyRendererConversations({ conversations: sanitizedConversations });
+          if (result === false || result?.success === false) throw new Error('会话保存失败 / Conversation save failed.');
+          return result;
+        }
+        if (!this.ws || this.ws.readyState !== 1) throw new Error('会话保存连接不可用 / Conversation storage connection unavailable.');
+        return new Promise((resolve, reject) => {
+          const socket = this.ws;
+          const correlationId = uuid.v4();
+          let timeout;
+          /** 一次保存结束后移除计时器和监听。 / Remove the timer and listener after one save finishes. */
+          const cleanup = () => { if (timeout) clearTimeout(timeout); socket.removeEventListener('message', handler); };
+          /** 仅接受本次写入的服务端确认。 / Accept only the server acknowledgement for this write. */
+          const handler = (event) => {
+            let response;
+            try { response = JSON.parse(event.data); } catch { return; }
+            if (response.correlationId !== correlationId) return;
+            if (response.type === 'conversations_saved') { cleanup(); resolve(true); }
+            if (response.type === 'save_error') { cleanup(); reject(new Error(response.message || '会话保存失败 / Conversation save failed.')); }
+          };
+          timeout = setTimeout(() => { cleanup(); reject(new Error('会话保存超时 / Conversation save timed out.')); }, 10000);
+          socket.addEventListener('message', handler);
+          try { socket.send(JSON.stringify({ type: 'save_conversations', data: { conversations: sanitizedConversations }, correlationId })); }
+          catch (error) { cleanup(); reject(error); }
         });
-        return;
-      }
-      return new Promise((resolve, reject) => {
-        const payload = {
-          conversations: sanitizedConversations
-        };
-        const correlationId = uuid.v4();
-        // 发送保存请求
-        this.ws.send(JSON.stringify({
-          type: 'save_conversations',
-          data: payload,
-          correlationId: correlationId // 添加唯一请求 ID
-        }));
-        // 设置响应监听器
-        const handler = (event) => {
-          const response = JSON.parse(event.data);
-          
-          // 匹配对应请求的确认消息
-          if (response.type === 'conversations_saved' && 
-              response.correlationId === correlationId) {
-            this.ws.removeEventListener('message', handler);
-            resolve();
-          }
-          
-          // 错误处理（根据后端实现）
-          if (response.type === 'save_error') {
-            this.ws.removeEventListener('message', handler);
-            reject(new Error('保存失败'));
-          }
-        };
-        // 设置 10 秒超时
-        const timeout = setTimeout(() => {
-          this.ws.removeEventListener('message', handler);
-          reject(new Error('保存超时'));
-        }, 10000);
-        this.ws.addEventListener('message', handler);
-      });
+      };
+      const write = Promise.resolve(this._conversationSaveQueue).catch(() => {}).then(persist);
+      this._conversationSaveQueue = write;
+      return write;
     },
 
     // 修改后的fetchModels方法
@@ -18694,12 +19455,13 @@ let vue_methods = {
       }
     },
     editMemory(id) {
-      const memory = this.memories.find(m => m.id === id);
+      const memory = Array.isArray(this.memories) ? this.memories.find(m => m?.id === id) : null;
       if (memory) {
-        this.newMemory = { ...memory };
-        if (this.newMemory.characterBook.length === 0){
+        this.newMemory = JSON.parse(JSON.stringify(memory));
+        if (!Array.isArray(this.newMemory.characterBook) || this.newMemory.characterBook.length === 0) {
           this.newMemory.characterBook = [{ keysRaw: '', content: '' }];
         }
+        if (!Array.isArray(this.newMemory.alternateGreetings)) this.newMemory.alternateGreetings = [];
         this.showAddMemoryDialog = true;
       }
     },
@@ -20316,6 +21078,34 @@ handleCreateSlackSeparator(val) {
       } catch (error) {
         console.error('Avatar upload error:', error);
         showNotification(error.message || 'Upload error', 'error');
+      }
+    },
+
+    /** 按稳定角色ID导入头像并在保存成功后更新；import an avatar by stable role ID and commit only after persistence succeeds. */
+    async importChatRoleAvatar(roleId, file) {
+      const id = String(roleId || '').trim();
+      const original = (this.memories || []).find((item) => String(item?.id || '') === id);
+      if (!id || !original || String(this.memorySettings?.selectedMemory || '') !== id) throw new Error('请先选择有效角色 / Select a valid role first.');
+      if (!file || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size <= 0 || file.size > 8 * 1024 * 1024) throw new Error('请选择 8MB 以内的 PNG/JPEG/WebP/GIF 图片 / Select a PNG/JPEG/WebP/GIF image under 8MB.');
+      if (this._chatRoleAvatarImportPending) throw new Error('头像正在保存 / Avatar save is in progress.');
+      if (!this.isElectron || typeof window.openxnetDesktop?.importSelectedArtifacts !== 'function' || typeof window.openxnetDesktop?.saveLegacyRendererSettings !== 'function') throw new Error('头像存储不可用 / Avatar storage unavailable.');
+      this._chatRoleAvatarImportPending = true;
+      try {
+        const upload = await this.uploadApplicationFiles([file]);
+        const image = String(upload?.fileLinks?.[0]?.path || '');
+        if (!upload?.success || !image) throw new Error('头像导入失败 / Avatar import failed.');
+        if (String(this.memorySettings?.selectedMemory || '') !== id || !(this.memories || []).includes(original)) throw new Error('角色已更改，请重试 / Role changed; please retry.');
+        const payload = JSON.parse(JSON.stringify(this.buildLegacyRendererSettingsPayload()));
+        payload.memories = payload.memories.map((item) => String(item?.id || '') === id ? { ...item, avatar: image } : item);
+        const saved = await window.openxnetDesktop.saveLegacyRendererSettings({ settings: payload });
+        const committed = saved?.schema === 'openxnet.legacy-renderer-state.v1'
+          ? saved.settings?.memories?.find((item) => String(item?.id || '') === id && item.avatar === image) : null;
+        if (!committed) throw new Error('头像保存未确认 / Avatar save was not confirmed.');
+        const index = (this.memories || []).findIndex((item) => String(item?.id || '') === id);
+        if (index >= 0) this.memories.splice(index, 1, { ...this.memories[index], avatar: image });
+        return { id, name: String(committed.name || original.name || ''), image, source: 'role-card', kind: 'role' };
+      } finally {
+        this._chatRoleAvatarImportPending = false;
       }
     },
 
@@ -24759,9 +25549,11 @@ stopTTSActivities() {
   },
 
   editTTS(name) {
+    const preset = this.ttsSettings?.newtts?.[name];
+    if (!preset || typeof preset !== 'object' || Array.isArray(preset)) return;
     this._pendingVoiceDraftCredentialFields?.clear();
     this._editingTTSName = name;
-    this.newTTSConfig = { ...this.ttsSettings.newtts[name] };
+    this.newTTSConfig = JSON.parse(JSON.stringify(preset));
     this.showAddTTSDialog = true;
   },
 
@@ -24781,7 +25573,9 @@ stopTTSActivities() {
     this.showAddAppearanceDialog = true;
   },
   editAppearance(name) {
-    this.newAppearanceConfig = { ...this.VRMConfig.newVRM[name] };
+    const preset = this.VRMConfig?.newVRM?.[name];
+    if (!preset || typeof preset !== 'object' || Array.isArray(preset)) return;
+    this.newAppearanceConfig = JSON.parse(JSON.stringify(preset));
     this.showAddAppearanceDialog = true;
   },
   deleteAppearance(name) {
@@ -28480,6 +29274,7 @@ async togglePlugin(plugin) {
         break;
       case 'guidance-list':
         query.set('conversation_id', payload.conversationId || '');
+        if (payload.runtimeId) query.set('runtime_id', payload.runtimeId);
         url = `/v1/kernel/guidance?${query}`;
         break;
       case 'guidance-add':
@@ -28492,7 +29287,16 @@ async togglePlugin(plugin) {
           trace_id: payload.traceId,
           mode: payload.mode,
           priority: payload.priority,
+          request_id: payload.requestId,
+          runtime_id: payload.runtimeId,
         };
+        break;
+      case 'guidance-edit':
+      case 'guidance-cancel':
+        url = `/v1/kernel/guidance/${operation === 'guidance-edit' ? 'edit' : 'cancel'}`;
+        method = 'POST';
+        body = { conversation_id: payload.conversationId, guidance_id: payload.guidanceId, request_id: payload.requestId, runtime_id: payload.runtimeId, expected_revision: payload.expectedRevision,
+          ...(operation === 'guidance-edit' ? { text: payload.text, mode: payload.mode, priority: payload.priority } : {}) };
         break;
       case 'config-intent': url = '/v1/kernel/config/intent'; method = 'POST'; body = { text: payload.text }; break;
       case 'config-apply':
@@ -28514,6 +29318,8 @@ async togglePlugin(plugin) {
     try {
       responsePayload = text ? JSON.parse(text) : {};
     } catch (error) {}
+    // 引导公开HTTP错误使用FastAPI detail包装；只解开声明的业务错误。 / Public guidance HTTP errors use FastAPI detail; unwrap only declared business errors.
+    if (['guidance-list', 'guidance-add', 'guidance-edit', 'guidance-cancel'].includes(operation) && responsePayload?.detail?.ok === false && typeof responsePayload.detail.error?.code === 'string' && typeof responsePayload.detail.error?.message === 'string') responsePayload = responsePayload.detail;
     return { ok: response.ok, status: response.status, payload: responsePayload };
   },
 
@@ -28532,11 +29338,13 @@ async togglePlugin(plugin) {
     return { ok: data?.ok !== false, status: data?.ok === false ? 422 : 200, payload: data };
   },
 
-  /** 执行固定 Kernel 操作；输入 operation 和载荷，返回成功数据；业务失败或边界错误时抛错且不吞掉失败原因。 */
+  /** 执行固定 Kernel 操作并保留结构化失败原因。 / Execute fixed Kernel operations and retain structured failure reasons. */
   async fetchKernelJson(operation, payload = {}) {
     const result = await this.fetchKernelPayload(operation, payload);
     if (!result.ok || result.payload?.ok === false) {
-      throw new Error(result.payload?.detail || result.payload?.error || result.payload?.reason || `Kernel status ${result.status}`);
+      const error = new Error(result.payload?.error?.message || result.payload?.detail || result.payload?.error || result.payload?.reason || `Kernel status ${result.status}`);
+      error.payload = result.payload; error.status = result.status;
+      throw error;
     }
     return result.payload;
   },
@@ -33691,8 +34499,11 @@ getApplicationSkillRuntime() {
   if (isElectron) throw new Error('Desktop Skill Runtime is unavailable.');
   return null;
 },
-// 1. 获取技能列表
+/** 读取本机技能目录并拒绝迟到结果。Read the local skill catalog and reject stale results. */
 async fetchSkills() {
+  const generation = this.skillCatalogGeneration = (this.skillCatalogGeneration || 0) + 1;
+  this.skillsLoading = true;
+  this.skillCatalogError = '';
   try {
     const runtime = this.getApplicationSkillRuntime();
     let data;
@@ -33703,9 +34514,17 @@ async fetchSkills() {
       if (!response.ok) throw new Error(response.statusText);
       data = await response.json();
     }
+    if (!Array.isArray(data?.skills)) throw new Error('技能目录响应无效');
+    if (generation !== this.skillCatalogGeneration) return false;
     this.skillsList = data.skills;
+    return true;
   } catch (error) {
-    showNotification(this.t('fetchSkillsFailed'), 'error');
+    if (generation !== this.skillCatalogGeneration) return false;
+    this.skillCatalogError = error?.message || this.t('fetchSkillsFailed');
+    showNotification(this.skillCatalogError, 'error');
+    return false;
+  } finally {
+    if (generation === this.skillCatalogGeneration) this.skillsLoading = false;
   }
 },
 
@@ -33859,29 +34678,42 @@ isSkillInProject(skillId) {
   return this.skillsInProject && this.skillsInProject.includes(skillId);
 },
 
-    // 1. 升级获取项目状态：顺便保存详细信息
+    /** 读取当前项目技能，切换项目后丢弃旧响应。Read project skills and discard responses for an earlier project. */
     async fetchProjectSkillsStatus() {
-      if (!this.CLISettings.cc_path) {
-        this.skillsInProject = [];
-        this.projectSkillsDetails = [];
-        return;
-      }
+      const generation = this.projectSkillsGeneration = (this.projectSkillsGeneration || 0) + 1;
+      const projectPath = String(this.CLISettings?.cc_path || '');
+      this.projectSkillsLoading = Boolean(projectPath);
+      this.projectSkillsError = '';
+      this.skillsInProject = [];
+      this.projectSkillsDetails = [];
+      if (!projectPath) return true;
       try {
         const runtime = this.getApplicationSkillRuntime();
+        let installedIds;
+        let projectSkills;
         if (runtime) {
           const data = await runtime.getApplicationProjectSkillStatus();
-          this.skillsInProject = data.installedIds || [];
-          this.projectSkillsDetails = data.projectSkills || [];
+          installedIds = data.installedIds;
+          projectSkills = data.projectSkills;
         } else {
-          const res = await fetch(`/api/skills/project-status?path=${encodeURIComponent(this.CLISettings.cc_path)}`);
-          if (res.ok) {
-            const data = await res.json();
-            this.skillsInProject = data.installed_ids || [];
-            this.projectSkillsDetails = data.project_skills || [];
-          }
+          const res = await fetch(`/api/skills/project-status?path=${encodeURIComponent(projectPath)}`);
+          if (!res.ok) throw new Error(`项目技能读取失败 (${res.status})`);
+          const data = await res.json();
+          installedIds = data.installed_ids;
+          projectSkills = data.project_skills;
         }
+        if (!Array.isArray(installedIds) || !Array.isArray(projectSkills)) throw new Error('项目技能响应无效');
+        if (generation !== this.projectSkillsGeneration || projectPath !== String(this.CLISettings?.cc_path || '')) return false;
+        this.skillsInProject = installedIds;
+        this.projectSkillsDetails = projectSkills;
+        return true;
       } catch (e) {
+        if (generation !== this.projectSkillsGeneration || projectPath !== String(this.CLISettings?.cc_path || '')) return false;
+        this.projectSkillsError = e?.message || '项目技能读取失败';
         console.error("获取项目技能状态失败", e);
+        return false;
+      } finally {
+        if (generation === this.projectSkillsGeneration) this.projectSkillsLoading = false;
       }
     },
 
@@ -33939,8 +34771,9 @@ isSkillInProject(skillId) {
       }
     },
 
-    // 4. 从全局删除（智能提示）
+    // 等待全局删除确认、写入和刷新结束。Await global deletion confirmation, mutation, and refresh.
     async removeGlobalSkill(skill) {
+      // 完成实际删除并保留错误通知。Complete deletion while preserving failure notifications.
       const execDelete = async () => {
         try {
           const runtime = this.getApplicationSkillRuntime();
@@ -33964,16 +34797,17 @@ isSkillInProject(skillId) {
 
       // 核心判断：如果项目里也没有了，说明这是彻底删除，必须警告！
       if (!skill.isProject) {
-        this.$confirm(this.t('deleteSkillConfirm'), this.t('warning'), { type: 'warning' })
+        return await this.$confirm(this.t('deleteSkillConfirm'), this.t('warning'), { type: 'warning' })
           .then(execDelete).catch(() => {});
       } else {
         // 项目里还有，属于安全操作，静默删除
-        execDelete();
+        return await execDelete();
       }
     },
 
-    // 5. 从项目删除（智能提示）
+    // 等待项目删除确认、写入和刷新结束。Await project deletion confirmation, mutation, and refresh.
     async removeProjectSkill(skill) {
+      // 完成实际删除并保留错误通知。Complete deletion while preserving failure notifications.
       const execDelete = async () => {
         try {
           const runtime = this.getApplicationSkillRuntime();
@@ -34001,11 +34835,11 @@ isSkillInProject(skillId) {
 
       // 核心判断：如果全局里也没有了，说明这是彻底删除，必须警告！
       if (!skill.isGlobal) {
-        this.$confirm('此操作将彻底删除该技能文件，是否继续？', 'Warning', { type: 'warning' })
+        return await this.$confirm('此操作将彻底删除该技能文件，是否继续？', 'Warning', { type: 'warning' })
           .then(execDelete).catch(() => {});
       } else {
         // 全局里还有，属于安全操作，静默删除
-        execDelete();
+        return await execDelete();
       }
     },
 
@@ -34157,42 +34991,56 @@ handleSkillsPolling(activeMenu, menu, tab) {
       installed: this.extensions.some(l => l.repository.trim() === r.repository.trim()),
     }));
   },
-// 预览技能
-async previewSkill(id) {
+/** 撤销技能预览并清空旧正文。Cancel pending skill previews and clear stale content. */
+clearSkillPreview() {
+  this.skillPreviewGeneration = (this.skillPreviewGeneration || 0) + 1;
+  this.activeSkillPreviewId = '';
+  this.activeSkillPreviewSource = 'global';
+  this.renderedSkillContent = '';
+  this.skillPreviewError = '';
+  this.skillPreviewLoading = false;
+  this.showSkillPreviewDialog = false;
+},
+/** 按明确来源预览技能，仅当前选择可更新界面。Preview a skill from its explicit source and update only the current selection. */
+async previewSkill(id, source = 'global') {
+  const generation = this.skillPreviewGeneration = (this.skillPreviewGeneration || 0) + 1;
   this.activeSkillPreviewId = String(id || '').trim();
+  this.activeSkillPreviewSource = source;
   this.showSkillPreviewDialog = true;
   this.skillPreviewLoading = true;
+  this.skillPreviewError = '';
   this.renderedSkillContent = '';
-
+  const skillId = this.activeSkillPreviewId;
+  const projectPath = String(this.CLISettings?.cc_path || '');
   try {
+    if (!skillId || !['global', 'project'].includes(source)) throw new Error('技能或来源无效');
     const runtime = this.getApplicationSkillRuntime();
     let data;
     if (runtime) {
-      data = await runtime.getApplicationSkillContent({ skillId: id });
+      data = await runtime.getApplicationSkillContent({ skillId, source });
     } else {
-      const response = await fetch(`/api/skills/${id}/content`);
+      if (source === 'project') throw new Error('浏览器模式暂不支持项目原文，请同步到本机后查看原文');
+      const response = await fetch(`/api/skills/${encodeURIComponent(skillId)}/content`);
       if (!response.ok) throw new Error('Fetch failed');
       data = await response.json();
     }
-    let rawContent = data.content || '';
-
-    // 1. 剥离 YAML Frontmatter (--- ... ---)
-    // 这样预览时不会显示冗余的元数据
+    if (generation !== this.skillPreviewGeneration) return false;
+    if (source === 'project' && projectPath !== String(this.CLISettings?.cc_path || '')) {
+      this.clearSkillPreview();
+      return false;
+    }
+    if (typeof data?.content !== 'string') throw new Error('技能正文响应无效');
+    const rawContent = data.content;
     const yamlRegex = /^---\s*\n([\s\S]*?)\n---\s*\n?/;
     const contentToRender = rawContent.replace(yamlRegex, '');
-
-    // 2. 使用你已有的 md 实例进行渲染
-    // 注意：这里直接调用 md.render。
-    // 如果你希望保持和聊天框完全一致的逻辑（含 LaTeX、think 标签处理等），
-    // 可以调用你写的 this.formatMessage(contentToRender)
     this.renderedSkillContent = this.formatMessage(contentToRender);
-
+    return true;
   } catch (error) {
-    this.activeSkillPreviewId = '';
-    showNotification(this.t('fetchFailed'), 'error');
-    this.showSkillPreviewDialog = false;
+    if (generation !== this.skillPreviewGeneration) return false;
+    this.skillPreviewError = error?.message || this.t('fetchFailed');
+    return false;
   } finally {
-    this.skillPreviewLoading = false;
+    if (generation === this.skillPreviewGeneration) this.skillPreviewLoading = false;
   }
 },
 
@@ -34251,14 +35099,9 @@ async openSkillsFolder() {
   }
 },
 
+/** 同时等待本机目录和项目安装状态刷新。Wait for both local catalog and project installation refreshes. */
 async handleRefreshSkills() {
-  this.skillsLoading = true;
-  try {
-    // 假设你已定义了 fetchSkills 方法来获取列表
-    await this.fetchSkills(); 
-  } finally {
-    this.skillsLoading = false;
-  }
+  return Promise.all([this.fetchSkills(), this.fetchProjectSkillsStatus()]);
 },
 
     // 打开编辑/新增对话框
@@ -37008,8 +37851,9 @@ async handleRefreshSkills() {
     },
 
     /** Replace the task-center list from one authoritative Core snapshot. */
-    applyApplicationTaskSnapshot(snapshot) {
+    applyApplicationTaskSnapshot(snapshot, options = {}) {
         const tasks = Array.isArray(snapshot?.tasks) ? snapshot.tasks : [];
+        this.observeTaskCompletionSnapshot?.(snapshot, options.notify === true);
         this.taskList = tasks.map((task) => this.mapApplicationTaskForRenderer(task));
     },
 
@@ -37944,6 +38788,21 @@ async handleRefreshSkills() {
   /** 读取事件治理中心发布配置；无输入，更新生产/比赛演练边界并返回公开能力。 */
   async loadCompetitionUiProfile() {
     const profile = await this.getApplicationCompetitionRuntime().getApplicationCompetitionUiProfile();
+    this.competitionRuntimeReadiness = {
+      agentTeamsConfigured: profile?.agentTeamsConfigured === true,
+      agentTeamsSetup: {
+        enabled: typeof profile?.agentTeamsEnabled === 'boolean' ? profile.agentTeamsEnabled : null,
+        endpointConfigured: typeof profile?.agentTeamsEndpointConfigured === 'boolean' ? profile.agentTeamsEndpointConfigured : null,
+        delegationConfigured: typeof profile?.agentTeamsDelegationConfigured === 'boolean' ? profile.agentTeamsDelegationConfigured : null
+      },
+      agentTeamsUnavailableReason: String(profile?.agentTeamsUnavailableReason || ''),
+      liveExecutionConfigured: profile?.liveExecutionConfigured === true,
+      liveRequiredTeamRuntime: profile?.liveRequiredTeamRuntime === 'agentteams' ? 'agentteams' : null,
+      liveWorkspaceId: String(profile?.liveWorkspaceId || ''),
+      liveExecutionUnavailableReason: String(profile?.liveExecutionUnavailableReason || '')
+    };
+    this.competitionRuntimeConfigReadError = false;
+    this.competitionRuntimeConfigCheckedAt = new Date().toLocaleTimeString();
     this.competitionReleaseProfile = profile?.releaseProfile === 'goai-staging' ? 'goai-staging' : 'production';
     this.competitionRehearsalAvailable = profile?.rehearsalEnabled === true;
     if (!this.competitionRehearsalAvailable) this.competitionRehearsalVisible = false;
@@ -37959,7 +38818,23 @@ async handleRefreshSkills() {
         runtime.getApplicationCompetitionSnapshot(),
         runtime.getApplicationCompetitionUiProfile()
       ]);
-      this.competitionSnapshot = snapshot;
+      this.applyOperationsRuntimeSnapshot(snapshot);
+      this.competitionRuntimeReadiness = {
+      agentTeamsConfigured: profile?.agentTeamsConfigured === true,
+      agentTeamsSetup: {
+        enabled: typeof profile?.agentTeamsEnabled === 'boolean' ? profile.agentTeamsEnabled : null,
+        endpointConfigured: typeof profile?.agentTeamsEndpointConfigured === 'boolean' ? profile.agentTeamsEndpointConfigured : null,
+        delegationConfigured: typeof profile?.agentTeamsDelegationConfigured === 'boolean' ? profile.agentTeamsDelegationConfigured : null
+      },
+      agentTeamsUnavailableReason: String(profile?.agentTeamsUnavailableReason || ''),
+      liveExecutionConfigured: profile?.liveExecutionConfigured === true,
+      liveRequiredTeamRuntime: profile?.liveRequiredTeamRuntime === 'agentteams' ? 'agentteams' : null,
+      liveWorkspaceId: String(profile?.liveWorkspaceId || ''),
+      liveExecutionUnavailableReason: String(profile?.liveExecutionUnavailableReason || '')
+    };
+    this.competitionRuntimeConfigReadError = false;
+    this.competitionRuntimeConfigCheckedAt = new Date().toLocaleTimeString();
+      if (!this.competitionSelectedIncidentId) this.competitionSelectedIncidentId = this.getCompetitionActiveIncident()?.incidentId || '';
       this.competitionAdapterMode = snapshot.adapterMode;
       this.competitionReleaseProfile = profile?.releaseProfile === 'goai-staging' ? 'goai-staging' : 'production';
       this.competitionRehearsalAvailable = profile?.rehearsalEnabled === true;
@@ -37998,12 +38873,17 @@ async handleRefreshSkills() {
       const snapshot = await this.getApplicationCompetitionRuntime().resetApplicationCompetitionDemoData({
         confirmation: 'RESET_DEMO_DATA'
       });
-      this.competitionSnapshot = snapshot;
+      this.applyOperationsRuntimeSnapshot(snapshot);
       this.competitionAdapterMode = snapshot.adapterMode;
       this.competitionTeamRuntime = 'builtin';
       this.competitionTeamTemplateId = '';
+      this.competitionSelectedIncidentId = '';
+      this.competitionApprovalDrafts = {};
+      this.competitionRollbackKeys = {};
+      this.competitionApprovalReason = '';
       this.competitionRollbackIdempotencyKey = '';
       this.competitionDemoScenarioMode = 'recovery';
+      await this.loadCompetitionMemoryArtifacts(false);
       showNotification(isZh ? '演示数据已重置' : 'Demo data reset', 'success');
     } catch (error) {
       showNotification(error?.message || (isZh ? '重置演示数据失败' : 'Failed to reset demo data'), 'error');
@@ -38012,19 +38892,99 @@ async handleRefreshSkills() {
     }
   },
 
-  /** 返回最近更新的事件；无输入，返回事件或 null。 */
+  /** 固定明确选择的真实事件，选择失效时不跳到另一审批对象。 / Pin the selected incident without switching approval targets if it disappears. */
   getCompetitionActiveIncident() {
     const incidents = Array.isArray(this.competitionSnapshot?.incidents)
       ? this.competitionSnapshot.incidents
       : [];
+    if (this.competitionSelectedIncidentId) return incidents.find(/** 仅使用真实ID匹配当前选择。 / Match the selection by its real ID only. */ item => item.incidentId === this.competitionSelectedIncidentId) || null;
     return [...incidents].sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0] || null;
   },
 
-  /** 返回当前事件关联审批；无输入，返回审批或 null。 */
+  /** 事件选择器仅列出已收到的公开摘要，不构造演示记录。 / List received public summaries without constructing demonstration records. */
+  getCompetitionIncidentOptions() {
+    return (Array.isArray(this.competitionSnapshot?.incidents) ? this.competitionSnapshot.incidents : [])
+      .filter(/** 排除无稳定ID的条目。 / Exclude records without stable IDs. */ item => typeof item?.incidentId === 'string' && item.incidentId)
+      .slice().sort(/** 保持现有事件排序。 / Preserve existing incident ordering. */ (left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))
+      .map(/** 只投影选择器所需字段。 / Project selector fields only. */ item => ({ incidentId: item.incidentId, title: this.getCompetitionApprovalPublicText(item.title, 160), workspaceId: this.getCompetitionApprovalPublicText(item.workspaceId), status: item.status }));
+  },
+
+  /** 切换事件并隔离审批草稿、幂等键和记忆视图，不启动业务动作。 / Switch incidents while isolating approval drafts, idempotency keys and memory without business actions. */
+  async selectCompetitionIncident(incidentId) {
+    const normalized = String(incidentId || '').trim();
+    const incident = (this.competitionSnapshot?.incidents || []).find(/** 必须存在于真实快照。 / Require an actual snapshot record. */ item => item.incidentId === normalized);
+    if (!incident || this.competitionBusyAction) return false;
+    const previous = this.getCompetitionActiveIncident();
+    if (previous?.incidentId === normalized) { this.competitionSelectedIncidentId = normalized; return true; }
+    if (previous) {
+      this.competitionApprovalDrafts = { ...(this.competitionApprovalDrafts || {}), [previous.incidentId]: this.competitionApprovalReason || '' };
+      if (previous.activeApprovalId && this.competitionRollbackIdempotencyKey) this.competitionRollbackKeys = { ...(this.competitionRollbackKeys || {}), [previous.activeApprovalId]: this.competitionRollbackIdempotencyKey };
+    }
+    this.competitionSelectedIncidentId = normalized;
+    if (typeof this.getCompetitionAvailableTeamTemplates === 'function') {
+      const templates = this.getCompetitionAvailableTeamTemplates(incident.workspaceId);
+      if (!templates.some(/** 当前选择必须属于新事件空间。 / Keep selections within the newly selected incident workspace. */ item => item.id === this.competitionTeamTemplateId)) this.competitionTeamTemplateId = templates[0]?.id || '';
+    }
+    this.competitionApprovalReason = Object.hasOwn(this.competitionApprovalDrafts || {}, normalized) ? this.competitionApprovalDrafts[normalized] : '';
+    this.competitionRollbackIdempotencyKey = Object.hasOwn(this.competitionRollbackKeys || {}, incident.activeApprovalId || '') ? this.competitionRollbackKeys[incident.activeApprovalId] : '';
+    this.competitionMemoryRecords = []; this.competitionMemoryError = '';
+    await this.loadCompetitionMemoryArtifacts(false);
+    return this.competitionSelectedIncidentId === normalized;
+  },
+
+  /** 从项目审计打开原事件，拒绝跨项目或失效记录。 / Open the original incident from project audit, rejecting foreign or missing records. */
+  async openEnterpriseAuditIncidentCenter() {
+    if (!this.canUseEnterprise || this.competitionBusyAction) return false;
+    const incident = this.getEnterpriseAuditIncident();
+    if (!incident || !this.getEnterpriseSandboxIncidents().some(/** 校验项目群当前范围。 / Validate the current group scope. */ item => item.incidentId === incident.incidentId)) return false;
+    if (!await this.selectCompetitionIncident(incident.incidentId)) return false;
+    if (!this.getEnterpriseSandboxIncidents().some(/** 异步读取后重新核对当前项目范围。 / Recheck the current project scope after the async read. */ item => item.incidentId === incident.incidentId)) return false;
+    await this.openEnterpriseTab('ops-control');
+    this.operationsDetailVisible = true;
+    return this.getCompetitionActiveIncident()?.incidentId === incident.incidentId;
+  },
+
+  /** 严格核对当前事件、空间和活动追踪的审批。 / Resolve approval by incident, workspace and active trace exactly. */
   getCompetitionActiveApproval() {
     const incident = this.getCompetitionActiveIncident();
-    if (!incident?.activeApprovalId) return null;
-    return this.competitionSnapshot.approvals.find((item) => item.approvalId === incident.activeApprovalId) || null;
+    if (!incident?.activeApprovalId || !incident.activeTraceId) return null;
+    return (this.competitionSnapshot.approvals || []).find(/** 不借用其他空间、旧运行或其他事件的审批。 / Never borrow approvals from another workspace, run or incident. */ item => item.approvalId === incident.activeApprovalId && item.incidentId === incident.incidentId && item.workspaceId === incident.workspaceId && item.traceId === incident.activeTraceId) || null;
+  },
+
+  /** 审批摘要仅呈现有界公开文本，不显示凭据或URL查询。 / Present bounded public approval text without credentials or URL queries. */
+  getCompetitionApprovalPublicText(value, limit = 256) {
+    if (typeof value !== 'string') return '';
+    return value
+      .replace(/\bhttps?:\/\/[^\s<>"']+/gi, /** 清除URL认证与查询部分。 / Remove URL authentication and query parts. */ url => url.split(/[?#]/)[0].replace(/\/\/[^/@]+@/, '//'))
+      .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+      .replace(/(["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|passwd|secret|authorization)["']?\s*[:=]\s*)(?:["'][^"'\r\n]*["']|[^\s,;\r\n}]+)/gi, '$1[redacted]')
+      .replace(/\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{16,})\b/g, '[redacted]')
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, limit);
+  },
+
+  /** 在生成Action前投影原审批范围，依赖只来自同一事件Trace的明确任务节点。 / Project original approval scopes before an Action exists, using explicit task dependencies from the same incident and trace only. */
+  getCompetitionApprovalPlan() {
+    const incident = this.getCompetitionActiveIncident();
+    const approval = this.getCompetitionActiveApproval();
+    if (!approval || !incident || approval.incidentId !== incident.incidentId || approval.workspaceId !== incident.workspaceId || approval.traceId !== incident.activeTraceId) return null;
+    const graph = this.getCompetitionActiveTaskGraph();
+    const nodes = graph?.incidentId === approval.incidentId && graph?.traceId === approval.traceId && Array.isArray(graph.nodes) ? graph.nodes : [];
+    const scopes = (Array.isArray(approval.scopes) ? approval.scopes : []).map(/** 仅复制实际授权字段；不复制工具参数或内部响应。 / Copy actual authorized fields only, excluding tool arguments and internal responses. */ (scope, index) => {
+      const source = scope && typeof scope === 'object' ? scope : {};
+      const stepId = this.getCompetitionApprovalPublicText(source.stepId);
+      const node = source.compensation === false ? nodes.find(/** 使用原步骤键精确关联，禁止按名称猜测。 / Join by the exact original step key without name inference. */ item => item.nodeId === `execute:${source.stepId}` && item.toolName === source.toolName) : null;
+      const dependencies = node && Array.isArray(node.dependsOn) ? node.dependsOn.map(/** 保留真实依赖键及已提供的节点名称。 / Retain real dependency keys and supplied node names. */ id => {
+        const dependency = nodes.find(/** 按依赖键查找同图节点。 / Resolve a dependency by its key in the same graph. */ item => item.nodeId === id);
+        return { id: this.getCompetitionApprovalPublicText(id), title: this.getCompetitionApprovalPublicText(dependency?.title) };
+      }) : [];
+      return { index, stepId, title: this.getCompetitionApprovalPublicText(node?.title), toolName: this.getCompetitionApprovalPublicText(source.toolName),
+        resourceId: this.getCompetitionApprovalPublicText(source.resourceId, 1024), targetRevision: Number.isInteger(source.targetRevision) && source.targetRevision >= 0 ? source.targetRevision : null,
+        expectedResourceVersion: this.getCompetitionApprovalPublicText(source.expectedResourceVersion, 1024), argumentsDigest: this.getCompetitionApprovalPublicText(source.argumentsDigest, 256),
+        compensation: typeof source.compensation === 'boolean' ? source.compensation : null, dependencies, dependenciesKnown: !!node && Array.isArray(node.dependsOn) };
+    });
+    return { approvalId: this.getCompetitionApprovalPublicText(approval.approvalId), planId: this.getCompetitionApprovalPublicText(approval.planId), planDigest: this.getCompetitionApprovalPublicText(approval.planDigest), scopes,
+      primaryCount: scopes.filter(/** 只统计明确主写入范围。 / Count explicit primary write scopes only. */ scope => scope.compensation === false).length,
+      compensationCount: scopes.filter(/** 只统计明确补偿范围。 / Count explicit compensation scopes only. */ scope => scope.compensation === true).length };
   },
 
   /** 返回当前事件关联动作；无输入，返回动作或 null。 */
@@ -38065,25 +39025,720 @@ async handleRefreshSkills() {
     }[String(status || '').toUpperCase()] || 'fa-regular fa-circle';
   },
 
-  /** 返回当前事件最近的 Team Binding；无输入，返回包含模板快照的绑定或 null。 */
+  /** 只返回当前事件Trace的真实团队绑定。 / Return the actual team binding for the current incident trace only. */
   getCompetitionActiveTeamBinding() {
     const incident = this.getCompetitionActiveIncident();
     if (!incident) return null;
     const bindings = Array.isArray(this.competitionSnapshot?.teamBindings)
-      ? this.competitionSnapshot.teamBindings.filter(item => item.incidentId === incident.incidentId)
+      ? this.competitionSnapshot.teamBindings.filter(/** 不借用旧Trace或其他工作空间的身份。 / Do not borrow identities from old traces or other workspaces. */ item => item.incidentId === incident.incidentId && item.traceId === incident.activeTraceId && item.workspaceId === incident.workspaceId)
       : [];
     return [...bindings].sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))[0] || null;
   },
 
+  /** 历史事件的运行标签只来自绑定，不受下次任务草稿影响。 / Derive incident runtime labels only from bindings, independent of the next task draft. */
+  getCompetitionRuntimeLabel() {
+    const runtime = this.getCompetitionActiveTeamBinding()?.runtime;
+    if (runtime === 'agentteams') return 'AgentTeams';
+    if (runtime === 'builtin') return 'Builtin';
+    return this.isCurrentLanguageZh() ? '尚未绑定' : 'Not bound';
+  },
+
+  /** 将 GOAI 演示别名解析为真实企业 Workspace；输入可选别名，返回可提交的 Workspace ID。 / Resolve the GOAI demo alias to a real enterprise Workspace ID. */
+  getCompetitionResolvedWorkspaceId(workspaceId = '') {
+    const requested = String(workspaceId || '').trim();
+    const workspaces = Array.isArray(this.enterpriseWorkspaces) ? this.enterpriseWorkspaces : [];
+    if (requested && requested !== 'ws_goai_demo') return requested;
+    const preferred = workspaces.find(item => String(item?.name || '').trim() === 'GOAI Competition Demo');
+    const fallback = workspaces.length === 1 ? workspaces[0] : null;
+    return String(preferred?.id || fallback?.id || requested || '').trim();
+  },
+
+  /** 返回运行指挥台的前置步骤状态；不触发写入，仅用于可视化引导。 / Return non-mutating prerequisite status for the operations control view. */
+  getCompetitionPrerequisiteSteps(workspaceOverride = '') {
+    const zh = this.isCurrentLanguageZh();
+    const workspaceId = workspaceOverride || (this.operationsWorkspaceFilter && this.operationsWorkspaceFilter !== 'all'
+      ? this.operationsWorkspaceFilter : this.getCompetitionResolvedWorkspaceId(this.getCompetitionActiveIncident()?.workspaceId || this.competitionDemoForm?.workspaceId));
+    const workspace = (this.enterpriseWorkspaces || []).find(/** 核对实际空间。 / Find the actual workspace. */ item => item.id === workspaceId);
+    const staff = (this.enterpriseRoleCards || []).filter(/** 员工必须启用并属于目标空间。 / Employees must be enabled and assigned to the target workspace. */ item => item.enabled !== false && item.assignedWorkspace === workspaceId);
+    const staffIds = new Set(staff.map(/** 收集空间内员工身份。 / Collect scoped employee identities. */ item => item.id));
+    const teams = (this.enterpriseTeamTemplates || []).filter(/** 不借用其他空间的团队。 / Do not borrow a team from another workspace. */ item => item.enabled !== false && item.workspaceId === workspaceId);
+    const assigned = teams.filter(/** 真实团队必须有分工齐全的已分配员工。 / Require assigned employees with complete team responsibilities. */ team => ['leader', 'worker', 'verifier'].every(/** 核对每个职责成员。 / Check each responsibility. */ role => (team.members || []).some(/** 成员必须属于目标空间。 / Members must belong to the target workspace. */ member => member.teamRole === role && staffIds.has(member.roleCardId))));
+    const selected = this.getCompetitionActiveIncident();
+    const incident = selected && this.getCompetitionResolvedWorkspaceId(selected.workspaceId) === workspaceId ? selected : null;
+    const binding = incident ? this.getCompetitionActiveTeamBinding() : null;
+    const running = binding?.runtime === 'agentteams' && Array.isArray(binding.memberSnapshots) && binding.memberSnapshots.length > 0;
+    return [
+      { id: 'sandbox', label: zh ? '企业沙盘' : 'Enterprise sandbox', done: true, value: zh ? '内置共享视图' : 'Built-in shared view', tab: 'enterprise-sandbox' },
+      { id: 'workspace', label: zh ? '企业空间' : 'Enterprise space', done: Boolean(workspace), value: workspace ? workspace.name : (zh ? '待创建' : 'Create space'), tab: 'enterprise-workspaces' },
+      { id: 'staff', label: zh ? '添加员工' : 'Add employees', done: staff.length > 0, value: zh ? `${staff.length} 位已分配` : `${staff.length} assigned`, tab: 'staff-roles' },
+      { id: 'team', label: zh ? '创建团队' : 'Create team', done: teams.length > 0, value: zh ? `${teams.length} 个团队` : `${teams.length} teams`, tab: 'team-templates' },
+      { id: 'assignment', label: zh ? '分配工作空间' : 'Assign workspace', done: assigned.length > 0, value: assigned.length ? (zh ? '职责已齐全' : 'Roles assigned') : (zh ? '待分配三类职责' : 'Assign all three roles'), tab: 'team-templates' },
+      { id: 'template', label: zh ? '绑定团队模板' : 'Bind team template', done: assigned.some(/** 模板选择必须属于有效分配。 / The selected template must have valid assignments. */ item => item.id === this.competitionTeamTemplateId), value: this.competitionTeamTemplateId ? (zh ? '已选择模板' : 'Template selected') : (zh ? '待选择模板' : 'Select a template'), tab: 'team-templates' },
+      { id: 'incident', label: zh ? '创建事件' : 'Create event', done: Boolean(incident), value: incident ? (zh ? '已接收' : 'Received') : (zh ? '等待任务' : 'Awaiting task'), tab: 'enterprise-sandbox' },
+      { id: 'agentteams', label: zh ? '启动 AgentTeams' : 'Start AgentTeams', done: Boolean(running), value: running ? (zh ? '已绑定真实运行' : 'Run bound') : (zh ? '尚未启动' : 'Not started'), tab: 'ops-control' }
+    ];
+  },
+
+  /** 显示工作空间业务名称，未知范围不伪装为演示空间。 / Display a workspace name without disguising unknown scope as a demo workspace. */
+  getOperationsWorkspaceLabel(workspaceId) {
+    const resolved = this.getCompetitionResolvedWorkspaceId(workspaceId);
+    return this.getEnterpriseWorkspaceNameById(resolved) || (this.isCurrentLanguageZh() ? '未关联的工作空间' : 'Unlinked workspace');
+  },
+
+  /** 从本次运行冻结的上下文呈现来源，未开始时明确标记下一次草稿模式。 / Show the source from this run's frozen contexts, labeling the next draft mode explicitly before a run starts. */
+  getOperationsRunSourceLabel() {
+    const zh = this.isCurrentLanguageZh();
+    const incident = this.getCompetitionActiveIncident();
+    if (!incident?.activeTraceId) return this.competitionAdapterMode === 'live'
+      ? (zh ? '尚未开始 · 下一次使用 Live 现场' : 'Not started · Next run uses Live')
+      : (zh ? '尚未开始 · 下一次使用本地模拟 (Fixture)' : 'Not started · Next run uses local simulation (Fixture)');
+    const contexts = (this.competitionSnapshot?.residentContexts || []).filter(/** 来源只能属于原事件、空间和当前Trace。 / Source records must belong to the original incident, workspace and active trace. */ item => item.incidentId === incident.incidentId && item.workspaceId === incident.workspaceId && item.traceId === incident.activeTraceId);
+    const sources = new Set(contexts.map(/** 读取冻结来源，不回退到全局模式。 / Read captured sources without falling back to the global mode. */ item => item.source));
+    if (sources.size !== 1) return zh ? '本次来源未确认' : 'Run source unconfirmed';
+    const labels = zh ? { SIMULATION: '本地模拟 (Fixture)', 'LIVE-STAGING': 'Live 现场', REPLAY: '历史回放 (Replay)' } : { SIMULATION: 'Local simulation (Fixture)', 'LIVE-STAGING': 'Live environment', REPLAY: 'Historical replay' };
+    return labels[Array.from(sources)[0]] || (zh ? '本次来源未确认' : 'Run source unconfirmed');
+  },
+
+  /** 统计本轮同平台驻场上下文的唯一证据引用，不借用旧运行事件次数。 / Count unique evidence references in this run's resident contexts, never historical event counts. */
+  getCompetitionResidentEvidenceCount(agent) {
+    const incident = this.getCompetitionActiveIncident();
+    if (!incident?.activeTraceId || !agent?.agentId || !agent.platform) return 0;
+    const contexts = (this.competitionSnapshot?.residentContexts || []).filter(/** 限定空间、事件、活动Trace及驻场身份。 / Match workspace, incident, active trace and resident identity. */ item => item.workspaceId === incident.workspaceId && item.incidentId === incident.incidentId && item.traceId === incident.activeTraceId && item.agentId === agent.agentId && item.platform === agent.platform);
+    const references = contexts.flatMap(/** 只读取真实引用列表。 / Read actual reference arrays only. */ item => Array.isArray(item.evidenceRefs) ? item.evidenceRefs : []);
+    return new Set(references.filter(/** 空引用不能计作证据。 / Empty references do not count as evidence. */ id => typeof id === 'string' && id.trim().length > 0)).size;
+  },
+
+  /** 列出真实空间及仍有运行记录的历史空间。 / List actual workspaces and historic scopes that still have runs. */
+  getOperationsWorkspaceOptions() {
+    const entries = new Map((this.enterpriseWorkspaces || []).map(/** 保留业务名称与稳定ID。 / Preserve business names and stable IDs. */ item => [item.id, { id: item.id, name: item.name }]));
+    for (const incident of this.competitionSnapshot?.incidents || []) {
+      const id = this.getCompetitionResolvedWorkspaceId(incident.workspaceId);
+      if (id && !entries.has(id)) entries.set(id, { id, name: this.getOperationsWorkspaceLabel(id) });
+    }
+    return Array.from(entries.values());
+  },
+
+  /** 判断运行是否匹配空间与业务关键词。 / Match a run against workspace and business search filters. */
+  matchesOperationsScope(incident) {
+    if (!incident?.incidentId) return false;
+    if (this.operationsWorkspaceFilter && this.operationsWorkspaceFilter !== 'all' && this.getCompetitionResolvedWorkspaceId(incident.workspaceId) !== this.operationsWorkspaceFilter) return false;
+    const query = String(this.operationsSearch || '').trim().toLocaleLowerCase();
+    return !query || `${incident.title || ''} ${incident.summary || ''} ${this.getOperationsWorkspaceLabel(incident.workspaceId)}`.toLocaleLowerCase().includes(query);
+  },
+
+  /** 汇总全部匹配运行，状态筛选不改变当前审批对象。 / List every matching run without changing the selected approval target. */
+  getOperationsRuns() {
+    const state = this.operationsStatusFilter || 'all';
+    return (this.competitionSnapshot?.incidents || []).filter(/** 同时应用范围与状态过滤。 / Apply both scope and status filters. */ incident => {
+      if (!this.matchesOperationsScope(incident)) return false;
+      if (state === 'active') return !['RESOLVED', 'FAILED', 'REJECTED'].includes(incident.status);
+      if (state === 'pending') return this.getOperationsPendingApprovals().some(/** 匹配本事件实际审批。 / Match the actual incident approval. */ row => row.incident.incidentId === incident.incidentId);
+      if (state === 'completed') return incident.status === 'RESOLVED';
+      if (state === 'failed') return ['FAILED', 'REJECTED'].includes(incident.status);
+      return true;
+    }).slice().sort(/** 最新变化优先，不删除旧记录。 / Show the latest changes first without dropping old records. */ (a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  },
+
+  /** 汇总所有空间当前有效待审批，严格绑定事件、空间、追踪与审批ID。 / Aggregate current pending approvals with exact incident, workspace, trace and approval IDs. */
+  getOperationsPendingApprovals() {
+    const rows = [];
+    for (const incident of this.competitionSnapshot?.incidents || []) {
+      if (!this.matchesOperationsScope(incident) || !incident.activeTraceId || !incident.activeApprovalId) continue;
+      const approval = (this.competitionSnapshot?.approvals || []).find(/** 只认当前运行的原始待审批。 / Accept only the original pending approval for the active run. */ item => item.status === 'PENDING' && item.approvalId === incident.activeApprovalId && item.incidentId === incident.incidentId && item.workspaceId === incident.workspaceId && item.traceId === incident.activeTraceId);
+      if (approval) rows.push({ incident, approval });
+    }
+    return rows.sort(/** 最早的人工请求优先。 / Prioritize the oldest human request. */ (a, b) => String(a.approval.requestedAt || a.approval.createdAt).localeCompare(String(b.approval.requestedAt || b.approval.createdAt)));
+  },
+
+  /** 在正式指挥台打开真实详情；仅导航，不审批或执行。 / Open an actual run in Operations Control without approving or executing it. */
+  async openOperationsRun(incidentId, approvalId = '') {
+    if (!this.canUseEnterprise || this.competitionBusyAction) return false;
+    if (this.enterpriseTab !== 'ops-control') await this.openEnterpriseTab('ops-control');
+    if (approvalId && !this.getOperationsPendingApprovals().some(/** 避免过期队列指向新的审批。 / Prevent stale queue entries from targeting a replacement approval. */ row => row.incident.incidentId === incidentId && row.approval.approvalId === approvalId)) return false;
+    if (!await this.selectCompetitionIncident(incidentId)) return false;
+    if (approvalId && (this.getCompetitionActiveApproval()?.approvalId !== approvalId || this.getCompetitionActiveApproval()?.status !== 'PENDING')) return false;
+    this.operationsDetailVisible = true;
+    this.competitionRehearsalVisible = false;
+    return true;
+  },
+
+  /** 返回运行列表，保留空间、状态、关键词与选择。 / Return to the run list while retaining all filters and selection. */
+  closeOperationsRun() {
+    this.operationsDetailVisible = false;
+  },
+
+  /** 解释启动阻断，避免只显示灰色按钮。 / Explain investigation blockers instead of leaving an unexplained disabled button. */
+  getCompetitionInvestigationBlocker() {
+    const zh = this.isCurrentLanguageZh();
+    if (!this.getCompetitionActiveIncident()) return zh ? '请先选择真实事件。' : 'Select an actual event first.';
+    if (this.competitionAdapterMode === 'live' && (this.competitionRuntimeReadiness?.liveRequiredTeamRuntime === 'agentteams' || this.competitionLiveConnectionSnapshot?.source === 'saved') && this.competitionTeamRuntime !== 'agentteams') return zh ? '此 Live 接入要求真实 AgentTeams 协作，请将协作方式切换为 AgentTeams。' : 'This Live connection requires real AgentTeams collaboration. Select AgentTeams as the collaboration mode.';
+    if (this.competitionAdapterMode === 'live' && this.competitionRuntimeReadiness?.liveWorkspaceId && this.getCompetitionActiveIncident().workspaceId !== this.competitionRuntimeReadiness.liveWorkspaceId) return zh ? '当前事件不属于 Live 授权工作空间，请在授权空间中选择事件，或前往协同与执行配置更换授权。' : 'This event belongs to a different workspace. Select an event in the authorized workspace or update the Live connection.';
+    if (this.competitionAdapterMode === 'live' && this.competitionRuntimeReadiness?.liveExecutionConfigured !== true) return this.competitionRuntimeReadiness?.liveExecutionUnavailableReason || (zh ? 'Live 执行链尚未配置完成，平台页面可访问不代表写入权限已就绪。' : 'Live execution is not configured. Reachable platform pages do not establish write authorization.');
+    if (this.competitionTeamRuntime !== 'agentteams') return '';
+    if (this.competitionRuntimeReadiness?.agentTeamsConfigured !== true) return this.competitionRuntimeReadiness?.agentTeamsUnavailableReason || (zh ? '竞赛 AgentTeams 连接与委托尚未配置，已有团队模板不能代替真实协同服务。' : 'The competition AgentTeams connection and delegation are not configured. A template cannot substitute for the collaboration service.');
+    const templates = this.getCompetitionAvailableTeamTemplates();
+    if (!templates.length) return zh ? '当前事件 Workspace 下没有可用团队模板。请在协作团队中为该工作空间配置员工与三类职责。' : 'No team template is available for this incident Workspace. Assign employees and all three responsibilities in Teams.';
+    if (!templates.some(/** 只允许当前工作空间有效选择。 / Allow only a valid selection from the current workspace. */ item => item.id === this.competitionTeamTemplateId)) return zh ? '请选择当前工作空间的企业团队模板。' : 'Select a team template for this workspace.';
+    return '';
+  },
+
+  /**
+   * 返回比赛前置检查对应的配置入口；输入检查项或检查ID，输出独立配置页目标。
+   * Return the dedicated configuration destination for a preflight check; accept a check object or ID.
+   */
+  getCompetitionPreflightConfigurationTarget(check) {
+    const id = typeof check === 'string' ? check : String(check?.id || '').trim();
+    if (id === 'agentteams-connection' && this.competitionAdapterMode === 'live') return { tab: 'competition-runtime-config', section: 'live' };
+    const targets = {
+      workspace: { tab: 'enterprise-workspaces', section: 'workspace' },
+      staff: { tab: 'staff-roles', section: 'staff' },
+      team: { tab: 'team-templates', section: 'team' },
+      assignment: { tab: 'team-templates', section: 'assignment' },
+      template: { tab: 'team-templates', section: 'template' },
+      platforms: { tab: 'competition-runtime-config', section: 'platforms' },
+      'agentteams-connection': { tab: 'competition-runtime-config', section: 'agentteams' },
+      'live-execution': { tab: 'competition-runtime-config', section: 'live' }
+    };
+    return targets[id] || { tab: 'competition-runtime-config', section: id || 'runtime' };
+  },
+
+  /**
+   * 打开比赛前置配置并保留目标 section；只导航和加载数据，不写入凭据。
+   * Open a competition preflight configuration target while preserving its section; navigation only, no credential writes.
+   */
+  async openCompetitionPreflightConfiguration(check) {
+    const target = this.getCompetitionPreflightConfigurationTarget(check);
+    this.competitionRuntimeConfigSection = target.section === 'runtime' ? 'platforms' : target.section;
+    await this.openEnterpriseTab(target.tab);
+    await this.$nextTick();
+    const section = document.getElementById(`competition-runtime-config-${this.competitionRuntimeConfigSection}`);
+    if (section && typeof section.scrollIntoView === 'function') section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return target;
+  },
+
+  /** 把接入失败转为固定说明，不回显凭据或远端错误。 / Map connection failures to fixed messages without credential or remote-error echoes. */
+  getCompetitionConnectionMessage(code) {
+    const aliases = { CHANGE_BLOCKED: 'CONNECTION_IN_USE', TIMEOUT: 'CONNECTION_TIMEOUT', WRONG_SERVICE: 'SERVICE_IDENTITY_MISMATCH', UNSUPPORTED_SERVICE: 'SERVICE_UPGRADE_REQUIRED', INVALID_ACCESS_CODE: 'ACCESS_INVALID', ACCESS_REJECTED: 'ACCESS_INVALID', ACCESS_SCOPE_MISMATCH: 'ACCESS_WORKSPACE_MISMATCH' };
+    const messages = {
+      AUTH_REQUIRED: ['请先登录具有企业空间权限的账号。', 'Sign in to an account with enterprise access.'],
+      ACCOUNT_CHANGED: ['账号已切换，接入操作已取消，请重新打开配置页。', 'The account changed. Reopen the configuration page.'],
+      WORKSPACE_REQUIRED: ['请先选择一个工作空间。', 'Choose a workspace first.'],
+      REDIRECT_REJECTED: ['服务地址发生跳转，请填写服务的最终 HTTPS 地址。', 'The service redirects. Enter its final HTTPS address.'],
+      INVALID_RESPONSE: ['服务返回的协议不匹配，请联系演示提供方。', 'The service returned an incompatible response.'],
+      RESPONSE_TOO_LARGE: ['服务返回异常，请联系演示提供方。', 'The service response is invalid. Contact the demo provider.'],
+      INVALID_REQUEST: ['请填写有效的服务地址、工作空间和演示访问码。', 'Enter a valid service URL, workspace and demo access code.'],
+      INVALID_ENDPOINT: ['服务地址需要使用 HTTPS；请填写 AgentTeams 服务地址。', 'Use an HTTPS AgentTeams service URL.'],
+      ACCESS_CODE_REQUIRED: ['请输入演示提供方发给你的访问码。更换地址或工作空间后需要重新输入。', 'Enter your demo access code again when changing the service or workspace.'],
+      STORAGE_UNAVAILABLE: ['系统凭据加密不可用，暂时无法安全保存。', 'OS credential encryption is unavailable; saving is disabled.'],
+      STORAGE_READ_FAILED: ['无法读取本机加密配置，请重新输入访问码并连接保存。', 'Unable to read encrypted settings. Enter your code and connect again.'],
+      STORAGE_WRITE_FAILED: ['本机保存失败，已有配置仍保留，请重试。', 'Unable to save on this device. Existing settings were retained; retry.'],
+      CONNECTION_IN_USE: ['还有运行中或待审批的事件，请结束后再修改接入配置。', 'Finish running or pending-approval events before changing the connection.'],
+      CONNECTION_BUSY: ['另一项连接操作正在进行，请稍后重试。', 'Another connection operation is in progress.'],
+      NETWORK_ERROR: ['暂时无法连接服务，请检查地址和网络；已保存配置不会被清空。', 'Unable to reach the service. Check the URL and network; saved settings are retained.'],
+      CONNECTION_TIMEOUT: ['连接超时，请稍后重试。', 'The connection timed out. Retry shortly.'],
+      SERVICE_IDENTITY_MISMATCH: ['这个地址不是可识别的 OpenXnet AgentTeams 服务。', 'This URL does not identify an OpenXnet AgentTeams service.'],
+      SERVICE_UPGRADE_REQUIRED: ['服务端尚不支持演示访问码，请联系演示提供方升级服务。', 'The service needs an update to support demo access codes.'],
+      ACCESS_INVALID: ['访问码无效，请核对后重新输入。', 'The access code is invalid.'],
+      ACCESS_EXPIRED: ['访问码已到期，请向演示提供方领取新的访问码。', 'The access code has expired. Request a replacement.'],
+      ACCESS_REVOKED: ['访问码已被撤销，请联系演示提供方。', 'The access code was revoked. Contact the demo provider.'],
+      ACCESS_WORKSPACE_MISMATCH: ['此访问码已绑定其他工作空间，请选择原工作空间或领取新码。', 'This code belongs to another workspace. Select that workspace or request a new code.'],
+      ACCESS_QUOTA_EXHAUSTED: ['此访问码的演示额度已用完，请联系演示提供方。', 'This code has no remaining demo requests.'],
+      SERVICE_NOT_READY: ['授权有效，但协作服务尚未就绪，请稍后重新检测。', 'Authorization is valid, but the collaboration service is not ready yet.'],
+      UNSUPPORTED_CLIENT: ['当前桌面组件版本不匹配，请安装本次完整更新。', 'Desktop components do not match. Install the complete update.'],
+    };
+    const pair = messages[aliases[code] || code] || ['接入未完成，请核对配置后重试；原配置已保留。', 'Connection setup failed. Check the settings and retry; existing settings were retained.'];
+    return pair[this.isCurrentLanguageZh() ? 0 : 1];
+  },
+
+  /** 仅接入四项固定 IPC，不允许任意命令。 / Use only the four fixed connection IPC methods, never arbitrary commands. */
+  getCompetitionConnectionBridge() {
+    const bridge = window.openxnetDesktop;
+    if (!bridge || !['getApplicationCompetitionConnection', 'testApplicationCompetitionConnection', 'saveApplicationCompetitionConnection', 'clearApplicationCompetitionConnection'].every(
+      /** 核对固定能力。 / Check the fixed capability names. */ name => typeof bridge[name] === 'function')) return null;
+    return bridge;
+  },
+
+  /** 加载脱敏持久配置；编辑中的表单不会被后台读取覆盖。 / Read redacted persistent settings without overwriting an edited form in the background. */
+  async loadCompetitionConnection(resetForm = true) {
+    const bridge = this.getCompetitionConnectionBridge();
+    if (!bridge) { this.competitionConnectionResult = { ok: false, code: 'UNSUPPORTED_CLIENT' }; return false; }
+    try {
+      const result = await bridge.getApplicationCompetitionConnection();
+      if (!result?.ok || !result.snapshot) {
+        this.competitionConnectionResult = { ok: false, code: result?.code || 'STORAGE_READ_FAILED' };
+        return false;
+      }
+      this.competitionConnectionSnapshot = result.snapshot;
+      if (resetForm) {
+        this.competitionConnectionForm = {
+          endpoint: result.snapshot.endpoint || 'https://goai.xnetaiops.synapxnet.online/agentteams-adapter/',
+          workspaceId: result.snapshot.workspaceId || this.getCompetitionResolvedWorkspaceId(this.competitionDemoForm?.workspaceId) || '',
+          enabled: result.snapshot.source === 'none' ? true : result.snapshot.enabled === true,
+        };
+        if (this.$refs?.competitionAccessCodeInput) this.$refs.competitionAccessCodeInput.value = '';
+        this.competitionConnectionResult = result.snapshot.storageError ? { ok: false, code: result.snapshot.storageError } : null;
+      }
+      return true;
+    } catch {
+      this.competitionConnectionResult = { ok: false, code: 'STORAGE_READ_FAILED' };
+      return false;
+    }
+  },
+
+  /** 编辑后使之前检测失效，访问码始终只留在临时密码输入框。 / Invalidate prior checks on edit; the access code lives only in the temporary password input. */
+  invalidateCompetitionConnectionTest() {
+    this.competitionConnectionResult = null;
+    this.competitionConnectionClearConfirm = false;
+  },
+
+  /** 优先展示有效检测授权，编辑后退回明确标注的已保存授权。 / Prefer a valid tested grant and fall back to explicitly labeled saved access after edits. */
+  getCompetitionConnectionAccessReceipt() {
+    const result = this.competitionConnectionResult;
+    const tested = result?.action === 'test' && result?.ok === true && result?.access;
+    const access = tested ? result.access : this.competitionConnectionSnapshot?.access;
+    if (!access) return null;
+    const workspace = (this.enterpriseWorkspaces || []).find(
+      /** 仅使用授权所属空间名称，不能借用正在编辑的新空间。 / Resolve the granted workspace name, never the newly edited selection. */
+      item => item.id === access.workspaceId);
+    return { access, source: tested ? 'test' : 'saved', workspaceName: workspace?.name || access.workspaceId };
+  },
+
+  /** 只探测身份和授权；测试不保存、不创建团队、不执行模型。 / Probe identity and authorization only, without saving, creating teams or running models. */
+  async testCompetitionConnection() {
+    if (this.competitionConnectionBusy) return false;
+    const bridge = this.getCompetitionConnectionBridge();
+    if (!bridge) { this.competitionConnectionResult = { ok: false, code: 'UNSUPPORTED_CLIENT' }; return false; }
+    this.competitionConnectionBusy = 'test';
+    try {
+      const { endpoint, workspaceId } = this.competitionConnectionForm;
+      const accessCode = this.$refs?.competitionAccessCodeInput?.value || '';
+      const result = await bridge.testApplicationCompetitionConnection({ endpoint, workspaceId, ...(accessCode ? { accessCode } : {}) });
+      const ready = result?.ok === true && result?.access?.serviceReady === true;
+      this.competitionConnectionResult = { ok: ready, code: result?.ok && !ready ? 'SERVICE_NOT_READY' : (result?.code || ''), access: result?.access || null, action: 'test' };
+      return ready;
+    } catch {
+      this.competitionConnectionResult = { ok: false, code: 'NETWORK_ERROR' };
+      return false;
+    } finally { this.competitionConnectionBusy = ''; }
+  },
+
+  /** 验证后在 Main 加密保存，成功即生效；不切换运行模式。 / Validate and persist through Main encryption, applying immediately without switching execution mode. */
+  async saveCompetitionConnection() {
+    if (this.competitionConnectionBusy) return false;
+    const bridge = this.getCompetitionConnectionBridge();
+    if (!bridge) { this.competitionConnectionResult = { ok: false, code: 'UNSUPPORTED_CLIENT' }; return false; }
+    this.competitionConnectionBusy = 'save';
+    try {
+      const accessCode = this.$refs?.competitionAccessCodeInput?.value || '';
+      const result = await bridge.saveApplicationCompetitionConnection({ ...this.competitionConnectionForm, ...(accessCode ? { accessCode } : {}) });
+      this.competitionConnectionResult = { ok: result?.ok === true, code: result?.code || '', access: result?.access || result?.snapshot?.access || null, action: 'save' };
+      if (!result?.ok) return false;
+      this.competitionConnectionSnapshot = result.snapshot;
+      if (this.$refs?.competitionAccessCodeInput) this.$refs.competitionAccessCodeInput.value = '';
+      await this.loadCompetitionUiProfile();
+      return true;
+    } catch {
+      this.competitionConnectionResult = { ok: false, code: 'NETWORK_ERROR' };
+      return false;
+    } finally { this.competitionConnectionBusy = ''; }
+  },
+
+  /** 明确确认后清除本机接入项，不撤销服务器访问码。 / Clear this device’s settings after explicit confirmation without revoking the server code. */
+  async clearCompetitionConnection() {
+    if (this.competitionConnectionBusy || !this.competitionConnectionClearConfirm) return false;
+    const bridge = this.getCompetitionConnectionBridge();
+    if (!bridge) return false;
+    this.competitionConnectionBusy = 'clear';
+    try {
+      const result = await bridge.clearApplicationCompetitionConnection();
+      if (!result?.ok) { this.competitionConnectionResult = { ok: false, code: result?.code || 'STORAGE_WRITE_FAILED' }; return false; }
+      this.competitionConnectionClearConfirm = false;
+      await this.loadCompetitionConnection(true);
+      await this.loadCompetitionUiProfile();
+      return true;
+    } catch {
+      this.competitionConnectionResult = { ok: false, code: 'STORAGE_WRITE_FAILED' };
+      return false;
+    } finally { this.competitionConnectionBusy = ''; }
+  },
+
+  /** 仅使用固定的 Live 接入通道。 / Use only the fixed Live connection bridge. */
+  getCompetitionLiveConnectionBridge() {
+    const bridge = window.openxnetDesktop;
+    return bridge && ['getApplicationCompetitionLiveConnection', 'testApplicationCompetitionLiveConnection', 'saveApplicationCompetitionLiveConnection', 'clearApplicationCompetitionLiveConnection'].every(
+      /** 验证能力名称。 / Verify each fixed capability. */ name => typeof bridge[name] === 'function') ? bridge : null;
+  },
+
+  /** 返回不包含授权原文的草稿标识。 / Identify the draft without including authorization text. */
+  getCompetitionLiveConnectionDraftKey() {
+    const form = this.competitionLiveConnectionForm;
+    return JSON.stringify([form.endpoint.trim(), form.workspaceId, form.enabled === true]);
+  },
+
+  /** 检查草稿是否偏离已保存配置。 / Check whether the draft differs from saved settings. */
+  hasCompetitionLiveConnectionDraft() {
+    const snapshot = this.competitionLiveConnectionSnapshot;
+    const form = this.competitionLiveConnectionForm;
+    return Boolean(this.$refs?.competitionLiveAccessCodeInput?.value)
+      || form.endpoint.trim() !== (snapshot?.endpoint || '')
+      || form.workspaceId !== (snapshot?.workspaceId || '')
+      || form.enabled !== (snapshot?.source === 'saved' ? snapshot.enabled === true : true);
+  },
+
+  /** 编辑立即作废检测；换目标同时清空临时凭据。 / Invalidate checks on edit and clear temporary credentials when changing targets. */
+  invalidateCompetitionLiveConnectionTest(scopeChanged = false) {
+    this.competitionLiveConnectionRevision += 1;
+    this.competitionLiveConnectionResult = null;
+    this.competitionLiveConnectionClearConfirm = false;
+    if (scopeChanged && this.$refs?.competitionLiveAccessCodeInput) this.$refs.competitionLiveAccessCodeInput.value = '';
+  },
+
+  /** 只对完全相同地址与空间复用 Main 保存的凭据。 / Reuse a Main-owned credential only for the exact saved endpoint and workspace. */
+  canReuseCompetitionLiveCredential() {
+    const saved = this.competitionLiveConnectionSnapshot;
+    const form = this.competitionLiveConnectionForm;
+    return saved?.credentialConfigured === true && saved.source === 'saved'
+      && form.endpoint.trim() === saved.endpoint && form.workspaceId === saved.workspaceId;
+  },
+
+  /** 用户明确选择后只填入服务地址，不复用演示凭据或请求网络。 / Fill the suggested URL only after explicit selection, without demo credentials or network calls. */
+  useCompetitionLiveConnectionSuggestion() {
+    if (this.competitionLiveConnectionBusy || this.competitionLiveConnectionLoading || !this.competitionConnectionSnapshot?.endpoint) return false;
+    this.competitionLiveConnectionForm.endpoint = this.competitionConnectionSnapshot.endpoint;
+    this.invalidateCompetitionLiveConnectionTest(true);
+    return true;
+  },
+
+  /** 将固定错误映射为普通用户可理解的信息。 / Map fixed errors to clear user-facing guidance. */
+  getCompetitionLiveConnectionMessage(code) {
+    const messages = {
+      INVALID_ENDPOINT: ['请填写管理员提供的 HTTPS 受控执行服务地址。', 'Enter the HTTPS controlled-execution service URL from your administrator.'],
+      INVALID_REQUEST: ['请填写有效的服务地址、工作空间和 Live 接入授权。', 'Enter a valid service URL, workspace and Live authorization.'],
+      WORKSPACE_REQUIRED: ['先选择本次接入的工作空间。', 'Choose the workspace for this connection.'],
+      ACCESS_CODE_REQUIRED: ['请输入 Live 接入授权。更换服务地址或工作空间后，需要重新输入。', 'Enter Live authorization again after changing the service URL or workspace.'],
+      ACCESS_INVALID: ['Live 接入授权无效，请向管理员核对；演示访问码不能用于 Live。', 'The Live authorization is invalid. Demo access codes cannot be used for Live.'],
+      ACCESS_SCOPE_MISMATCH: ['此授权不支持 Live 执行，请使用管理员提供的 Live 接入授权。', 'This authorization does not permit Live execution. Request Live authorization.'],
+      ACCESS_MODE_MISMATCH: ['演示访问码仅用于 Fixture，请使用专门的 Live 接入授权。', 'Demo access codes are Fixture-only. Use dedicated Live authorization.'],
+      ACCESS_WORKSPACE_MISMATCH: ['此授权属于其他工作空间，请选择授权指定的空间。', 'This authorization belongs to another workspace. Select its assigned workspace.'],
+      ACCESS_EXPIRED: ['Live 接入授权已到期，请向管理员领取新的授权。', 'Live authorization expired. Request a replacement from your administrator.'],
+      ACCESS_REVOKED: ['Live 接入授权已撤销，请联系管理员。', 'Live authorization was revoked. Contact your administrator.'],
+      ACCESS_QUOTA_EXHAUSTED: ['此授权的请求额度已用完，请联系管理员。', 'This authorization has no remaining requests. Contact your administrator.'],
+      SERVICE_IDENTITY_MISMATCH: ['该地址不是可识别的 OpenXnet 受控执行服务，请核对地址。', 'This URL does not identify an OpenXnet controlled-execution service.'],
+      SERVICE_UPGRADE_REQUIRED: ['服务端尚不支持 Live 接入，请联系管理员更新服务。', 'The service needs an update to support Live connections.'],
+      SERVICE_NOT_READY: ['授权已验证，但执行或审批服务尚未就绪。请按下方缺项联系管理员处理，再重新测试。', 'Authorization is valid, but execution or approval dependencies are not ready. Review the checks below and test again after they are resolved.'],
+      TEST_REQUIRED: ['先点击“测试接入”，全部检查通过后再保存。修改配置后需要重新测试。', 'Test the connection before saving. Test again after changing any setting.'],
+      INVALID_RESPONSE: ['服务返回的 Live 接入信息不完整，请联系管理员。', 'The service returned incomplete Live connection details. Contact your administrator.'],
+      AUTH_REQUIRED: ['请先登录具有企业空间权限的账号。', 'Sign in to an account with enterprise access.'],
+      ACCOUNT_CHANGED: ['账号已切换，本次接入操作已取消，请重新打开配置页。', 'The account changed. Reopen the configuration page.'],
+    };
+    const aliases = { INVALID_ACCESS_CODE: 'ACCESS_INVALID', ACCESS_REJECTED: 'ACCESS_INVALID', WRONG_SERVICE: 'SERVICE_IDENTITY_MISMATCH', UNSUPPORTED_SERVICE: 'SERVICE_UPGRADE_REQUIRED', LIVE_ACCESS_REQUIRED: 'ACCESS_MODE_MISMATCH' };
+    const pair = messages[aliases[code] || code];
+    return pair ? pair[this.isCurrentLanguageZh() ? 0 : 1] : this.getCompetitionConnectionMessage(code);
+  },
+
+  /** 读取脱敏配置并保护读取期间的草稿和新请求。 / Load redacted settings while preserving drafts and newer requests. */
+  async loadCompetitionLiveConnection(resetForm = false) {
+    if (this.competitionLiveConnectionBusy) return false;
+    const bridge = this.getCompetitionLiveConnectionBridge();
+    if (!bridge) { this.competitionLiveConnectionResult = { ok: false, code: 'UNSUPPORTED_CLIENT' }; return false; }
+    const version = ++this.competitionLiveConnectionLoadVersion;
+    const revision = this.competitionLiveConnectionRevision;
+    const draftKey = this.getCompetitionLiveConnectionDraftKey();
+    const mayReset = resetForm && (!this.competitionLiveConnectionLoaded || !this.hasCompetitionLiveConnectionDraft());
+    this.competitionLiveConnectionLoading = true;
+    try {
+      const result = await bridge.getApplicationCompetitionLiveConnection();
+      if (version !== this.competitionLiveConnectionLoadVersion || this.competitionLiveConnectionBusy) return false;
+      if (!result?.ok || !result.snapshot) {
+        if (revision === this.competitionLiveConnectionRevision) this.competitionLiveConnectionResult = { ok: false, code: result?.code || 'STORAGE_READ_FAILED' };
+        return false;
+      }
+      this.competitionLiveConnectionSnapshot = result.snapshot;
+      this.competitionLiveConnectionLoaded = true;
+      if (mayReset && revision === this.competitionLiveConnectionRevision && draftKey === this.getCompetitionLiveConnectionDraftKey()) {
+        this.competitionLiveConnectionForm = { endpoint: result.snapshot.endpoint || '', workspaceId: result.snapshot.workspaceId || '', enabled: result.snapshot.source === 'saved' ? result.snapshot.enabled === true : true };
+        if (this.$refs?.competitionLiveAccessCodeInput) this.$refs.competitionLiveAccessCodeInput.value = '';
+        this.competitionLiveConnectionResult = result.snapshot.storageError ? { ok: false, code: result.snapshot.storageError } : null;
+      }
+      return true;
+    } catch {
+      if (version === this.competitionLiveConnectionLoadVersion && revision === this.competitionLiveConnectionRevision) this.competitionLiveConnectionResult = { ok: false, code: 'STORAGE_READ_FAILED' };
+      return false;
+    } finally { if (version === this.competitionLiveConnectionLoadVersion) this.competitionLiveConnectionLoading = false; }
+  },
+
+  /** 检查表单目标与授权是否齐全，不发出网络请求。 / Check required target and authorization fields without network access. */
+  getCompetitionLiveConnectionInputError() {
+    if (!this.competitionLiveConnectionForm.endpoint.trim()) return 'INVALID_ENDPOINT';
+    if (!this.competitionLiveConnectionForm.workspaceId) return 'WORKSPACE_REQUIRED';
+    const code = this.$refs?.competitionLiveAccessCodeInput?.value || '';
+    if (code.startsWith('oxdemo_')) return 'ACCESS_MODE_MISMATCH';
+    if (!code && !this.canReuseCompetitionLiveCredential()) return 'ACCESS_CODE_REQUIRED';
+    return '';
+  },
+
+  /** 只有同一草稿的 Live 成功检测才允许保存。 / Allow saving only a successful Live check for the unchanged draft. */
+  canSaveCompetitionLiveConnection() {
+    const result = this.competitionLiveConnectionResult;
+    return !this.competitionLiveConnectionBusy && !this.competitionLiveConnectionLoading
+      && this.competitionLiveConnectionSnapshot?.storageAvailable === true
+      && result?.action === 'test' && result.ok === true && result.access?.serviceReady === true
+      && result.access?.modes?.length === 1 && result.access.modes[0] === 'live'
+      && result.access.workspaceId === this.competitionLiveConnectionForm.workspaceId
+      && result.revision === this.competitionLiveConnectionRevision && result.draftKey === this.getCompetitionLiveConnectionDraftKey();
+  },
+
+  /** 展示确切的保存阻塞原因。 / Explain the exact reason saving is unavailable. */
+  getCompetitionLiveConnectionSaveReason() {
+    if (this.competitionLiveConnectionLoading) return this.isCurrentLanguageZh() ? '正在读取本机接入配置。' : 'Reading settings from this device.';
+    if (this.competitionLiveConnectionBusy) return this.isCurrentLanguageZh() ? '当前接入操作完成后才能继续。' : 'Wait for the current connection operation to finish.';
+    if (this.competitionLiveConnectionSnapshot?.storageAvailable === false) return this.getCompetitionLiveConnectionMessage('STORAGE_UNAVAILABLE');
+    if (this.canSaveCompetitionLiveConnection()) return this.isCurrentLanguageZh() ? '检测通过；保存后生效，每次执行仍需人工审批。' : 'Checks passed. Saving applies the connection; every execution still needs human approval.';
+    if (this.competitionLiveConnectionResult?.ok === false) return this.getCompetitionLiveConnectionMessage(this.competitionLiveConnectionResult.code);
+    return this.getCompetitionLiveConnectionMessage('TEST_REQUIRED');
+  },
+
+  /** 区分当前检测与已保存的授权记录，不把旧记录套给新草稿。 / Distinguish current test and saved grants without assigning old access to a new draft. */
+  getCompetitionLiveConnectionReceipt() {
+    const result = this.competitionLiveConnectionResult;
+    const tested = result?.action === 'test' && result.access && result.revision === this.competitionLiveConnectionRevision && result.draftKey === this.getCompetitionLiveConnectionDraftKey();
+    const access = tested ? result.access : this.competitionLiveConnectionSnapshot?.access;
+    if (!access || access.modes?.length !== 1 || access.modes[0] !== 'live') return null;
+    const workspace = (this.enterpriseWorkspaces || []).find(/** 仅显示授权空间名称。 / Resolve only the authorized workspace. */ item => item.id === access.workspaceId);
+    return { access, source: tested ? 'test' : 'saved', workspaceName: workspace?.name || access.workspaceId, expired: Date.parse(access.expiresAt) <= Date.now() };
+  },
+
+  /** 将授权场景转换为业务名称。 / Convert granted scenarios into business labels. */
+  getCompetitionLiveScenarioLabel(scenario) {
+    const labels = { 'feature-drift': ['跨域特征漂移恢复', 'Cross-domain feature drift recovery'], 'recommendation-capacity': ['推荐服务容量恢复', 'Recommendation capacity recovery'], 'capacity': ['容量恢复', 'Capacity recovery'], 'model-iteration': ['模型迭代', 'Model iteration'], 'quantitative-model-iteration': ['量化模型迭代', 'Quantitative model iteration'] };
+    return labels[scenario]?.[this.isCurrentLanguageZh() ? 0 : 1] || scenario;
+  },
+
+  /** 只读测试授权和服务健康，过期异步结果不能恢复检测状态。 / Probe authorization and health read-only; stale responses cannot restore a check. */
+  async testCompetitionLiveConnection() {
+    if (this.competitionLiveConnectionBusy || this.competitionLiveConnectionLoading) return false;
+    const bridge = this.getCompetitionLiveConnectionBridge();
+    const error = bridge ? this.getCompetitionLiveConnectionInputError() : 'UNSUPPORTED_CLIENT';
+    if (error) { this.competitionLiveConnectionResult = { ok: false, code: error }; return false; }
+    const revision = this.competitionLiveConnectionRevision;
+    const draftKey = this.getCompetitionLiveConnectionDraftKey();
+    const { endpoint, workspaceId } = this.competitionLiveConnectionForm;
+    const accessCode = this.$refs?.competitionLiveAccessCodeInput?.value || '';
+    this.competitionLiveConnectionBusy = 'test';
+    this.competitionLiveConnectionClearConfirm = false;
+    try {
+      const result = await bridge.testApplicationCompetitionLiveConnection({ endpoint, workspaceId, ...(accessCode ? { accessCode } : {}) });
+      if (revision !== this.competitionLiveConnectionRevision || draftKey !== this.getCompetitionLiveConnectionDraftKey()) return false;
+      const valid = result?.ok === true && result.access?.modes?.length === 1 && result.access.modes[0] === 'live' && result.access.workspaceId === workspaceId;
+      const ready = valid && result.access.serviceReady === true;
+      this.competitionLiveConnectionResult = { ok: ready, code: valid ? (ready ? '' : 'SERVICE_NOT_READY') : (result?.code || 'INVALID_RESPONSE'), access: valid ? result.access : null, action: 'test', revision, draftKey };
+      return ready;
+    } catch {
+      if (revision === this.competitionLiveConnectionRevision) this.competitionLiveConnectionResult = { ok: false, code: 'NETWORK_ERROR' };
+      return false;
+    } finally { this.competitionLiveConnectionBusy = ''; }
+  },
+
+  /** 再校验后加密保存，草稿不会被慢保存回包覆盖。 / Revalidate and encrypt settings without overwriting a newer draft on completion. */
+  async saveCompetitionLiveConnection() {
+    if (!this.canSaveCompetitionLiveConnection()) return false;
+    const bridge = this.getCompetitionLiveConnectionBridge();
+    if (!bridge) { this.competitionLiveConnectionResult = { ok: false, code: 'UNSUPPORTED_CLIENT' }; return false; }
+    const revision = this.competitionLiveConnectionRevision;
+    const draftKey = this.getCompetitionLiveConnectionDraftKey();
+    const accessCode = this.$refs?.competitionLiveAccessCodeInput?.value || '';
+    this.competitionLiveConnectionBusy = 'save';
+    try {
+      const result = await bridge.saveApplicationCompetitionLiveConnection({ ...this.competitionLiveConnectionForm, ...(accessCode ? { accessCode } : {}) });
+      const unchanged = revision === this.competitionLiveConnectionRevision && draftKey === this.getCompetitionLiveConnectionDraftKey();
+      if (!result?.ok || !result.snapshot) {
+        if (unchanged) this.competitionLiveConnectionResult = { ok: false, code: result?.code || 'STORAGE_WRITE_FAILED' };
+        return false;
+      }
+      this.competitionLiveConnectionSnapshot = result.snapshot;
+      this.competitionLiveConnectionLoaded = true;
+      if (unchanged) {
+        this.competitionLiveConnectionForm = { endpoint: result.snapshot.endpoint, workspaceId: result.snapshot.workspaceId, enabled: result.snapshot.enabled === true };
+        if (this.$refs?.competitionLiveAccessCodeInput) this.$refs.competitionLiveAccessCodeInput.value = '';
+        this.competitionLiveConnectionResult = { ok: true, action: 'save' };
+      }
+      try { await this.loadCompetitionUiProfile(); } catch { this.competitionRuntimeConfigReadError = true; }
+      return true;
+    } catch {
+      if (revision === this.competitionLiveConnectionRevision) this.competitionLiveConnectionResult = { ok: false, code: 'NETWORK_ERROR' };
+      return false;
+    } finally { this.competitionLiveConnectionBusy = ''; }
+  },
+
+  /** 用户确认后清除本机授权，不撤销服务器授权或切换模式。 / Clear device authorization after confirmation without revocation or mode changes. */
+  async clearCompetitionLiveConnection() {
+    if (this.competitionLiveConnectionBusy || this.competitionLiveConnectionLoading || !this.competitionLiveConnectionClearConfirm) return false;
+    const bridge = this.getCompetitionLiveConnectionBridge();
+    if (!bridge) return false;
+    this.competitionLiveConnectionBusy = 'clear';
+    try {
+      const result = await bridge.clearApplicationCompetitionLiveConnection();
+      if (!result?.ok || !result.snapshot) { this.competitionLiveConnectionResult = { ok: false, code: result?.code || 'STORAGE_WRITE_FAILED' }; return false; }
+      this.competitionLiveConnectionSnapshot = result.snapshot;
+      this.competitionLiveConnectionForm = { endpoint: '', workspaceId: '', enabled: true };
+      if (this.$refs?.competitionLiveAccessCodeInput) this.$refs.competitionLiveAccessCodeInput.value = '';
+      this.invalidateCompetitionLiveConnectionTest();
+      this.competitionLiveConnectionResult = { ok: true, action: 'clear' };
+      try { await this.loadCompetitionUiProfile(); } catch { this.competitionRuntimeConfigReadError = true; }
+      return true;
+    } catch {
+      this.competitionLiveConnectionResult = { ok: false, code: 'STORAGE_WRITE_FAILED' };
+      return false;
+    } finally { this.competitionLiveConnectionBusy = ''; }
+  },
+
+  /** 用户明确选演练后才切换 Fixture，保留真实团队前置校验。 / Switch to Fixture only on explicit rehearsal selection, retaining real team prerequisites. */
+  async openCompetitionConnectionRehearsal(runtimeKind) {
+    if (this.competitionConnectionBusy || this.competitionBusyAction) return false;
+    if (runtimeKind === 'agentteams' && (!this.competitionConnectionSnapshot?.credentialConfigured || !this.competitionConnectionSnapshot?.enabled)) return false;
+    this.competitionConnectionBusy = 'rehearsal';
+    try {
+      const snapshot = await this.getApplicationCompetitionRuntime().setApplicationCompetitionAdapterMode({ mode: 'fixture' });
+      this.applyOperationsRuntimeSnapshot(snapshot);
+      if (runtimeKind === 'agentteams' && this.competitionConnectionSnapshot?.workspaceId) {
+        this.competitionDemoForm = { ...this.competitionDemoForm, workspaceId: this.competitionConnectionSnapshot.workspaceId };
+      }
+      await this.openEnterpriseTab('competition');
+      this.competitionTeamRuntime = runtimeKind === 'agentteams' ? 'agentteams' : 'builtin';
+      this.competitionRehearsalVisible = this.competitionRehearsalAvailable;
+      return true;
+    } catch {
+      this.competitionConnectionResult = { ok: false, code: 'CONNECTION_IN_USE' };
+      return false;
+    } finally { this.competitionConnectionBusy = ''; }
+  },
+
+  /** 刷新已保存的公开接入状态，不重放任务或更改模式。 / Refresh public saved connection status without replaying tasks or changing mode. */
+  async refreshCompetitionRuntimeConfiguration() {
+    if (this.competitionLoading || this.xnetServicesLoading || this.xnetCheckingAll || this.competitionConnectionBusy || this.competitionLiveConnectionBusy || this.competitionLiveConnectionLoading) return false;
+    const zh = this.isCurrentLanguageZh();
+    this.competitionLoading = true;
+    try {
+      await this.loadCompetitionUiProfile();
+      if (typeof this.loadCompetitionConnection === 'function') await this.loadCompetitionConnection(false);
+      if (typeof this.loadCompetitionLiveConnection === 'function') await this.loadCompetitionLiveConnection(false);
+      showNotification(zh ? '已读取最新接入状态；保存的配置会在下次启动后保留' : 'Connection status refreshed. Saved settings persist across restarts.', 'success');
+      return true;
+    } catch {
+      this.competitionRuntimeConfigReadError = true;
+      showNotification(zh ? '读取配置状态失败，请稍后重试' : 'Unable to read configuration status. Retry shortly.', 'error');
+      return false;
+    } finally { this.competitionLoading = false; }
+  },
+
+  /** 演练草稿只选择真实工作空间，切换时隔离不属于该空间的项目与模板。 / Rehearsal drafts select real workspaces and isolate foreign projects and templates when switching. */
+  selectCompetitionDemoWorkspace(workspaceId) {
+    if (this.competitionBusyAction || !(this.enterpriseWorkspaces || []).some(/** 必须是本机实际空间。 / Require a real local workspace. */ item => item.id === workspaceId)) return false;
+    const form = { ...this.competitionDemoForm, workspaceId };
+    if (form.projectId && !(this.enterpriseProjects || []).some(/** 仅保留同空间项目。 / Retain projects only from the same workspace. */ item => item.id === form.projectId && item.workspaceId === workspaceId)) delete form.projectId;
+    this.competitionDemoForm = form;
+    const available = this.getCompetitionAvailableTeamTemplates(workspaceId);
+    if (!available.some(/** 不继承其他空间模板。 / Do not inherit a foreign workspace template. */ item => item.id === this.competitionTeamTemplateId)) this.competitionTeamTemplateId = available[0]?.id || '';
+    return true;
+  },
+
+  /** 演练入口展示同一套真实前置条件及平台检查。 / Show the same actual prerequisites and platform checks in the rehearsal launcher. */
+  getCompetitionDemoPreflight() {
+    const zh = this.isCurrentLanguageZh();
+    const workspaceId = this.getCompetitionResolvedWorkspaceId(this.competitionDemoForm?.workspaceId);
+    const checks = this.getCompetitionPrerequisiteSteps(workspaceId).filter(/** 演练尚未创建事件和团队运行，仅检查配置。 / Check configuration before the rehearsal event and team run exist. */ step => ['workspace', 'staff', 'team', 'assignment', 'template'].includes(step.id));
+    checks.push({ id: 'platforms', label: zh ? '三平台页面身份' : 'Three platform identities', done: ['aiops', 'dataops', 'mlops'].every(/** Live要求每个平台真实身份匹配。 / Live requires a verified identity for each platform. */ id => this.xnetServices?.[id]?.identityStatus === 'verified'), value: this.competitionAdapterMode === 'fixture' ? (zh ? 'Fixture 使用隔离证据，线上连接另行检查' : 'Fixture evidence is isolated; live connections are checked separately') : (zh ? 'Live 需要三个页面身份均匹配' : 'Live requires all three page identities to match'), ...this.getCompetitionPreflightConfigurationTarget('platforms') });
+    if (this.competitionTeamRuntime === 'agentteams') checks.push({ id: 'agentteams-connection', label: zh ? 'AgentTeams 服务' : 'AgentTeams service', done: this.competitionRuntimeReadiness?.agentTeamsConfigured === true, value: this.competitionRuntimeReadiness?.agentTeamsConfigured ? (zh ? '连接与委托已配置，运行时仍需验证' : 'Connection and delegation configured; runtime verification remains required') : (this.competitionRuntimeReadiness?.agentTeamsUnavailableReason || (zh ? '专用连接与委托尚未配置' : 'Dedicated connection and delegation not configured')), ...this.getCompetitionPreflightConfigurationTarget('agentteams-connection') });
+    if (this.competitionAdapterMode === 'live') {
+      const readiness = this.competitionRuntimeReadiness;
+      const wrongWorkspace = readiness?.liveWorkspaceId && workspaceId !== readiness.liveWorkspaceId;
+      const wrongRuntime = readiness?.liveRequiredTeamRuntime === 'agentteams' && this.competitionTeamRuntime !== 'agentteams';
+      const reason = wrongWorkspace ? (zh ? '当前工作空间不属于 Live 授权，请选择授权指定的空间或更换接入授权。' : 'This workspace is outside the Live grant. Select the authorized workspace or update authorization.')
+        : wrongRuntime ? (zh ? '此 Live 接入要求 AgentTeams，请将上方协作方式切换为 AgentTeams。' : 'This Live connection requires AgentTeams. Select AgentTeams above.')
+          : readiness?.liveExecutionConfigured ? (zh ? '执行配置已就绪，审批仍须人工决定' : 'Execution configured; human approval remains required')
+            : (readiness?.liveExecutionUnavailableReason || (zh ? '请连接受控执行服务，并完成执行与审批服务检查。' : 'Connect the controlled-execution service and complete execution and approval checks.'));
+      checks.push({ id: 'live-execution', label: zh ? 'Live 执行链' : 'Live execution', done: readiness?.liveExecutionConfigured === true && !wrongWorkspace && !wrongRuntime, value: reason, ...this.getCompetitionPreflightConfigurationTarget('live-execution') });
+    }
+    return checks;
+  },
+
+  /** 单独呈现网络可达性，不以历史在线值冒充身份验证。 / Present network reachability separately from identity verification. */
+  getOperationsPlatformConnectionLabel(platformId) {
+    const state = this.xnetServices?.[platformId]?.connectionStatus;
+    const labels = this.isCurrentLanguageZh() ? { reachable: '连接 · 可达', unreachable: '连接 · 不可达', unchecked: '连接 · 待检查' } : { reachable: 'Connection · Reachable', unreachable: 'Connection · Unreachable', unchecked: 'Connection · Unchecked' };
+    return labels[state] || labels.unchecked;
+  },
+
+  /** 单独呈现平台身份结果，错误地址不能显示已确认。 / Present platform identity independently; wrong addresses cannot appear verified. */
+  getOperationsPlatformIdentityLabel(platformId) {
+    const state = this.xnetServices?.[platformId]?.identityStatus;
+    const labels = this.isCurrentLanguageZh() ? { verified: '身份 · 页面标识匹配', mismatch: '身份 · 地址指向其他平台', unverified: '身份 · 未识别', unavailable: '身份 · 不可用', pending: '身份 · 待检查' } : { verified: 'Identity · Page identity matched', mismatch: 'Identity · Wrong platform address', unverified: 'Identity · Unrecognized', unavailable: 'Identity · Unavailable', pending: 'Identity · Pending' };
+    return labels[state] || labels.pending;
+  },
+
+  /** 用真实快照推进跨页面HUD，首次加载只建立基线。 / Advance the cross-page HUD from actual snapshots; initial loading only establishes a baseline. */
+  applyOperationsRuntimeSnapshot(snapshot) {
+    const previous = this.operationsNoticeBaseline;
+    const baseline = {};
+    this.competitionSnapshot = snapshot;
+    for (const incident of snapshot?.incidents || []) {
+      const key = `${incident.workspaceId}:${incident.incidentId}:${incident.activeTraceId || ''}`;
+      baseline[key] = incident.status;
+      if (!previous || previous[key] === incident.status || !incident.activeTraceId || !this.canUseEnterprise || typeof window.openxnetDesktop?.publishCompletionNotice !== 'function') continue;
+      const status = { INVESTIGATING: 'running', MITIGATING: 'running', VERIFYING: 'running', AWAITING_APPROVAL: 'action_required', RESOLVED: 'completed', FAILED: 'failed', REJECTED: 'failed' }[incident.status];
+      if (!status) continue;
+      const occurredAt = incident.updatedAt || new Date().toISOString();
+      const notice = {
+        resultId: `enterprise:${incident.incidentId}:${incident.activeTraceId}:${incident.status}:${occurredAt}`,
+        source: 'enterprise_run', incidentId: incident.incidentId, workspaceId: incident.workspaceId, traceId: incident.activeTraceId,
+        title: this.getCompetitionApprovalPublicText(incident.title || (this.isCurrentLanguageZh() ? '企业协同任务' : 'Enterprise task'), 120),
+        summary: this.getCompetitionApprovalPublicText(`${this.getOperationsWorkspaceLabel(incident.workspaceId)} · ${this.getCompetitionStatusLabel(incident.status)}${status === 'action_required' ? (this.isCurrentLanguageZh() ? ' · 展开原始范围后审批' : ' · Review original scopes to decide') : ''}`, 400),
+        status, occurredAt
+      };
+      Promise.resolve().then(/** 发布公开状态，不传参数或凭据。 / Publish public state without tool arguments or credentials. */ () => window.openxnetDesktop.publishCompletionNotice(notice)).catch(/** 通知失败不重放业务操作。 / Notification failure must never replay a business action. */ () => console.warn('[Operations] Runtime notice was not delivered.'));
+    }
+    this.operationsNoticeBaseline = baseline;
+    this.scheduleOperationsRuntimePoll();
+  },
+
+  /** 只读轮询支持运行中的跨页面提醒，不产生业务写入。 / Read-only polling supports cross-page notifications without business writes. */
+  scheduleOperationsRuntimePoll() {
+    if (this.competitionProgressPollTimer || typeof window.setTimeout !== 'function' || !this.canUseEnterprise) return;
+    const active = (this.competitionSnapshot?.incidents || []).some(/** 审批和活动任务需要继续观察。 / Keep observing approvals and active work. */ item => ['INVESTIGATING', 'MITIGATING', 'VERIFYING', 'AWAITING_APPROVAL'].includes(item.status));
+    if (!active && !this.competitionBusyAction && !['ops-control', 'competition'].includes(this.enterpriseTab)) return;
+    this.competitionProgressPollTimer = window.setTimeout(/** 每次读取后重新判断页面和运行生命周期。 / Recheck page and run lifecycle after every read. */ async () => {
+      this.competitionProgressPollTimer = null;
+      if (!this.canUseEnterprise) return;
+      try { this.applyOperationsRuntimeSnapshot(await this.getApplicationCompetitionRuntime().getApplicationCompetitionSnapshot()); }
+      catch { this.scheduleOperationsRuntimePoll(); }
+    }, 3000);
+  },
+
+  /** 通知定位前重新读取并严格核对三个身份，不批准或执行。 / Refresh and verify all three identities before navigation; never approve or execute. */
+  async openOperationsNoticeTarget(target) {
+    if (!this.canUseEnterprise || this.competitionBusyAction || !target?.incidentId || !target.workspaceId || !target.traceId) return false;
+    try {
+      const snapshot = await this.getApplicationCompetitionRuntime().getApplicationCompetitionSnapshot();
+      const incident = (snapshot?.incidents || []).find(/** 通知只能指向原运行。 / A notification can target only its original run. */ item => item.incidentId === target.incidentId && item.workspaceId === target.workspaceId && item.activeTraceId === target.traceId);
+      if (!incident) return false;
+      this.applyOperationsRuntimeSnapshot(snapshot);
+      if (!await this.openOperationsRun(incident.incidentId)) return false;
+      const selected = this.getCompetitionActiveIncident();
+      if (selected?.incidentId !== target.incidentId || selected.workspaceId !== target.workspaceId || selected.activeTraceId !== target.traceId) { this.operationsDetailVisible = false; return false; }
+      this.activeMenu = 'enterprise';
+      return true;
+    } catch { return false; }
+  },
+
   /** 返回指定或当前 Workspace 可使用的团队模板；输入可选 Workspace ID，返回启用模板列表。 */
   getCompetitionAvailableTeamTemplates(workspaceIdOverride = '') {
-    const workspaceId = String(
+    const workspaceId = this.getCompetitionResolvedWorkspaceId(String(
       workspaceIdOverride
       || (this.showSandboxChatPanel ? this.getEnterpriseChatWorkspaceId() : '')
       || this.getCompetitionActiveIncident()?.workspaceId
       || this.competitionDemoForm?.workspaceId
       || ''
-    ).trim();
+    ).trim());
     return (Array.isArray(this.enterpriseTeamTemplates) ? this.enterpriseTeamTemplates : [])
       .filter(template => template?.enabled !== false && String(template?.workspaceId || '').trim() === workspaceId);
   },
@@ -38173,24 +39828,47 @@ async handleRefreshSkills() {
     return 'is-neutral';
   },
 
-  /** 返回事件流程阶段序号；输入状态，返回 0 到 5，失败沿用当前业务阶段。 */
+  /** 按当前Trace真实记录定位流程阶段，失败不能固定回到审批。 / Locate workflow progress from actual current-trace records instead of mapping every failure to approval. */
   getCompetitionStageIndex(status) {
+    if (status === 'FAILED') {
+      const incident = this.getCompetitionActiveIncident();
+      if (!incident) return -1;
+      /** 所有阶段证据必须属于同一事件范围。 / Every stage observation must belong to the same incident scope. */
+      const matches = item => item?.incidentId === incident.incidentId && item.workspaceId === incident.workspaceId && item.traceId === incident.activeTraceId;
+      const candidateGraph = this.getCompetitionActiveTaskGraph();
+      const graph = matches(candidateGraph) ? candidateGraph : null;
+      const candidateAction = this.getCompetitionActiveAction();
+      const action = matches(candidateAction) ? candidateAction : null;
+      const candidateApproval = this.getCompetitionActiveApproval();
+      const approval = matches(candidateApproval) ? candidateApproval : null;
+      const verificationIds = new Set(action?.verificationEvidenceIds || []);
+      const verifier = (this.competitionSnapshot?.agentDecisions || []).some(/** 只使用同Trace的独立裁决。 / Use only the independent verdict from this trace. */ item => matches(item) && item.stage === 'VERIFICATION_CONCLUSION');
+      const verified = (this.competitionSnapshot?.evidence || []).some(/** 验证阶段必须有实际证据引用。 / Verification requires an actual evidence reference. */ item => matches(item) && verificationIds.has(item.evidenceId));
+      if (verifier || verified || action?.stage === 'VERIFYING') return 4;
+      if (action) {
+        const steps = Array.isArray(action.steps) ? action.steps : [];
+        if (steps.length > 0 && steps.every(/** 主步骤全成功但无验证记录时不能猜测失败阶段。 / When all primary steps succeeded without verification records, do not guess the failure stage. */ step => step.status === 'SUCCEEDED')) return -1;
+        return 3;
+      }
+      if (approval || graph?.nodes?.some(/** 明确的人审节点失败属于审批阶段。 / An explicit human-gate failure belongs to approval. */ node => node.nodeId === 'human-approval' && node.status === 'FAILED')) return 2;
+      if (graph?.nodes?.some(/** 路由失败不能声称完成了取证。 / Routing failure cannot claim evidence collection completed. */ node => node.nodeId === 'route-agent-team' && node.status === 'FAILED')) return 0;
+      return graph || incident.activeTraceId ? 1 : -1;
+    }
     return {
       OPEN: 0,
       INVESTIGATING: 1,
       AWAITING_APPROVAL: 2,
       MITIGATING: 3,
       VERIFYING: 4,
-      RESOLVED: 5,
-      FAILED: 2
+      RESOLVED: 5
     }[status] ?? 0;
   },
 
-  /** 返回阶段节点 CSS 类；输入节点序号，返回完成、当前或待处理类。 */
+  /** 返回完成、当前、失败或待处理阶段样式。 / Return completed, current, failed, or pending workflow styling. */
   getCompetitionStageClass(index) {
     const current = this.getCompetitionStageIndex(this.getCompetitionActiveIncident()?.status);
     if (index < current) return 'is-complete';
-    if (index === current) return 'is-current';
+    if (index === current) return this.getCompetitionActiveIncident()?.status === 'FAILED' ? 'is-failed' : 'is-current';
     return 'is-pending';
   },
 
@@ -38250,9 +39928,18 @@ async handleRefreshSkills() {
     }
   },
 
-  /** 读取当前闭环事件对应的 Memory V3 记录；输入是否显示错误，按 Incident 幂等任务键查询真实 SQLite。 */
+  /** 按事件读取真实记忆，旧异步回执不能覆盖新选择。 / Read real incident memories without allowing stale async receipts to overwrite a new selection. */
   async loadCompetitionMemoryArtifacts(notifyOnError = false) {
     const incident = this.getCompetitionActiveIncident();
+    const incidentId = incident?.incidentId || '';
+    const generation = this.competitionMemoryGeneration = (this.competitionMemoryGeneration || 0) + 1;
+    if (!incidentId) {
+      this.competitionMemoryStatus = null;
+      this.competitionMemoryRecords = [];
+      this.competitionMemoryError = '';
+      this.competitionMemoryLoading = false;
+      return [];
+    }
     this.competitionMemoryLoading = true;
     this.competitionMemoryError = '';
     try {
@@ -38269,26 +39956,28 @@ async handleRefreshSkills() {
         runtime.getSynapxnetMemoryStatus(),
         runtime.listSynapxnetMemories({
           requesterAgent,
-          query: incident?.incidentId || '',
+          query: incidentId,
           ownerAgent: '',
           includeRetired: false,
           limit: 100
         })
       ]);
-      const taskId = incident ? `incident:${incident.incidentId}` : '';
+      if (generation !== this.competitionMemoryGeneration || this.getCompetitionActiveIncident()?.incidentId !== incidentId) return [];
+      const taskId = `incident:${incidentId}`;
       this.competitionMemoryStatus = status;
       this.competitionMemoryRecords = (Array.isArray(listing?.items) ? listing.items : [])
-        .filter(item => !taskId || item.taskId === taskId)
-        .sort((left, right) => String(right.committedAtUtc).localeCompare(String(left.committedAtUtc)));
+        .filter(/** 只展示当前事件的记忆。 / Display memories belonging to the current incident only. */ item => item.taskId === taskId)
+        .sort(/** 以实际提交时间排序。 / Sort by actual commit time. */ (left, right) => String(right.committedAtUtc).localeCompare(String(left.committedAtUtc)));
       return this.competitionMemoryRecords;
     } catch (error) {
+      if (generation !== this.competitionMemoryGeneration || this.getCompetitionActiveIncident()?.incidentId !== incidentId) return [];
       this.competitionMemoryStatus = null;
       this.competitionMemoryRecords = [];
       this.competitionMemoryError = String(error?.message || 'SynapXnet Memory runtime is unavailable.');
       if (notifyOnError) showNotification(this.competitionMemoryError, 'error');
       return [];
     } finally {
-      this.competitionMemoryLoading = false;
+      if (generation === this.competitionMemoryGeneration && this.getCompetitionActiveIncident()?.incidentId === incidentId) this.competitionMemoryLoading = false;
     }
   },
 
@@ -38352,11 +40041,45 @@ async handleRefreshSkills() {
     return labels[eventType] || String(eventType || '-');
   },
 
-  /** 汇总任务节点的真实执行结果；输入节点，优先返回 Evidence，随后返回 Tool Invocation 状态。 */
+  /** 只按节点及动作的明确引用展示同Trace结果，不按工具名称跨阶段猜测。 / Show same-trace results through explicit node and action references without guessing across stages by tool name. */
   getCompetitionTaskNodeResult(node) {
-    if (!node) return null;
+    const incident = this.getCompetitionActiveIncident();
+    const graph = this.getCompetitionActiveTaskGraph();
+    if (!node || !incident || !graph || graph.incidentId !== incident.incidentId || graph.traceId !== incident.activeTraceId || graph.workspaceId !== incident.workspaceId) return null;
+    node = graph.nodes.find(/** 读取原图中的节点。 / Read the original graph node. */ item => item.nodeId === node.nodeId);
+    if (!node || ['PENDING', 'READY', 'AWAITING_APPROVAL', 'BLOCKED', 'SKIPPED'].includes(node.status)) return null;
     const evidenceIds = new Set(Array.isArray(node.evidenceIds) ? node.evidenceIds : []);
-    const evidence = this.getCompetitionActiveEvidence().find(item => evidenceIds.has(item.evidenceId));
+    const invocationIds = new Set();
+    const candidateAction = this.getCompetitionActiveAction();
+    const action = candidateAction?.incidentId === incident.incidentId && candidateAction.traceId === graph.traceId && candidateAction.workspaceId === incident.workspaceId ? candidateAction : null;
+    if (node.lane === 'VERIFICATION') {
+      const verifiedIds = new Set(action?.verificationEvidenceIds || []);
+      for (const id of evidenceIds) if (!verifiedIds.has(id)) evidenceIds.delete(id);
+    }
+    if (node.nodeId.startsWith('execute:') && action) {
+      const step = (action.steps || []).find(/** 按原步骤键关联调用，保留无Evidence的失败详情。 / Link by the original step key, retaining failures that produced no evidence. */ item => `execute:${item.stepId}` === node.nodeId && item.toolName === node.toolName);
+      if (step?.invocationId) invocationIds.add(step.invocationId);
+      if (step?.evidenceId) evidenceIds.add(step.evidenceId);
+    }
+    const boundEvidence = this.getCompetitionActiveEvidence().filter(/** 严格关联当前事件、工作空间与Trace。 / Match the current incident, workspace and trace exactly. */ item => evidenceIds.has(item.evidenceId) && item.incidentId === incident.incidentId && item.workspaceId === incident.workspaceId && item.traceId === graph.traceId);
+    if (['POLICY_DECISION', 'EVIDENCE_FUSION'].includes(node.nodeType)) {
+      /** 裁决与聚合摘要不能借用单项指标。 / Decisions and aggregates must never borrow an individual metric as their conclusion. */
+      const matches = item => item?.incidentId === incident.incidentId && item.workspaceId === incident.workspaceId && item.traceId === graph.traceId;
+      let summary = '';
+      if (node.nodeId === 'verifier-conclusion') {
+        const verdict = [...(this.competitionSnapshot?.agentDecisions || [])].reverse().find(/** 仅引用原验证结论。 / Reference only the original verification conclusion. */ item => matches(item) && item.stage === 'VERIFICATION_CONCLUSION');
+        if (verdict) summary = `${verdict.decision} · ${verdict.summary || ''}`.trim();
+      } else if (node.nodeId === 'select-governed-plan') {
+        const decision = [...(this.competitionSnapshot?.reasoningDecisions || [])].reverse().find(/** 只引用同范围计划裁决。 / Reference only the same-scope plan decision. */ item => matches(item) && item.decisionType === 'PLAN_SELECTION');
+        if (decision) {
+          const selected = decision.candidates?.find(/** 精确选择原候选。 / Select the original candidate exactly. */ item => item.candidateId === decision.selectedCandidateId);
+          summary = [selected?.title, selected?.policyDecision, decision.explanation].filter(Boolean).join(' · ');
+        }
+      }
+      const evidenceCount = new Set(boundEvidence.map(/** 统计实际唯一证据。 / Count actual unique evidence. */ item => item.evidenceId)).size;
+      return { status: node.status, summary: summary || (this.isCurrentLanguageZh() ? `${evidenceCount} 条关联证据` : `${evidenceCount} linked evidence records`), evidenceId: null, errorCode: null };
+    }
+    const evidence = boundEvidence[0];
     if (evidence) {
       return {
         status: node.status,
@@ -38368,7 +40091,7 @@ async handleRefreshSkills() {
     if (!node.toolName) return null;
     const invocation = [...this.getCompetitionActiveInvocations()]
       .reverse()
-      .find(item => item.toolName === node.toolName);
+      .find(/** 必须有原节点证据或原步骤调用引用；工具名仅辅助校验。 / Require original node evidence or step invocation references; tool names only provide an additional check. */ item => item.incidentId === incident.incidentId && item.workspaceId === incident.workspaceId && item.traceId === graph.traceId && item.toolName === node.toolName && (invocationIds.has(item.invocationId) || evidenceIds.has(item.evidenceId)));
     if (!invocation) return null;
     return {
       status: invocation.status,
@@ -38418,10 +40141,22 @@ async handleRefreshSkills() {
     return Number.isFinite(score) ? `${Math.round(Math.max(0, Math.min(1, score)) * 100)}%` : '-';
   },
 
-  /** 构建 AgentTeams 上下文交接链；无输入，从身份决策、摘要与 Matrix 摘要生成可追溯传递记录。 */
+  /** 取证规划仅描述真实工具选择与调用进度，不将模型原摘要冒充观测证据。 / Describe actual tool selection and invocation progress for plans, never treating model prose as observed evidence. */
+  getCompetitionAgentDecisionSummary(decision) {
+    if (decision?.stage !== 'INVESTIGATION_PLAN') return decision?.summary || '';
+    const zh = this.isCurrentLanguageZh();
+    const tools = [...new Set((Array.isArray(decision.requestedToolNames) ? decision.requestedToolNames : []).filter(/** 仅统计明确非空工具名。 / Count only explicit nonempty tool names. */ name => typeof name === 'string' && name.trim().length > 0))];
+    const incident = this.getCompetitionActiveIncident();
+    const matchingRun = incident?.activeTraceId && decision.incidentId === incident.incidentId && decision.workspaceId === incident.workspaceId && decision.traceId === incident.activeTraceId;
+    const collected = matchingRun && (this.competitionSnapshot?.invocations || []).some(/** 必须有同范围已结束的真实工具调用，不借用旧Trace或其他空间。 / Require an actual finished invocation in the same scope, never a stale trace or foreign workspace. */ call => call.incidentId === decision.incidentId && call.workspaceId === decision.workspaceId && call.traceId === decision.traceId && typeof call.invocationId === 'string' && call.invocationId.length > 0 && tools.includes(call.toolName) && ['SUCCEEDED', 'FAILED'].includes(call.status));
+    return zh ? `已选择 ${tools.length} 项只读工具，${collected ? '实际采集结果见证据' : '等待采集证据'}`
+      : `Selected ${tools.length} read-only tools; ${collected ? 'see evidence for actual collection results' : 'awaiting evidence collection'}`;
+  },
+
+  /** 构建可追溯交接链，取证规划与原始审计说明分开投影。 / Build traceable handoffs while separating evidence plans from their raw audit descriptions. */
   getCompetitionContextTransfers() {
     const decisions = this.getCompetitionActiveAgentDecisions();
-    return decisions.map((decision, index) => {
+    return decisions.map(/** 投影原记录，不改写模型决策与证据。 / Project original records without mutating model decisions or evidence. */ (decision, index) => {
       const previous = decisions[index - 1] || null;
       return {
         id: decision.decisionId,
@@ -38429,7 +40164,8 @@ async handleRefreshSkills() {
         from: decision.routedByName || previous?.agentName || (this.isCurrentLanguageZh() ? '企业领导' : 'Enterprise Leader'),
         to: decision.agentName,
         stage: this.getCompetitionAgentStageLabel(decision.stage),
-        summary: decision.summary,
+        summary: this.getCompetitionAgentDecisionSummary(decision),
+        rawPlanningSummary: decision.stage === 'INVESTIGATION_PLAN' ? decision.summary || '' : '',
         status: ['HALT', 'ROLLBACK_REQUIRED'].includes(decision.decision) ? 'FAILED' : 'SUCCEEDED',
         requestedToolNames: Array.isArray(decision.requestedToolNames) ? decision.requestedToolNames : [],
         evidenceIds: Array.isArray(decision.evidenceIds) ? decision.evidenceIds : [],
@@ -38440,7 +40176,50 @@ async handleRefreshSkills() {
     });
   },
 
-  /** 构建任务关闭门禁；无输入，以协作、证据、裁决、审批、执行、回执和独立验证七类事实判定。 */
+  /** 按三场景固定验证契约返回必需工具，须与Main场景注册表保持一致。 / Return required tools for the three fixed verification contracts, matching the Main scenario registry. */
+  getCompetitionVerificationRequiredTools() {
+    const tools = {
+      'recommendation-capacity': ['aiops.inference.metrics.get', 'aiops.inference.recovery.status', 'dataops.workflow.instance.get', 'mlops.deployment.get', 'mlops.inference.probe'],
+      'quantitative-iteration': ['aiops.service.health', 'dataops.dataset.validation.get', 'mlops.attribution.report.get', 'mlops.deployment.get', 'mlops.release.validation.get', 'mlops.inference.probe'],
+      'feature-drift': ['aiops.inference.recovery.status', 'dataops.dataset.validation.get', 'mlops.inference.probe', 'mlops.deployment.get', 'mlops.release.validation.get']
+    };
+    return tools[this.getCompetitionActiveIncident()?.scenario?.scenarioType] || [];
+  },
+
+  /** 仅用同范围真实回执、独立身份和完整证据判定验证结果，绝不从RESOLVED补造结论。 / Resolve verification only from scoped receipts, independent actors and complete evidence, never from RESOLVED alone. */
+  getCompetitionVerificationConclusion() {
+    const incident = this.getCompetitionActiveIncident();
+    const zh = this.isCurrentLanguageZh();
+    const pending = { status: 'PENDING', runtime: null, label: zh ? '独立验证' : 'Independent verification', decision: null, evidenceCount: 0, receiptId: null, errorCode: null, reason: zh ? '缺少可核验的独立验证回执' : 'No verifiable independent verification receipt' };
+    if (!incident?.activeTraceId) return pending;
+    /** 所有记录必须严格匹配原事件、空间和活动追踪。 / Every record must match the original incident, workspace and active trace. */
+    const inScope = item => item?.incidentId === incident.incidentId && item.workspaceId === incident.workspaceId && item.traceId === incident.activeTraceId;
+    const action = this.getCompetitionActiveAction();
+    const binding = this.getCompetitionActiveTeamBinding();
+    if (!action || !inScope(action) || !binding || !['builtin', 'agentteams'].includes(binding.runtime)) return pending;
+    const label = binding.runtime === 'builtin' ? (zh ? '内置独立验证' : 'Builtin independent verification') : 'AgentTeams Verifier';
+    const receipt = [...(this.competitionSnapshot?.auditReceipts || [])].reverse().find(/** 不借用其他动作、旧审批或执行人自验的回执。 / Reject foreign actions, old approvals and self-verification receipts. */ item => inScope(item) && item.toolName === 'openxnet.remediation.verify' && item.verification?.actionId === action.actionId && item.approvalId === action.approvalId && typeof item.actorId === 'string' && item.actorId.length > 0 && typeof action.executedBy === 'string' && action.executedBy.length > 0 && item.actorId !== action.executedBy);
+    const detail = receipt?.verification;
+    if (!detail || detail.runtime !== binding.runtime) return { ...pending, runtime: binding.runtime, label };
+    const ids = Array.isArray(detail.evidenceIds) ? detail.evidenceIds : [];
+    const actionIds = Array.isArray(action.verificationEvidenceIds) ? action.verificationEvidenceIds : [];
+    const evidence = (this.competitionSnapshot?.evidence || []).filter(/** 验证引用必须在同一次运行中实际存在。 / Verification references must exist in the same run. */ item => inScope(item) && ids.includes(item.evidenceId));
+    const required = this.getCompetitionVerificationRequiredTools();
+    const complete = ids.length > 0 && new Set(ids).size === ids.length && ids.every(/** 拒绝空身份。 / Reject empty evidence identities. */ id => typeof id === 'string' && id.length > 0)
+      && evidence.length === ids.length && actionIds.length === ids.length && new Set(actionIds).size === actionIds.length && actionIds.every(/** 动作和回执引用必须是同一完整集合。 / Action and receipt must reference the same complete set. */ id => ids.includes(id))
+      && required.length > 0 && required.every(/** 每项场景验证工具必须有证据。 / Every scenario verification tool needs evidence. */ tool => evidence.some(/** 核对原始工具身份。 / Match the original tool identity. */ item => item.toolName === tool))
+      && evidence.every(/** 每条验证证据必须来自独立身份的成功调用。 / Each verification item must come from a successful invocation by the independent actor. */ item => (this.competitionSnapshot?.invocations || []).some(/** 同空间追踪、证据、工具与调用人全部匹配。 / Match scope, evidence, tool and caller together. */ call => inScope(call) && call.evidenceId === item.evidenceId && call.toolName === item.toolName && call.actorId === receipt.actorId && call.status === 'SUCCEEDED'));
+    const decision = [...(this.competitionSnapshot?.agentDecisions || [])].reverse().find(/** AgentTeams仍必须给出真实Verifier角色裁决。 / AgentTeams still requires an actual verifier-role decision. */ item => inScope(item) && item.stage === 'VERIFICATION_CONCLUSION' && item.teamRole === 'verifier' && item.bindingId === binding.bindingId);
+    const independentAgent = binding.runtime === 'builtin' || (decision?.decision === 'CLOSE' && receipt.actorId === `agentteams:${decision.roleCardId}` && binding.memberSnapshots?.some(/** 独立验证角色必须固化在团队中。 / The verifier role must be captured in the team binding. */ member => member.teamRole === 'verifier' && member.roleCardId === decision.roleCardId));
+    const passed = detail.decision === 'CLOSE' && detail.errorCode === null && receipt.outcome === 'SUCCEEDED' && complete && independentAgent;
+    const failed = detail.decision === 'ROLLBACK_REQUIRED' || receipt.outcome === 'FAILED';
+    return { status: passed ? 'PASSED' : failed ? 'FAILED' : 'PENDING', runtime: binding.runtime, label, decision: detail.decision, evidenceCount: evidence.length, receiptId: receipt.receiptId, errorCode: detail.errorCode,
+      reason: passed ? (zh ? '独立身份、全部验证证据和审计回执一致' : 'Independent actor, complete evidence and audit receipt agree')
+        : failed ? this.getCompetitionApprovalPublicText(detail.errorCode || (zh ? '独立验证未通过' : 'Independent verification failed'))
+          : !complete ? (zh ? '验证证据或独立调用记录不完整' : 'Verification evidence or independent invocation records are incomplete') : (zh ? '等待 AgentTeams Verifier 的真实 CLOSE 裁决' : 'Awaiting an actual CLOSE decision from the AgentTeams Verifier') };
+  },
+
+  /** 构建任务关闭门禁，按真实协作、证据、审批和独立验证事实判定。 / Build closure gates from actual collaboration, evidence, approval and independent verification facts. */
   getCompetitionCompletionGates() {
     const incident = this.getCompetitionActiveIncident();
     if (!incident) return [];
@@ -38454,8 +40233,7 @@ async handleRefreshSkills() {
     const action = this.getCompetitionActiveAction();
     const receipts = (Array.isArray(this.competitionSnapshot?.auditReceipts) ? this.competitionSnapshot.auditReceipts : [])
       .filter(item => item.incidentId === incident.incidentId);
-    const verifier = [...this.getCompetitionActiveAgentDecisions()].reverse()
-      .find(item => item.stage === 'VERIFICATION_CONCLUSION') || null;
+    const verification = this.getCompetitionVerificationConclusion();
     const graphFailed = graph?.status === 'FAILED' || graph?.nodes?.some(node => ['FAILED', 'BLOCKED'].includes(node.status));
     const invocationFailed = invocations.some(item => item.status === 'FAILED');
     const actionFailed = action?.status === 'FAILED';
@@ -38474,7 +40252,7 @@ async handleRefreshSkills() {
       makeGate('reasoning', zh ? '神经符号裁决通过' : 'Policy decision passed', zh ? '选中候选满足权限、风险和证据硬门' : 'Selected candidate passes authority, risk, and evidence gates', Boolean(selected?.eligible && !['DENY', 'ABSTAIN'].includes(selected.policyDecision)), Boolean(selected && (!selected.eligible || ['DENY', 'ABSTAIN'].includes(selected.policyDecision))), selected ? `${selected.policyDecision} · ${selected.authorityLevel}/${selected.riskClass}/${selected.evidenceGrade}` : 'PENDING'),
       makeGate('approval', zh ? '人工审批已完成' : 'Human approval completed', zh ? '高风险计划必须明确批准' : 'High-risk plan requires explicit approval', approval?.status === 'APPROVED', approval?.status === 'REJECTED', approval?.status || 'PENDING'),
       makeGate('execution', zh ? '受控执行与回执完整' : 'Execution receipts complete', zh ? 'Action 成功且写操作留下 AuditReceipt' : 'Successful action with write receipts', action?.status === 'SUCCEEDED' && receipts.length > 0 && !actionFailed, Boolean(actionFailed), `${action?.status || 'PENDING'} · ${receipts.length} Receipts`),
-      makeGate('verification', zh ? '独立验证允许关闭' : 'Independent verification allows closure', zh ? 'Verifier=CLOSE、验证证据存在且 Incident=RESOLVED' : 'Verifier=CLOSE with evidence and RESOLVED incident', verifier?.decision === 'CLOSE' && (action?.verificationEvidenceIds?.length || 0) > 0 && incident.status === 'RESOLVED', incident.status === 'FAILED' || verifier?.decision === 'ROLLBACK_REQUIRED', `${verifier?.decision || 'PENDING'} · ${action?.verificationEvidenceIds?.length || 0} Evidence · ${incident.status}`)
+      makeGate('verification', verification.label, zh ? '独立身份、完整复验与 CLOSE 回执一致，事件已解决' : 'Independent actor, complete verification and CLOSE receipt agree; incident resolved', verification.status === 'PASSED' && incident.status === 'RESOLVED', verification.status === 'FAILED', `${verification.decision || 'PENDING'} · ${verification.evidenceCount} Evidence · ${verification.reason}`)
     ];
   },
 
@@ -38577,20 +40355,47 @@ async handleRefreshSkills() {
     ];
   },
 
-  /** 选择演示业务场景；输入模板 ID，更新事件表单和审批文案且保留 Workspace。 */
+  /** 选择下一事件的业务草稿，不修改当前事件审批或范围。 / Select the next incident draft without changing current incident approval or scope. */
   selectCompetitionDemoScenario(scenarioId) {
     const template = this.getCompetitionDemoScenarioTemplates().find(item => item.id === String(scenarioId || '').trim());
-    if (!template) return;
+    if (!template || this.competitionBusyAction) return false;
     this.competitionDemoScenarioType = template.id;
     this.competitionDemoForm = {
       workspaceId: String(this.competitionDemoForm?.workspaceId || 'ws_goai_demo').trim(),
+      ...(this.competitionDemoForm?.projectId ? { projectId: this.competitionDemoForm.projectId } : {}),
       title: template.title,
       summary: template.summary,
       severity: template.severity,
       scenario: JSON.parse(JSON.stringify(template.scenario))
     };
-    this.competitionApprovalReason = template.approvalReason;
     this.competitionDemoScenarioMode = 'recovery';
+    return true;
+  },
+
+  /** 失败注入只适用于Fixture中的量化和特征漂移草稿。 / Failure injection is available only for quantitative and feature-drift drafts in Fixture mode. */
+  canUseCompetitionVerificationFailure() {
+    return this.competitionAdapterMode === 'fixture' && ['quantitative-iteration', 'feature-drift'].includes(this.competitionDemoForm?.scenario?.scenarioType);
+  },
+
+  /** 更新新事件演示路径，拒绝不受支持的失败注入。 / Update the next incident path while rejecting unsupported failure injection. */
+  selectCompetitionDemoPath(mode) {
+    if (this.competitionBusyAction || !['recovery', 'verification-failure'].includes(mode) || (mode === 'verification-failure' && !this.canUseCompetitionVerificationFailure())) return false;
+    this.competitionDemoScenarioMode = mode;
+    return true;
+  },
+
+  /** 只打开并定位新事件配置，不创建事件或清理历史。 / Open and focus the next incident configuration without creating incidents or clearing history. */
+  async openCompetitionNewIncidentDraft() {
+    if (this.competitionBusyAction) return false;
+    await this.openCompetitionRehearsal();
+    if (!this.competitionRehearsalVisible) return false;
+    this.enterpriseTab = 'competition';
+    this.operationsDetailVisible = false;
+    await this.$nextTick();
+    const panel = this.$refs?.competitionNewIncidentDraft;
+    panel?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    panel?.focus?.({ preventScroll: true });
+    return true;
   },
 
   /** 返回当前场景处置按钮文案；无输入，根据活动事件显示扩容、迭代或回滚。 */
@@ -38617,24 +40422,49 @@ async handleRefreshSkills() {
     };
   },
 
-  /** 创建固定 GOAI 演示事件；无输入，返回后刷新工作台且不访问三平台。 */
+  /** 按明确草稿新增演示事件，保留旧事件并拦截不受支持的失败注入。 / Add an incident from the explicit draft, preserving older incidents and blocking unsupported failure injection. */
   async createCompetitionDemoIncident() {
+    if (!this.competitionRehearsalAvailable || !this.competitionRehearsalVisible || this.competitionBusyAction || this.competitionLoading) return false;
+    const failureRequested = this.competitionDemoScenarioMode === 'verification-failure' || this.competitionDemoForm?.scenario?.testDatasetRef === 'fixture://goai/verification-failure-v1';
+    if (!['recovery', 'verification-failure'].includes(this.competitionDemoScenarioMode) || (failureRequested && (this.competitionDemoScenarioMode !== 'verification-failure' || !this.canUseCompetitionVerificationFailure()))) {
+      showNotification(this.isCurrentLanguageZh() ? '验证失败路径仅支持 Fixture 模式的量化或特征漂移场景。' : 'Verification failure requires a quantitative or feature-drift scenario in Fixture mode.', 'warning');
+      return false;
+    }
     this.competitionBusyAction = 'create';
     try {
       const scenario = JSON.parse(JSON.stringify(this.competitionDemoForm.scenario));
       if (this.competitionAdapterMode === 'fixture' && this.competitionDemoScenarioMode === 'verification-failure') {
         scenario.testDatasetRef = 'fixture://goai/verification-failure-v1';
       }
+      const requestedWorkspaceId = String(this.competitionDemoForm?.workspaceId || 'ws_goai_demo').trim();
+      const workspaceRecords = Array.isArray(this.enterpriseWorkspaces) ? this.enterpriseWorkspaces : [];
+      const resolvedWorkspaceId = requestedWorkspaceId === 'ws_goai_demo'
+        ? String(workspaceRecords.find(item => String(item?.name || '').trim() === 'GOAI Competition Demo')?.id || (workspaceRecords.length === 1 ? workspaceRecords[0]?.id : '') || requestedWorkspaceId).trim()
+        : requestedWorkspaceId;
       const result = await this.getApplicationCompetitionRuntime().createApplicationCompetitionIncident({
         ...this.competitionDemoForm,
+        workspaceId: resolvedWorkspaceId,
         scenario
       });
-      this.competitionSnapshot = result.snapshot;
+      if (!result?.incidentId || !result.snapshot?.incidents?.some(/** 确认创建回执包含真实事件。 / Require the created incident in the actual receipt. */ item => item.incidentId === result.incidentId)) throw new Error('The incident creation receipt is incomplete.');
+      const previous = this.getCompetitionActiveIncident();
+      if (previous) {
+        this.competitionApprovalDrafts = { ...(this.competitionApprovalDrafts || {}), [previous.incidentId]: this.competitionApprovalReason || '' };
+        if (previous.activeApprovalId && this.competitionRollbackIdempotencyKey) this.competitionRollbackKeys = { ...(this.competitionRollbackKeys || {}), [previous.activeApprovalId]: this.competitionRollbackIdempotencyKey };
+      }
+      this.applyOperationsRuntimeSnapshot(result.snapshot);
+      this.competitionSelectedIncidentId = result.incidentId;
+      this.competitionApprovalReason = '';
       this.competitionRollbackIdempotencyKey = '';
       await this.loadCompetitionMemoryArtifacts(false);
       showNotification('演示事件已创建', 'success');
+      this.enterpriseTab = 'ops-control';
+      this.operationsDetailVisible = true;
+      this.competitionRehearsalVisible = false;
+      return true;
     } catch (error) {
       showNotification(error?.message || '创建事件失败', 'error');
+      return false;
     } finally {
       this.competitionBusyAction = '';
     }
@@ -38643,7 +40473,9 @@ async handleRefreshSkills() {
   /** 启动九项跨域取证；无输入，发送当前 Team Runtime 与模板 ID 并刷新待审批状态。 */
   async runCompetitionInvestigation() {
     const incident = this.getCompetitionActiveIncident();
-    if (!incident) return;
+    if (!incident || this.competitionBusyAction) return;
+    const blocker = this.getCompetitionInvestigationBlocker();
+    if (blocker) { showNotification(blocker, 'warning'); return; }
     this.competitionBusyAction = 'investigate';
     try {
       const result = await this.getApplicationCompetitionRuntime().runApplicationCompetitionInvestigation({
@@ -38651,7 +40483,7 @@ async handleRefreshSkills() {
         teamRuntime: this.competitionTeamRuntime,
         teamTemplateId: this.competitionTeamTemplateId || null
       });
-      this.competitionSnapshot = result.snapshot;
+      this.applyOperationsRuntimeSnapshot(result.snapshot);
       showNotification('跨域取证已完成，等待人工审批', 'success');
     } catch (error) {
       await this.loadCompetitionSnapshot();
@@ -38661,20 +40493,24 @@ async handleRefreshSkills() {
     }
   },
 
-  /** 提交人工审批决定；输入 APPROVED/REJECTED，使用独立审批人并刷新状态。 */
+  /** 提交明确的审批模式，拒绝与失败不在界面续跑动作。 / Submit the explicit approval mode without continuing actions in the UI after rejection or failure. */
   async decideCompetitionApproval(decision) {
     const approval = this.getCompetitionActiveApproval();
-    if (!approval) return;
+    if (!approval || approval.status !== 'PENDING' || this.competitionBusyAction || !['APPROVED', 'REJECTED'].includes(decision)) return;
+    const executionMode = decision === 'APPROVED' && this.competitionExecutionMode === 'automatic' ? 'automatic' : 'step';
     this.competitionBusyAction = decision === 'APPROVED' ? 'approve' : 'reject';
     try {
       const result = await this.getApplicationCompetitionRuntime().decideApplicationCompetitionApproval({
         approvalId: approval.approvalId,
         decision,
-        reason: this.competitionApprovalReason
+        reason: this.competitionApprovalReason,
+        executionMode
       });
-      this.competitionSnapshot = result.snapshot;
+      this.applyOperationsRuntimeSnapshot(result.snapshot);
+      if (decision === 'APPROVED' && executionMode === 'automatic') await this.loadCompetitionMemoryArtifacts(false);
       showNotification(decision === 'APPROVED' ? '处置审批已通过' : '处置审批已拒绝', decision === 'APPROVED' ? 'success' : 'warning');
     } catch (error) {
+      await this.loadCompetitionSnapshot();
       showNotification(error?.message || '审批提交失败', 'error');
     } finally {
       this.competitionBusyAction = '';
@@ -38699,7 +40535,7 @@ async handleRefreshSkills() {
         idempotencyKey,
         dryRun: Boolean(dryRun)
       });
-      this.competitionSnapshot = result.snapshot;
+      this.applyOperationsRuntimeSnapshot(result.snapshot);
       showNotification(dryRun ? '处置预检通过' : '处置动作已受理', 'success');
     } catch (error) {
       await this.loadCompetitionSnapshot();
@@ -38718,7 +40554,7 @@ async handleRefreshSkills() {
       const result = await this.getApplicationCompetitionRuntime().verifyApplicationCompetitionRemediation({
         actionId: action.actionId
       });
-      this.competitionSnapshot = result.snapshot;
+      this.applyOperationsRuntimeSnapshot(result.snapshot);
       await this.loadCompetitionMemoryArtifacts(false);
       showNotification('独立验证通过，事件已解决', 'success');
     } catch (error) {
@@ -38729,7 +40565,7 @@ async handleRefreshSkills() {
     }
   },
 
-  /** 导出当前事件复盘 Skill；无输入，写入用户数据目录并显示结果。 */
+  /** 导出待验证候选，不把保存成功表述为认证或启用。 / Export a candidate without presenting successful saving as certification or enablement. */
   async exportCompetitionRetrospective() {
     const incident = this.getCompetitionActiveIncident();
     if (!incident) return;
@@ -38742,8 +40578,8 @@ async handleRefreshSkills() {
       await Promise.all([this.fetchSkills(), this.loadEnterpriseSkills()]);
       showNotification(
         result.retrospectiveSkillId
-          ? `企业 Skill ${result.retrospectiveSkillId} 已保存并启用`
-          : '复盘 Skill 已导出',
+          ? (this.isCurrentLanguageZh() ? `候选 Skill ${result.retrospectiveSkillId} 已保存，待测试认证并按工作空间启用。` : `Candidate Skill ${result.retrospectiveSkillId} was saved. Test and certify it before enabling it for a workspace.`)
+          : (this.isCurrentLanguageZh() ? '复盘 Skill 已导出' : 'Retrospective Skill exported'),
         'success'
       );
     } catch (error) {
@@ -38758,7 +40594,7 @@ async handleRefreshSkills() {
     this.competitionBusyAction = 'adapter';
     try {
       const snapshot = await this.getApplicationCompetitionRuntime().setApplicationCompetitionAdapterMode({ mode });
-      this.competitionSnapshot = snapshot;
+      this.applyOperationsRuntimeSnapshot(snapshot);
       this.competitionAdapterMode = snapshot.adapterMode;
       showNotification(mode === 'live' ? '已切换到 Live Adapter' : '已切换到 Fixture Adapter', 'success');
     } catch (error) {
@@ -38768,18 +40604,25 @@ async handleRefreshSkills() {
     }
   },
 
-  /** 加载全局 Skill 与当前企业 Workspace 绑定；无输入，合并为技能界面可直接启停的列表。 */
+  /** 按工作空间读取技能绑定并拒绝过期响应。Read workspace skill bindings and reject obsolete responses. */
   async loadEnterpriseSkills() {
-    if (!this.canUseEnterprise) return;
-    this.enterpriseSkillsLoading = true;
+    const generation = this.enterpriseSkillsGeneration = (this.enterpriseSkillsGeneration || 0) + 1;
+    const workspaceId = String(this.enterpriseSkillWorkspaceId || '').trim();
+    this.enterpriseSkillsLoading = Boolean(this.canUseEnterprise && workspaceId);
+    this.enterpriseSkillsError = '';
+    this.enterpriseSkills = [];
+    this.enterpriseSkillBindings = [];
+    if (!this.canUseEnterprise || !workspaceId) return false;
     try {
       await this.fetchSkills();
+      if (generation !== this.enterpriseSkillsGeneration || workspaceId !== String(this.enterpriseSkillWorkspaceId || '').trim()) return false;
+      if (this.skillCatalogError) throw new Error(this.skillCatalogError);
       const runtime = this.getApplicationEnterpriseRuntime();
-      const result = runtime && typeof runtime.listApplicationEnterpriseSkillBindings === 'function'
-        ? await runtime.listApplicationEnterpriseSkillBindings()
-        : { bindings: [] };
-      this.enterpriseSkillBindings = Array.isArray(result.bindings) ? result.bindings : [];
-      const workspaceId = String(this.enterpriseSkillWorkspaceId || 'ws_goai_demo').trim();
+      if (!runtime || typeof runtime.listApplicationEnterpriseSkillBindings !== 'function') throw new Error('企业技能绑定接口暂不可用');
+      const result = await runtime.listApplicationEnterpriseSkillBindings();
+      if (generation !== this.enterpriseSkillsGeneration || workspaceId !== String(this.enterpriseSkillWorkspaceId || '').trim() || !this.canUseEnterprise) return false;
+      if (!Array.isArray(result?.bindings)) throw new Error('企业技能绑定响应无效');
+      this.enterpriseSkillBindings = result.bindings;
       const bindings = new Map(
         this.enterpriseSkillBindings
           .filter(item => String(item?.workspaceId || '').trim() === workspaceId)
@@ -38796,41 +40639,49 @@ async handleRefreshSkills() {
           enterpriseUpdatedAt: binding?.updatedAt || null
         };
       });
+      return true;
     } catch (error) {
+      if (generation !== this.enterpriseSkillsGeneration || workspaceId !== String(this.enterpriseSkillWorkspaceId || '').trim()) return false;
+      this.enterpriseSkillsError = error?.message || '企业技能加载失败';
       console.error('[Enterprise] Failed to load skill bindings:', error);
-      showNotification(error?.message || '企业技能加载失败', 'error');
+      showNotification(this.enterpriseSkillsError, 'error');
+      return false;
     } finally {
-      this.enterpriseSkillsLoading = false;
+      if (generation === this.enterpriseSkillsGeneration) this.enterpriseSkillsLoading = false;
     }
   },
 
-  /** 设置一个企业 Skill 的启用状态；输入技能记录和布尔值，持久化 Workspace 绑定后刷新列表。 */
+  /** 保存启用状态并保持技能原来源，不从当前事件猜测归属。 / Save enablement with the skill's original source without inferring ownership from the current incident. */
   async setEnterpriseSkillEnabled(skill, enabled) {
-    if (!skill?.id) return;
+    const workspaceId = String(this.enterpriseSkillWorkspaceId || '').trim();
+    if (!this.canUseEnterprise || !workspaceId || !skill?.id || skill.enterpriseBusy || typeof enabled !== 'boolean') return false;
     skill.enterpriseBusy = true;
     try {
       const runtime = this.getApplicationEnterpriseRuntime();
       if (!runtime || typeof runtime.setApplicationEnterpriseSkillBinding !== 'function') {
         throw new Error('Desktop Enterprise Skill Runtime is unavailable.');
       }
-      const incident = this.getCompetitionActiveIncident();
       await runtime.setApplicationEnterpriseSkillBinding({
-        workspaceId: String(this.enterpriseSkillWorkspaceId || 'ws_goai_demo').trim(),
+        workspaceId,
         skillId: String(skill.id).trim(),
         enabled: Boolean(enabled),
-        sourceIncidentId: incident?.incidentId || skill.sourceIncidentId || null
+        sourceIncidentId: typeof skill.sourceIncidentId === 'string' && skill.sourceIncidentId.trim() ? skill.sourceIncidentId.trim() : null
       });
-      await this.loadEnterpriseSkills();
+      if (workspaceId === String(this.enterpriseSkillWorkspaceId || '').trim()) await this.loadEnterpriseSkills();
       showNotification(enabled ? '企业 Skill 已启用' : '企业 Skill 已停用', 'success');
+      return true;
     } catch (error) {
-      skill.enterpriseBusy = false;
       showNotification(error?.message || '企业 Skill 状态更新失败', 'error');
+      return false;
+    } finally {
+      skill.enterpriseBusy = false;
     }
   },
 
-  /** 上传一个企业 Skill 候选到 XnetMLOps；输入技能记录，使用当前 Workspace 并保持草稿状态。 */
+  /** 在授权工作空间上传技能候选，保持草稿状态。Upload a skill candidate in an authorized workspace while retaining draft status. */
   async uploadEnterpriseSkillToMlops(skill) {
-    if (!skill?.id || skill.enterpriseUploadBusy) return;
+    const workspaceId = String(this.enterpriseSkillWorkspaceId || '').trim();
+    if (!this.canUseEnterprise || !workspaceId || !skill?.id || skill.enterpriseUploadBusy) return false;
     skill.enterpriseUploadBusy = true;
     try {
       const runtime = this.getApplicationSkillRuntime();
@@ -38839,7 +40690,7 @@ async handleRefreshSkills() {
       }
       const result = await runtime.uploadApplicationSkillToMlops({
         skillId: String(skill.id).trim(),
-        workspaceId: String(this.enterpriseSkillWorkspaceId || 'ws_goai_demo').trim()
+        workspaceId
       });
       showNotification(
         `企业 Skill 已上传到 XnetMLOps 候选仓库：${result.repositorySkillUid}`,
@@ -38852,19 +40703,94 @@ async handleRefreshSkills() {
     }
   },
 
-  /** 打开企业空间子页；输入页签 ID，按需加载对应 Main-owned 数据。 */
+  /** 返回企业模块导航，统一桌面与手机入口。 Return localized enterprise navigation for desktop and mobile. */
+  getEnterpriseModuleNavigation() {
+    const isZh = this.isCurrentLanguageZh();
+    return [
+      { id: 'enterprise-sandbox', label: this.t('enterpriseSandbox') },
+      { id: 'enterprise-workspaces', label: isZh ? '工作空间' : 'Workspaces' },
+      { id: 'staff-roles', label: this.t('staffRoleCards') },
+      { id: 'team-templates', label: isZh ? '协作团队' : 'Teams' },
+      { id: 'enterprise-skills', label: isZh ? '企业技能' : 'Enterprise Skills' },
+      { id: 'competition-runtime-config', label: isZh ? '协同与执行配置' : 'Collaboration & Execution' },
+      { id: 'enterprise-kb', label: this.t('enterpriseKB') },
+      { id: 'neuro', label: this.t('neuroSymbolLib') },
+      { id: 'kg', label: this.t('knowledgeGraph') },
+      { id: 'ops-control', label: isZh ? '运行指挥台' : 'Operations Control' },
+      { id: 'competition', label: isZh ? 'GOAI 演示入口' : 'GOAI Demo Launcher' },
+      { id: 'usage', label: this.t('usageTracking') },
+      { id: 'dataops', label: this.t('xnetDataOps') },
+      { id: 'mlops', label: this.t('xnetMLOps') },
+      { id: 'aiops', label: this.t('xnetAIOps') },
+      { id: 'worldops', label: isZh ? '物理世界' : 'WorldOps' },
+    ];
+  },
+
+  /** 打开本机物理世界工作台，沿用系统浏览器入口且不传递企业凭据。 Open the local WorldOps workbench without forwarding enterprise credentials. */
+  openWorldOpsWorkbench() {
+    if (!this.canUseEnterprise) return;
+    const url = 'http://127.0.0.1:5318/';
+    if (isElectron && window.electronAPI?.openExternal) {
+      window.electronAPI.openExternal(url);
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  },
+
+  /** 打开企业空间子页，按需加载对应数据。 Open an enterprise tab and load its owned data on demand. */
   async openEnterpriseTab(tab) {
+    // Normalize legacy deep links to the dedicated runtime page while preserving the requested section.
+    if (['competition-runtime-config-platforms', 'competition-runtime-config-agentteams', 'competition-runtime-config-live'].includes(tab)) {
+      this.competitionRuntimeConfigSection = { 'competition-runtime-config-platforms': 'platforms', 'competition-runtime-config-agentteams': 'agentteams', 'competition-runtime-config-live': 'live' }[tab];
+      tab = 'competition-runtime-config';
+    }
+    if (this.enterpriseTab === 'enterprise-sandbox' && tab !== 'enterprise-sandbox') {
+      this.dispose3DView();
+    }
     this.enterpriseTab = tab;
+    // 只重置内容面板，保留顶层导航位置。 / Reset only the content panel and keep the top navigation in place.
+    this.$nextTick(() => {
+      const panel = document.querySelector('.ox-enterprise-detail-content');
+      if (panel) panel.scrollTop = 0;
+    });
+    if (tab === 'ops-control') this.operationsDetailVisible = false;
     if (!this.canUseEnterprise) {
       return;
     }
 
     if (tab === 'competition') {
       await Promise.all([
+        this.loadWorkspaceEnvs(),
+        this.loadEnterpriseProjects(),
+        this.loadEnterpriseRoleCards(),
         this.loadCompetitionSnapshot(),
         this.loadEnterpriseTeamTemplates(),
         this.loadXnetServices()
       ]);
+      await this.reconcileEnterpriseTeamScopes();
+      await this.loadEnterpriseTeamTemplates();
+      const resolvedWorkspaceId = this.getCompetitionResolvedWorkspaceId(this.competitionDemoForm?.workspaceId);
+      if (resolvedWorkspaceId && resolvedWorkspaceId !== this.competitionDemoForm?.workspaceId) {
+        this.competitionDemoForm = { ...this.competitionDemoForm, workspaceId: resolvedWorkspaceId };
+      }
+      this.selectCompetitionDemoWorkspace(resolvedWorkspaceId);
+      void this.refreshAllXnetServices(true);
+      this.selectCompetitionDemoScenario('feature-drift');
+      this.competitionRehearsalVisible = this.competitionRehearsalAvailable;
+      return;
+    }
+
+    if (tab === 'ops-control') {
+      await Promise.all([
+        this.loadWorkspaceEnvs(),
+        this.loadEnterpriseProjects(),
+        this.loadEnterpriseRoleCards(),
+        this.loadCompetitionSnapshot(),
+        this.loadEnterpriseTeamTemplates(),
+        this.loadXnetServices()
+      ]);
+      await this.reconcileEnterpriseTeamScopes();
+      await this.loadEnterpriseTeamTemplates();
       void this.refreshAllXnetServices(true);
       return;
     }
@@ -38881,6 +40807,15 @@ async handleRefreshSkills() {
 
     if (tab === 'enterprise-skills') {
       await this.loadEnterpriseSkills();
+      return;
+    }
+
+    if (['competition-runtime-config', 'competition-runtime-config-platforms', 'competition-runtime-config-agentteams', 'competition-runtime-config-live'].includes(tab)) {
+      if (this.competitionRuntimeConfigSection === 'runtime') this.competitionRuntimeConfigSection = 'platforms';
+      await Promise.all([this.loadXnetServices(), this.loadCompetitionSnapshot(), this.loadWorkspaceEnvs()]);
+      await this.loadCompetitionConnection(true);
+      await this.loadCompetitionLiveConnection(true);
+      void this.refreshAllXnetServices(true);
       return;
     }
 
@@ -39284,12 +41219,23 @@ async handleRefreshSkills() {
   // [v0.5.3] Enterprise Role Cards Methods (职工角色卡)
   // ═══════════════════════════════════════════════════════════════
 
+  /** 完整规范员工字段，包括独立二维头像。 Normalize all employee fields, including the separate two-dimensional portrait. */
   normalizeStaffRoleRecord(card = {}) {
+    const bodyType = String(card.bodyType || '').trim();
+    const supportedBodyTypes = ['default', 'engineer', 'scholar', 'captain', 'ninja', 'robot', 'streamer', 'geek'];
+    const position = card.position3D;
+    const position3D = position && typeof position === 'object' && !Array.isArray(position)
+      && Number.isFinite(position.x) && Number.isFinite(position.z)
+      ? { x: Math.max(-10000, Math.min(10000, position.x)), z: Math.max(-10000, Math.min(10000, position.z)) }
+      : null;
     const normalized = this.createEmptyStaffRoleDraft({
       id: String(card.id || '').trim(),
       name: String(card.name || '').trim(),
       department: String(card.department || '').trim(),
       icon: String(card.icon || '').trim(),
+      avatarUrl: String(card.avatarUrl || '').trim(),
+      bodyType: supportedBodyTypes.includes(bodyType) ? bodyType : 'default',
+      position3D,
       system_prompt: String(card.system_prompt || '').trim(),
       skills: Array.isArray(card.skills) ? card.skills : [],
       assignedWorkspace: String(card.assignedWorkspace || '').trim(),
@@ -39426,16 +41372,25 @@ async handleRefreshSkills() {
     return runtimeLines.join('\n').trim();
   },
 
+  /** 完整保存岗位字段，安装包绑定与工具名分别保留。Save the full role record while preserving package bindings and tool names separately. */
   async persistStaffRoleToEnterprise(role, { createAgent = true } = {}) {
+    const existing = Array.isArray(this.enterpriseRoleCards)
+      ? this.enterpriseRoleCards.find(item => String(item?.id || '').trim() === String(role?.id || '').trim())
+      : null;
     const normalized = this.normalizeStaffRoleRecord({
+      ...existing,
       ...role,
       id: String(role?.id || uuid.v4()).trim(),
     });
-    const resolvedSkillIds = this.resolveStaffRoleSkillIds(normalized);
-    const runtimeSystemPrompt = this.buildStaffRoleRuntimeSystemPrompt(normalized, resolvedSkillIds);
-    const existing = Array.isArray(this.enterpriseRoleCards)
-      ? this.enterpriseRoleCards.find(item => String(item?.id || '').trim() === normalized.id)
-      : null;
+    const hasExplicitBindings = Array.isArray(role?.skill_ids) || Array.isArray(existing?.skill_ids);
+    const resolvedSkillIds = hasExplicitBindings ? [...normalized.skill_ids] : this.resolveStaffRoleSkillIds(normalized);
+    // 自动派生提示词随岗位更新，自定义运行提示词保持显式值。Refresh generated prompts with the profile while preserving explicit custom runtime prompts.
+    const followsGeneratedPrompt = !normalized.runtime_system_prompt || (existing
+      && normalized.runtime_system_prompt === existing.runtime_system_prompt
+      && existing.runtime_system_prompt === this.buildStaffRoleRuntimeSystemPrompt(existing, existing.skill_ids || []));
+    const runtimeSystemPrompt = followsGeneratedPrompt
+      ? this.buildStaffRoleRuntimeSystemPrompt(normalized, resolvedSkillIds)
+      : normalized.runtime_system_prompt;
     const payload = {
       ...normalized,
       description: String(
@@ -39446,11 +41401,11 @@ async handleRefreshSkills() {
         || ''
       ).trim(),
       skill_ids: resolvedSkillIds,
-      tools: [...resolvedSkillIds],
+      tools: [...normalized.tools],
       runtime_system_prompt: runtimeSystemPrompt,
-      agent_name: normalized.name,
-      role_scope: 'enterprise',
-      syncSource: 'enterprise',
+      agent_name: normalized.agent_name || normalized.name,
+      role_scope: normalized.role_scope,
+      syncSource: normalized.syncSource,
     };
     const url = existing
       ? `/v1/enterprise/role-cards/${normalized.id}`
@@ -39475,13 +41430,10 @@ async handleRefreshSkills() {
       }
       data = await res.json();
     }
-    const card = this.normalizeStaffRoleRecord({
-      ...(data.card || payload),
-      skill_ids: resolvedSkillIds,
-      runtime_system_prompt: runtimeSystemPrompt,
-      tools: [...resolvedSkillIds],
-      syncSource: 'enterprise',
-    });
+    if (data?.success === false || !data?.card || data.card.id !== payload.id) throw new Error('员工保存响应无效');
+    const card = this.normalizeStaffRoleRecord(data.card);
+    this.enterpriseRoleCardsGeneration = (this.enterpriseRoleCardsGeneration || 0) + 1;
+    this.enterpriseRoleCardsLoading = false;
     const nextCards = (Array.isArray(this.enterpriseRoleCards) ? this.enterpriseRoleCards : [])
       .filter(item => String(item?.id || '').trim() !== card.id);
     nextCards.push(card);
@@ -39489,7 +41441,8 @@ async handleRefreshSkills() {
     this.staffRoles = nextCards.map(item => this.normalizeStaffRoleRecord(item));
 
     if (!existing && createAgent && this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
+      try {
+        this.ws.send(JSON.stringify({
         type: 'save_agent',
         data: {
           name: card.name,
@@ -39511,19 +41464,26 @@ async handleRefreshSkills() {
             summaryZh: card.summaryZh,
             summaryEn: card.summaryEn,
             permissions: card.permissions,
-            tools: [...resolvedSkillIds],
+            tools: [...card.tools],
             accent: card.accent,
             role_scope: 'enterprise',
             syncSource: 'enterprise',
           },
         },
-      }));
+        }));
+      } catch (error) {
+        console.warn('[Enterprise] Role saved; optional Agent synchronization was not confirmed.', error);
+      }
     }
 
     return card;
   },
 
+  /** 读取权威员工列表，空数组清理旧投影，失败保留数据。Read authoritative staff records, clear stale projections on empty success, and retain data on failure. */
   async loadEnterpriseRoleCards() {
+    const generation = this.enterpriseRoleCardsGeneration = (this.enterpriseRoleCardsGeneration || 0) + 1;
+    this.enterpriseRoleCardsLoading = true;
+    this.enterpriseRoleCardsError = '';
     try {
       const runtime = this.getApplicationEnterpriseRuntime();
       let data;
@@ -39531,18 +41491,86 @@ async handleRefreshSkills() {
         data = await runtime.listApplicationEnterpriseRoleCards();
       } else {
         const res = await fetch('/v1/enterprise/role-cards');
-        if (!res.ok) return;
+        if (!res.ok) throw new Error(`员工列表读取失败 (${res.status})`);
         data = await res.json();
       }
-      const cards = (data.cards || []).map(card => this.normalizeStaffRoleRecord(card));
+      if (!Array.isArray(data?.cards)) throw new Error('员工列表响应无效');
+      if (generation !== this.enterpriseRoleCardsGeneration) return false;
+      const cards = data.cards.map(card => this.normalizeStaffRoleRecord(card));
       this.enterpriseRoleCards = cards;
-      if (cards.length) {
-        this.staffRoles = cards.map(card => this.normalizeStaffRoleRecord(card));
-      } else if (!Array.isArray(this.staffRoles)) {
-        this.staffRoles = [];
-      }
+      this.staffRoles = cards.map(card => this.normalizeStaffRoleRecord(card));
+      return true;
     } catch (err) {
+      if (generation !== this.enterpriseRoleCardsGeneration) return false;
+      this.enterpriseRoleCardsError = err?.message || '员工列表读取失败';
       console.error('[Enterprise] Failed to load role cards:', err);
+      return false;
+    } finally {
+      if (generation === this.enterpriseRoleCardsGeneration) this.enterpriseRoleCardsLoading = false;
+    }
+  },
+
+  /** 只读准备权威协作上下文，全部成功后才更新投影。Prepare authoritative collaboration context read-only and commit projections only after all reads succeed. */
+  async prepareEmployeeCollaborationContext() {
+    const generation = this.enterpriseRoleCardsGeneration = (this.enterpriseRoleCardsGeneration || 0) + 1;
+    this.enterpriseRoleCardsLoading = true;
+    this.employeeExperienceNotice = '';
+    /** 以当前界面语言显示准备结果。Display preparation results in the current UI language. */
+    const contextMessage = (zh, en) => this.isCurrentLanguageZh() ? zh : en;
+    try {
+      if (!this.canUseEnterprise) throw new Error(contextMessage('当前账户无法使用企业协作。', 'Enterprise collaboration is unavailable for this account.'));
+      const runtime = this.getApplicationEnterpriseRuntime();
+      if (!runtime) throw new Error(contextMessage('当前环境无法刷新协作项目资料，请在桌面端重试。', 'Collaboration project refresh is unavailable; retry in the desktop app.'));
+      const [roleResult, workspaceResult, projectResult] = await Promise.all([
+        runtime.listApplicationEnterpriseRoleCards(),
+        runtime.listApplicationEnterpriseWorkspaces(),
+        runtime.listApplicationEnterpriseProjects(),
+      ]);
+
+      /** 校验权威列表及稳定身份，禁止以缺失响应代表空列表。Validate authoritative lists and stable identities without treating missing responses as empty lists. */
+      const requireContextRecords = (result, field, label, englishLabel) => {
+        if (result?.schema !== 'openxnet.enterprise.v1' || result.success !== true || !Array.isArray(result[field])) {
+          throw new Error(contextMessage(`${label}读取失败，请重新加载。`, `Could not read ${englishLabel}; reload and retry.`));
+        }
+        const ids = new Set();
+        for (const record of result[field]) {
+          if (!record || typeof record !== 'object' || Array.isArray(record)
+            || typeof record.id !== 'string' || !record.id.trim() || ids.has(record.id.trim())
+            || typeof record.name !== 'string' || !record.name.trim()) {
+            throw new Error(contextMessage(`${label}记录无效，请重新加载。`, `Invalid ${englishLabel} records; reload and retry.`));
+          }
+          ids.add(record.id.trim());
+        }
+        return result[field];
+      };
+
+      const roleRecords = requireContextRecords(roleResult, 'cards', '员工列表', 'employee profiles');
+      const workspaces = requireContextRecords(workspaceResult, 'workspaces', '工作空间列表', 'workspaces');
+      const projects = requireContextRecords(projectResult, 'projects', '项目列表', 'projects');
+      if (roleRecords.some(card => typeof card.enabled !== 'boolean'
+        || typeof card.assignedWorkspace !== 'string' || typeof card.projectId !== 'string')
+        || projects.some(project => typeof project.workspaceId !== 'string' || !project.workspaceId.trim())) {
+        throw new Error(contextMessage('员工或项目范围记录无效，请重新加载。', 'Invalid employee or project scope; reload and retry.'));
+      }
+      const cards = roleRecords.map(card => this.normalizeStaffRoleRecord(card));
+      const staff = cards.map(card => this.normalizeStaffRoleRecord(card));
+      const mappedWorkspaces = workspaces.map(workspace => this.mapApplicationEnterpriseWorkspaceToUi(workspace, cards));
+      const mappedProjects = projects.map(project => ({ ...project }));
+      if (generation !== this.enterpriseRoleCardsGeneration) return false;
+      if (!this.canUseEnterprise) throw new Error(contextMessage('企业访问权限已变化，请重新确认访问权限。', 'Enterprise access changed; check access and retry.'));
+      this.enterpriseRoleCards = cards;
+      this.staffRoles = staff;
+      this.workspaceEnvList = [...workspaces];
+      this.enterpriseWorkspaces = mappedWorkspaces;
+      this.enterpriseProjects = mappedProjects;
+      this.enterpriseRoleCardsError = '';
+      return true;
+    } catch (error) {
+      if (generation !== this.enterpriseRoleCardsGeneration) return false;
+      this.employeeExperienceNotice = error?.message || contextMessage('协作资料读取失败，请重试。', 'Could not load collaboration context; retry.');
+      return false;
+    } finally {
+      if (generation === this.enterpriseRoleCardsGeneration) this.enterpriseRoleCardsLoading = false;
     }
   },
 
@@ -39577,7 +41605,7 @@ async handleRefreshSkills() {
       }
       const result = await runtime.listApplicationEnterpriseTeamTemplates();
       this.enterpriseTeamTemplates = Array.isArray(result?.teamTemplates) ? result.teamTemplates : [];
-      const available = this.getCompetitionAvailableTeamTemplates();
+      const available = this.getCompetitionAvailableTeamTemplates(this.enterpriseTab === 'competition' ? this.competitionDemoForm?.workspaceId : '');
       if (!available.some(template => template.id === this.competitionTeamTemplateId)) {
         this.competitionTeamTemplateId = available[0]?.id || '';
       }
@@ -40000,16 +42028,17 @@ async handleRefreshSkills() {
 
   /**
    * 将 Main-owned Workspace 记录转换为企业空间页面使用的扁平结构；输入规范记录，返回不含密钥的 UI 草稿。
+   * Map a Main-owned workspace with the supplied current role batch, defaulting to the existing staff projection.
    */
-  mapApplicationEnterpriseWorkspaceToUi(workspace = {}) {
+  mapApplicationEnterpriseWorkspaceToUi(workspace = {}, roleCards = this.enterpriseRoleCards) {
     const runtimeType = String(workspace.type || 'local').trim().toLowerCase();
     const config = workspace.config && typeof workspace.config === 'object' ? workspace.config : {};
     const local = config.local && typeof config.local === 'object' ? config.local : {};
     const docker = config.docker && typeof config.docker === 'object' ? config.docker : {};
     const cloud = config.cloud && typeof config.cloud === 'object' ? config.cloud : {};
     const sandbox = config.sandbox && typeof config.sandbox === 'object' ? config.sandbox : {};
-    const assignedRoles = Array.isArray(this.enterpriseRoleCards)
-      ? this.enterpriseRoleCards
+    const assignedRoles = Array.isArray(roleCards)
+      ? roleCards
         .filter((card) => String(card?.assignedWorkspace || '').trim() === String(workspace.id || '').trim())
         .map((card) => card.id)
       : [];
@@ -40222,6 +42251,7 @@ async handleRefreshSkills() {
   // [v0.6.0] Xnet Services Methods (Xnet 服务集成)
   // ═══════════════════════════════════════════════════════════════
 
+  /** 返回服务状态样式。 / Return the presentation style for a service status. */
   getXnetStatusType(status) {
     const map = {
       online: 'success',
@@ -40231,61 +42261,124 @@ async handleRefreshSkills() {
     return map[status] || 'info';
   },
 
-  async saveXnetServiceConfig(serviceKey, silent = false) {
-    const service = this.xnetServices[serviceKey];
-    if (!service) return false;
+  /** 对比当前草稿与已保存配置，不修改平台运行状态。 / Compare draft and saved settings without changing runtime state. */
+  hasXnetServiceDraft(serviceKey) {
+    const saved = this.xnetServices[serviceKey];
+    const draft = this.xnetServiceDrafts[serviceKey];
+    return Boolean(saved && draft && (draft.url.trim() !== saved.url || Boolean(draft.auto_connect) !== Boolean(saved.auto_connect)));
+  },
 
+  /** 放弃本地草稿并恢复已保存配置。 / Discard a local draft and restore saved settings. */
+  resetXnetServiceDraft(serviceKey) {
+    const saved = this.xnetServices[serviceKey];
+    if (!saved) return;
+    this.xnetServiceDrafts[serviceKey] = { url: saved.url, auto_connect: Boolean(saved.auto_connect) };
+    this.xnetServiceErrors[serviceKey] = '';
+  },
+
+  /** 仅允许预览身份已验证的已保存地址。 / Preview only a saved address with a verified matching identity. */
+  getXnetServicePreviewUrl(serviceKey) {
+    const saved = this.xnetServices[serviceKey];
+    return saved?.url && saved.status === 'online' && saved.connectionStatus === 'reachable' && saved.identityStatus === 'verified' && saved.identityPlatform === serviceKey && ['page-title', 'manifest'].includes(saved.identitySource) ? saved.url : '';
+  },
+
+  /** 为未显示的预览给出可操作原因。 / Explain why the platform preview is unavailable. */
+  getXnetServicePreviewReason(serviceKey) {
+    const saved = this.xnetServices[serviceKey];
+    const zh = this.isCurrentLanguageZh();
+    if (!saved?.url) return zh ? '保存服务地址后，检查连接以打开平台预览。' : 'Save a service URL, then check its connection to open the preview.';
+    if (saved.identityStatus === 'mismatch') return zh ? '该地址指向其他平台，请更正地址后重新保存并检查。' : 'This address belongs to another platform. Correct, save, and check it again.';
+    if (saved.connectionStatus === 'unreachable') return zh ? '已保存地址暂时无法连接，可重试健康检查。' : 'The saved address is unreachable. Retry the health check.';
+    return zh ? '平台身份尚未验证，请先检查已保存地址。' : 'Platform identity is not verified. Check the saved address first.';
+  },
+
+  /** 合并完整状态，保留未提交输入并使旧版在线标志失效。 / Merge full status while preserving unsaved input and invalidating legacy online flags. */
+  applyXnetServiceRecord(serviceKey, record, submittedDraft = null) {
+    if (!record || typeof record.url !== 'string') throw new Error('XNET_SERVICE_RECORD_INVALID');
+    const draft = this.xnetServiceDrafts[serviceKey];
+    const synchronizeDraft = submittedDraft
+      ? draft.url.trim() === submittedDraft.url && Boolean(draft.auto_connect) === submittedDraft.auto_connect
+      : !this.hasXnetServiceDraft(serviceKey);
+    const connectionStatus = record.url && ['unchecked', 'reachable', 'unreachable'].includes(record.connectionStatus) ? record.connectionStatus : 'unchecked';
+    let identityStatus = record.url && ['pending', 'verified', 'mismatch', 'unverified', 'unavailable'].includes(record.identityStatus) ? record.identityStatus : 'pending';
+    let identityPlatform = record.url && ['aiops', 'dataops', 'mlops'].includes(record.identityPlatform) ? record.identityPlatform : null;
+    let identitySource = record.url && ['page-title', 'manifest'].includes(record.identitySource) ? record.identitySource : null;
+    if (identityStatus === 'verified' && (connectionStatus !== 'reachable' || identityPlatform !== serviceKey || !identitySource)) {
+      identityStatus = connectionStatus === 'unchecked' ? 'pending' : connectionStatus === 'unreachable' ? 'unavailable' : identityPlatform && identityPlatform !== serviceKey ? 'mismatch' : 'unverified';
+    }
+    if (!['verified', 'mismatch'].includes(identityStatus)) {
+      identityPlatform = null;
+      identitySource = null;
+    }
+    Object.assign(this.xnetServices[serviceKey], {
+      url: record.url,
+      auto_connect: Boolean(record.auto_connect),
+      connectionStatus,
+      identityStatus,
+      identityPlatform,
+      identitySource,
+      status: record.status === 'online' && connectionStatus === 'reachable' && identityStatus === 'verified' && identityPlatform === serviceKey ? 'online' : 'offline',
+      last_check: record.url && typeof record.last_check === 'string' ? record.last_check : '',
+    });
+    if (synchronizeDraft) this.resetXnetServiceDraft(serviceKey);
+  },
+
+  /** 保存一次显式提交，异步回执不会覆盖后来输入的草稿。 / Save an explicit submission without overwriting edits made while it is pending. */
+  async saveXnetServiceConfig(serviceKey, silent = false) {
+    if (!this.xnetServices[serviceKey] || this.xnetServiceBusy[serviceKey] || this.xnetServicesLoading || this.xnetCheckingAll) return false;
+    const draft = this.xnetServiceDrafts[serviceKey];
+    const submittedDraft = { url: draft.url.trim(), auto_connect: Boolean(draft.auto_connect) };
+    const requestVersion = ++this.xnetServiceRequestVersions[serviceKey];
+    this.xnetServiceBusy[serviceKey] = true;
+    this.xnetServiceErrors[serviceKey] = '';
     try {
       const runtime = this.getApplicationEnterpriseRuntime();
+      let data;
       if (runtime) {
-        const data = await runtime.saveApplicationEnterpriseXnetService({
-          serviceKey,
-          url: (service.url || '').trim(),
-          autoConnect: !!service.auto_connect,
-        });
-        Object.assign(this.xnetServices[serviceKey], data.service || {});
+        data = await runtime.saveApplicationEnterpriseXnetService({ serviceKey, url: submittedDraft.url, autoConnect: submittedDraft.auto_connect });
       } else {
         const res = await fetch(`/v1/enterprise/xnet/services/${serviceKey}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: (service.url || '').trim(),
-            auto_connect: !!service.auto_connect,
-          }),
+          body: JSON.stringify(submittedDraft),
         });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || 'Failed to save service config');
-        }
+        if (!res.ok) throw new Error('XNET_SAVE_FAILED');
+        data = await res.json();
       }
-      if (!silent) {
-        showNotification(this.t('xnetConfigSaved') || '服务配置已保存', 'success');
-      }
+      if (requestVersion !== this.xnetServiceRequestVersions[serviceKey]) return false;
+      if (data?.success === false || !data?.service) throw new Error('XNET_SAVE_FAILED');
+      this.applyXnetServiceRecord(serviceKey, data.service, submittedDraft);
+      if (!silent) showNotification(this.t('xnetConfigSaved') || '服务配置已保存', 'success');
       return true;
-    } catch (err) {
-      if (!silent) {
-        showNotification((this.t('xnetSaveFailed') || '保存服务配置失败') + `: ${err.message}`, 'error');
+    } catch {
+      if (requestVersion === this.xnetServiceRequestVersions[serviceKey]) {
+        const message = this.isCurrentLanguageZh() ? '配置未保存。请使用不含账号、参数或片段的 HTTPS 地址（本机可用 HTTP），然后重试。输入内容已保留。' : 'Settings were not saved. Use an HTTPS URL without credentials, query, or fragment (localhost may use HTTP), then retry. Your draft is preserved.';
+        this.xnetServiceErrors[serviceKey] = message;
+        showNotification(message, 'error');
       }
       return false;
+    } finally {
+      if (requestVersion === this.xnetServiceRequestVersions[serviceKey]) this.xnetServiceBusy[serviceKey] = false;
     }
   },
 
+  /** 检查已保存地址并合并完整身份回执，不隐式保存草稿。 / Check the saved URL and merge its full identity receipt without implicitly saving drafts. */
   async connectXnetService(serviceKey) {
     const service = this.xnetServices[serviceKey];
-    if (!service || !service.url) {
-      showNotification(this.t('xnetNoUrl') || '请先输入服务地址', 'warning');
-      return;
+    if (!service || this.xnetServiceBusy[serviceKey] || this.xnetServicesLoading || this.xnetCheckingAll) return false;
+    if (this.hasXnetServiceDraft(serviceKey)) {
+      showNotification(this.isCurrentLanguageZh() ? '地址或自动检查设置尚未保存，请先保存配置或取消修改。' : 'Save or discard your changes before checking the connection.', 'warning');
+      return false;
     }
-
+    if (!service.url) {
+      showNotification(this.isCurrentLanguageZh() ? '请先保存服务地址。' : 'Save a service URL first.', 'warning');
+      return false;
+    }
+    const requestVersion = ++this.xnetServiceRequestVersions[serviceKey];
+    const checkedUrl = service.url;
     this.xnetServiceBusy[serviceKey] = true;
-    service.status = 'checking';
+    this.xnetServiceErrors[serviceKey] = '';
     try {
-      const saved = await this.saveXnetServiceConfig(serviceKey, true);
-      if (!saved) {
-        service.status = 'offline';
-        return;
-      }
-
       const runtime = this.getApplicationEnterpriseRuntime();
       let data;
       if (runtime) {
@@ -40293,26 +42386,36 @@ async handleRefreshSkills() {
         data = result.service || {};
       } else {
         const res = await fetch(`/v1/enterprise/xnet/health-check/${serviceKey}`, { method: 'POST' });
-        if (!res.ok) throw new Error(`Health check failed (${res.status})`);
-        data = await res.json();
+        if (!res.ok) throw new Error('XNET_CHECK_FAILED');
+        const result = await res.json();
+        data = result.service || { ...service, ...result, url: checkedUrl, connectionStatus: 'unchecked', identityStatus: 'unverified', identityPlatform: null, identitySource: null };
       }
-      this.xnetServices[serviceKey].status = data.status;
-      this.xnetServices[serviceKey].last_check = data.last_check;
-        if (data.status === 'online') {
-          showNotification(`${service.name} ${this.t('xnetConnected') || '已连接'}`, 'success');
-        } else {
-          showNotification(`${service.name} ${this.t('xnetUnavailable') || '无法连接'}`, 'error');
-        }
-    } catch (err) {
-      this.xnetServices[serviceKey].status = 'offline';
-      showNotification(`${this.t('xnetConnectFailed') || '连接失败'}: ${err.message}`, 'error');
+      if (requestVersion !== this.xnetServiceRequestVersions[serviceKey] || this.xnetServices[serviceKey].url !== checkedUrl) return false;
+      if (data.url !== checkedUrl) throw new Error('XNET_CHECK_URL_MISMATCH');
+      this.applyXnetServiceRecord(serviceKey, data);
+      const verified = Boolean(this.getXnetServicePreviewUrl(serviceKey));
+      const message = verified ? `${service.name} ${this.isCurrentLanguageZh() ? '连接与平台身份已验证' : 'connection and identity verified'}` : this.getXnetServicePreviewReason(serviceKey);
+      if (!verified) this.xnetServiceErrors[serviceKey] = message;
+      showNotification(message, verified ? 'success' : 'error');
+      return verified;
+    } catch {
+      if (requestVersion === this.xnetServiceRequestVersions[serviceKey] && this.xnetServices[serviceKey].url === checkedUrl) {
+        Object.assign(service, { status: 'offline', connectionStatus: 'unchecked', identityStatus: 'pending', identityPlatform: null, identitySource: null, last_check: '' });
+        const message = this.isCurrentLanguageZh() ? '健康检查未完成，请重试；本次没有确认连接或平台身份。' : 'The health check did not complete. Retry; connectivity and identity have not been confirmed.';
+        this.xnetServiceErrors[serviceKey] = message;
+        showNotification(message, 'error');
+      }
+      return false;
     } finally {
-      this.xnetServiceBusy[serviceKey] = false;
+      if (requestVersion === this.xnetServiceRequestVersions[serviceKey]) this.xnetServiceBusy[serviceKey] = false;
     }
   },
 
+  /** 批量检查已保存配置，保留草稿并拒绝过期状态。 / Check saved platform settings in bulk while preserving drafts and rejecting stale state. */
   async refreshAllXnetServices(autoOnly = false) {
+    if (this.xnetCheckingAll || this.xnetServicesLoading || Object.values(this.xnetServiceBusy).some(Boolean)) return false;
     this.xnetCheckingAll = true;
+    const versions = { ...this.xnetServiceRequestVersions };
     try {
       const runtime = this.getApplicationEnterpriseRuntime();
       let data;
@@ -40325,37 +42428,44 @@ async handleRefreshSkills() {
         data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to refresh services');
       }
+      if (!data?.services || data.success === false) throw new Error('XNET_CHECK_ALL_FAILED');
       if (data.services) {
         for (const key of Object.keys(data.services)) {
-          if (this.xnetServices[key]) {
-            Object.assign(this.xnetServices[key], data.services[key]);
+          if (this.xnetServices[key] && versions[key] === this.xnetServiceRequestVersions[key]) {
+            this.applyXnetServiceRecord(key, data.services[key]);
+            this.xnetServiceErrors[key] = '';
           }
         }
       }
       if (!autoOnly) {
-        showNotification(this.t('xnetRefreshDone') || '服务健康状态已刷新', 'success');
+        showNotification(this.isCurrentLanguageZh() ? '已检查三平台保存的地址，请查看各平台的连接与身份结果。' : 'Saved platform addresses checked. Review each connection and identity result.', 'info');
       }
-    } catch (err) {
-      if (!autoOnly) {
-        showNotification(`${this.t('xnetRefreshFailed') || '批量刷新失败'}: ${err.message}`, 'error');
-      }
+      return true;
+    } catch {
+      const message = this.isCurrentLanguageZh() ? '三平台检查未完成，请重试。已保存配置和未保存输入均已保留。' : 'The platform checks did not complete. Retry; saved settings and drafts are preserved.';
+      for (const key of Object.keys(this.xnetServices)) this.xnetServiceErrors[key] = message;
+      if (!autoOnly) showNotification(message, 'error');
+      return false;
     } finally {
       this.xnetCheckingAll = false;
     }
   },
 
+  /** 刷新已验证平台的预览。 / Refresh the preview of a verified platform. */
   refreshXnetIframe(serviceKey) {
+    if (!this.getXnetServicePreviewUrl(serviceKey)) return;
     const refName = `xnet${serviceKey.charAt(0).toUpperCase() + serviceKey.slice(1)}Frame`;
     const iframe = this.$refs[refName];
     if (iframe) {
-      iframe.src = iframe.src; // Force reload
+      iframe.src = this.getXnetServicePreviewUrl(serviceKey);
     }
   },
 
+  /** 在外部浏览器打开已保存地址，永不打开输入草稿。 / Open the saved URL externally, never an input draft. */
   openXnetServiceInBrowser(serviceKey) {
     const service = this.xnetServices[serviceKey];
     if (!service?.url) {
-      showNotification(this.t('xnetNoUrl') || '请先输入服务地址', 'warning');
+      showNotification(this.isCurrentLanguageZh() ? '请先保存服务地址。' : 'Save a service URL first.', 'warning');
       return;
     }
     if (isElectron && window.electronAPI?.openExternal) {
@@ -40365,8 +42475,12 @@ async handleRefreshSkills() {
     }
   },
 
+  /** 加载服务记录且保留正在编辑的草稿，读取失败明确反馈。 / Load service records while preserving active drafts and reporting failures. */
   async loadXnetServices() {
+    if (this.xnetServicesLoading || this.xnetCheckingAll || Object.values(this.xnetServiceBusy).some(Boolean)) return false;
     this.xnetServicesLoading = true;
+    const loadVersion = ++this.xnetServicesLoadVersion;
+    const versions = { ...this.xnetServiceRequestVersions };
     try {
       const runtime = this.getApplicationEnterpriseRuntime();
       let data;
@@ -40374,20 +42488,28 @@ async handleRefreshSkills() {
         data = await runtime.listApplicationEnterpriseXnetServices();
       } else {
         const res = await fetch('/v1/enterprise/xnet/services');
-        if (!res.ok) return;
+        if (!res.ok) throw new Error('XNET_LOAD_FAILED');
         data = await res.json();
       }
+      if (loadVersion !== this.xnetServicesLoadVersion) return false;
+      if (!data?.services || data.success === false) throw new Error('XNET_LOAD_FAILED');
       if (data.services) {
         for (const key of Object.keys(data.services)) {
-          if (this.xnetServices[key]) {
-            Object.assign(this.xnetServices[key], data.services[key]);
+          if (this.xnetServices[key] && versions[key] === this.xnetServiceRequestVersions[key]) {
+            this.applyXnetServiceRecord(key, data.services[key]);
           }
         }
       }
-    } catch (err) {
-      console.error('[Xnet] Failed to load services:', err);
+      return true;
+    } catch {
+      if (loadVersion === this.xnetServicesLoadVersion) {
+        const message = this.isCurrentLanguageZh() ? '服务配置读取失败，请重试。当前输入已保留。' : 'Service settings could not be loaded. Retry; your input is preserved.';
+        for (const key of Object.keys(this.xnetServices)) this.xnetServiceErrors[key] = message;
+        showNotification(message, 'error');
+      }
+      return false;
     } finally {
-      this.xnetServicesLoading = false;
+      if (loadVersion === this.xnetServicesLoadVersion) this.xnetServicesLoading = false;
     }
   },
 
@@ -40571,12 +42693,14 @@ async handleRefreshSkills() {
     this.showStaffRoleForm = true;
   },
 
+  /** 创建独立员工草稿，保留显式头像和启用状态。 Create an isolated employee draft, preserving the explicit portrait and enabled state. */
   createEmptyStaffRoleDraft(overrides = {}) {
     const draft = {
       id: '',
       name: '',
       department: '',
       icon: this.defaultStaffRoleIcon || 'fa-solid fa-hard-hat',
+      avatarUrl: '',
       // 3D 沙盘：身体造型（default / engineer / scholar / captain / ninja / robot / streamer / geek）
       bodyType: 'default',
       // 3D 沙盘：用户在场景里拖拽后的自定义坐标 { x, z }；为空则按默认网格排列
@@ -40623,22 +42747,55 @@ async handleRefreshSkills() {
       || (this.defaultStaffRoleIcon || 'fa-solid fa-hard-hat');
   },
 
+  /** 等待删除成功后移除本地员工；失败保留记录。Remove local staff only after deletion succeeds, retaining records on failure. */
   async removeStaffRole(id) {
     try {
       const runtime = this.getApplicationEnterpriseRuntime();
       if (runtime) {
         await runtime.removeApplicationEnterpriseRoleCard({ roleCardId: id });
       } else {
-        await fetch(`/v1/enterprise/role-cards/${id}`, { method: 'DELETE' });
+        const response = await fetch(`/v1/enterprise/role-cards/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error(`员工删除失败 (${response.status})`);
       }
     } catch (err) {
       console.warn('[Enterprise] Failed to delete role card from backend:', err);
+      showNotification(err?.message || '员工删除失败', 'error');
+      return false;
     }
+    this.enterpriseRoleCardsGeneration = (this.enterpriseRoleCardsGeneration || 0) + 1;
+    this.enterpriseRoleCardsLoading = false;
     this.staffRoles = this.staffRoles.filter(r => r.id !== id);
     this.enterpriseRoleCards = this.enterpriseRoleCards.filter(r => r.id !== id);
-    await this.autoSaveSettings();
-    await this.refreshSandboxState?.();
-    this._refreshSandbox();
+    try {
+      await this.autoSaveSettings();
+      await this.refreshSandboxState?.();
+      this._refreshSandbox();
+    } catch (error) {
+      console.warn('[Enterprise] Staff deleted; derived presentation refresh failed.', error);
+    }
+    return true;
+  },
+
+  /** 持久化员工启停后更新界面，失败保留原状态。Persist staff enablement before updating the UI and retain the previous state on failure. */
+  async setStaffRoleEnabled(role, enabled) {
+    const id = String(role?.id || '').trim();
+    if (!this.canUseEnterprise || !id || typeof enabled !== 'boolean') return false;
+    if ((this.staffRoleBusyIds || []).includes(id)) return false;
+    const existing = (this.enterpriseRoleCards || []).find(item => item.id === id);
+    if (!existing) return false;
+    this.staffRoleBusyIds = [...(this.staffRoleBusyIds || []), id];
+    try {
+      await this.persistStaffRoleToEnterprise({ ...existing, enabled }, { createAgent: false });
+      try { this._refreshSandbox?.(); } catch (error) {
+        console.warn('[Enterprise] Staff state saved; derived presentation refresh failed.', error);
+      }
+      return true;
+    } catch (error) {
+      showNotification(error?.message || '员工状态保存失败', 'error');
+      return false;
+    } finally {
+      this.staffRoleBusyIds = (this.staffRoleBusyIds || []).filter(item => item !== id);
+    }
   },
 
   addSkillTag() {
@@ -40647,6 +42804,65 @@ async handleRefreshSkills() {
       this.newStaffRole.skills.push(tag);
     }
     this.newSkillInput = '';
+  },
+
+  /** 返回原创空间风格白名单；return original spatial presentation choices. */
+  getSandboxPresentationOptions() {
+    return [
+      { id: 'studio', nameZh: '云端工作室', nameEn: 'Cloud Studio', noteZh: '通透玻璃 · 轻盈办公岛', noteEn: 'Glass partitions · open work islands', icon: 'fa-regular fa-building' },
+      { id: 'atrium', nameZh: '协作庭院', nameEn: 'Garden Atrium', noteZh: '木质廊架 · 自然会谈区', noteEn: 'Timber pergolas · garden lounges', icon: 'fa-solid fa-leaf' },
+      { id: 'command', nameZh: '任务中枢', nameEn: 'Mission Hub', noteZh: '蓝青灯带 · 环绕任务台', noteEn: 'Cyan lighting · mission consoles', icon: 'fa-solid fa-layer-group' },
+    ];
+  },
+
+  /** 返回当前风格的本地化名称；return the localized current presentation name. */
+  getSandboxPresentationLabel() {
+    const option = this.getSandboxPresentationOptions().find(item => item.id === this.sandboxPresentationStyle) || this.getSandboxPresentationOptions()[0];
+    return this.isCurrentLanguageZh() ? option.nameZh : option.nameEn;
+  },
+
+  /** 恢复本机外观偏好，异常回落默认；restore a validated local appearance preference. */
+  restoreSandboxPresentation() {
+    try {
+      const saved = window.localStorage.getItem('openxnet.enterprise.presentation.v1');
+      this.sandboxPresentationStyle = this.getSandboxPresentationOptions().some(item => item.id === saved) ? saved : 'studio';
+    } catch (_) {
+      if (!this.getSandboxPresentationOptions().some(item => item.id === this.sandboxPresentationStyle)) this.sandboxPresentationStyle = 'studio';
+    }
+  },
+
+  /** 切换空间表现并保留业务状态；switch presentation without mutating enterprise data. */
+  setSandboxPresentation(style) {
+    if (!this.getSandboxPresentationOptions().some(item => item.id === style)) return false;
+    this.sandboxPresentationError = '';
+    try {
+      if (this.enterprise3DScene?.setPresentationStyle?.(style) === false) throw new Error('Scene presentation unavailable');
+      this.sandboxPresentationStyle = style;
+    } catch (error) {
+      console.warn('Enterprise presentation switch failed:', error);
+      this.sandboxPresentationError = this.isCurrentLanguageZh() ? '空间切换未完成，请重试。' : 'Could not switch spaces. Please retry.';
+      return false;
+    }
+    try {
+      window.localStorage.setItem('openxnet.enterprise.presentation.v1', style);
+    } catch (_) {
+      this.sandboxPresentationError = this.isCurrentLanguageZh() ? '已切换；本机暂时无法保存外观偏好。' : 'Switched; appearance could not be saved on this device.';
+    }
+    this.closeSandboxPresentation();
+    return true;
+  },
+
+  /** 关闭选择器并归还键盘焦点；close the picker and restore keyboard focus. */
+  closeSandboxPresentation() {
+    this.sandboxPresentationOpen = false;
+    this.$nextTick?.(() => document.getElementById('sandbox-presentation-trigger')?.focus({ preventScroll: true }));
+  },
+
+  /** 打开选择器并将焦点移入当前选项；open the picker and focus the selected option. */
+  toggleSandboxPresentation() {
+    if (this.sandboxPresentationOpen) return this.closeSandboxPresentation();
+    this.sandboxPresentationOpen = true;
+    this.$nextTick?.(() => document.querySelector('#sandbox-presentation-picker [aria-pressed="true"]')?.focus({ preventScroll: true }));
   },
 
   async ensureEnterprise3DDependencies() {
@@ -40719,6 +42935,11 @@ async handleRefreshSkills() {
       return;
     }
     await this.waitForEnterprise3DContainer(container);
+    if (!container.isConnected) return;
+    if (this.enterprise3DScene && this.enterprise3DScene.container !== container) {
+      this.enterprise3DScene.dispose();
+      this.enterprise3DScene = null;
+    }
     if (this.enterprise3DScene) {
       this._refreshSandbox();
       this.syncEnterprise3DLevel();
@@ -40727,11 +42948,15 @@ async handleRefreshSkills() {
       return;
     }
     try {
-      this.enterprise3DScene = new Enterprise3DScene(container, {
+      // Three.js matrices and GPU resources must stay outside Vue's reactive proxies.
+      this.restoreSandboxPresentation?.();
+      this.enterprise3DScene = window.Vue.markRaw(new Enterprise3DScene(container, {
+        isZh: this.isCurrentLanguageZh(),
+        presentationStyle: this.sandboxPresentationStyle || 'studio',
         workspaces: this.enterpriseWorkspaces,
         projects: this.enterpriseProjects,
         agents: this.staffRoles,
-      });
+      }));
 
       this.enterprise3DScene.onBuildingClick((wsId) => {
         this.closeEnterpriseChat();
@@ -40758,7 +42983,7 @@ async handleRefreshSkills() {
       });
 
       // 用户在场景里拖动角色后：把坐标回写到 staffRole 并持久化
-      this.enterprise3DScene.onAgentMove((agent, pos) => {
+      this.enterprise3DScene.onAgentMove(async (agent, pos) => {
         if (!agent || !pos) return;
         const target = this.staffRoles.find((r) => r.id === agent.id);
         if (!target) return;
@@ -40766,13 +42991,11 @@ async handleRefreshSkills() {
           x: Number(pos.x.toFixed(3)),
           z: Number(pos.z.toFixed(3)),
         };
-        // 写回成员同步缓存（如果有用到）；然后请求后端保存
-        if (typeof this.persistStaffRolesSnapshot === 'function') {
-          try { this.persistStaffRolesSnapshot(); } catch (_) { /* ignore */ }
-        } else if (typeof this.saveEnterpriseStaffRoles === 'function') {
-          try { this.saveEnterpriseStaffRoles(); } catch (_) { /* ignore */ }
-        } else if (typeof this.autoSaveSettings === 'function') {
-          try { this.autoSaveSettings(); } catch (_) { /* ignore */ }
+        try {
+          await this.persistStaffRoleToEnterprise(target, { createAgent: false });
+        } catch (error) {
+          console.error('[Enterprise] Failed to save sandbox staff position:', error);
+          showNotification(this.isCurrentLanguageZh() ? '员工位置保存失败，请重试' : 'Could not save staff position. Please try again.', 'error');
         }
       });
 
@@ -40820,6 +43043,10 @@ async handleRefreshSkills() {
       this.enterprise3DScene = null;
     }
     this.selected3DAgent = null;
+    this.sandboxDetailsOpen = false;
+    this.sandboxNavigatorOpen = false;
+    this.sandboxPresentationOpen = false;
+    this.sandboxPresentationError = '';
     this.sandboxLevel = 0;
     this.sandboxCurrentWs = null;
     this.sandboxCurrentProject = null;
@@ -40916,7 +43143,7 @@ async handleRefreshSkills() {
     if (project) return String(project.name || '').trim() || (this.isCurrentLanguageZh() ? '未命名项目' : 'Untitled Project');
     const workspace = this.getSandboxCurrentWorkspace();
     if (workspace) return String(workspace.name || '').trim() || (this.isCurrentLanguageZh() ? '未命名工作空间' : 'Untitled Workspace');
-    return this.isCurrentLanguageZh() ? 'SynapXnet 企业园区' : 'SynapXnet Enterprise Campus';
+    return this.isCurrentLanguageZh() ? 'OpenXnet 企业园区' : 'OpenXnet Enterprise Campus';
   },
 
   /** 返回沙盘当前上下文摘要；无输入，组合楼层和员工数量用于场景抬头。 */
@@ -40957,6 +43184,7 @@ async handleRefreshSkills() {
   openSandboxProjectFloor(projectId) {
     const project = this.enterpriseProjects.find(item => String(item?.id || '') === String(projectId || ''));
     if (!project) return;
+    this.sandboxNavigatorOpen = false;
     this.closeEnterpriseChat();
     this.sandboxLevel = 2;
     this.sandboxCurrentWs = String(project.workspaceId || this.sandboxCurrentWs || '').trim();
@@ -40970,6 +43198,8 @@ async handleRefreshSkills() {
 
   /** 打开当前项目的员工表单；无输入，使用统一空草稿并保留工作空间与项目归属。 */
   openSandboxStaffForm() {
+    this.sandboxNavigatorOpen = false;
+    this.sandboxDetailsOpen = false;
     this.newStaffRole = this.createEmptyStaffRoleDraft({
       department: '',
       assignedWorkspace: String(this.sandboxCurrentWs || '').trim(),
@@ -41041,7 +43271,7 @@ async handleRefreshSkills() {
     });
   },
 
-  /** 打开独立企业群聊；输入可选员工，切换到当前范围并预选该员工后加载审计消息。 */
+  /** 打开企业群聊并先隔离范围再加载消息。 Open enterprise chat and isolate its scope before loading messages. */
   async openEnterpriseChat(role = null) {
     if (!this.getEnterpriseChatWorkspaceId()) {
       showNotification(
@@ -41050,6 +43280,10 @@ async handleRefreshSkills() {
       );
       return;
     }
+    this.sandboxNavigatorOpen = false;
+    this.sandboxDetailsOpen = false;
+    if (role?.id) this.selected3DAgent = role;
+    this.ensureEnterpriseChatScope?.();
     const availableIds = new Set(this.getEnterpriseChatAvailableStaff().map(item => String(item?.id || '')));
     this.enterpriseChatRecipientIds = this.enterpriseChatRecipientIds.filter(id => availableIds.has(String(id)));
     if (role?.id) {
@@ -41062,6 +43296,7 @@ async handleRefreshSkills() {
     }
     this.showSandboxChatPanel = true;
     await this.loadEnterpriseMessages({ scrollToBottom: true });
+    if (!this.showSandboxChatPanel) return;
     this.startEnterpriseChatRefresh();
     this.$nextTick(() => {
       if (this.enterprise3DScene) {
@@ -41100,10 +43335,11 @@ async handleRefreshSkills() {
     }, 4000);
   },
 
-  /** 读取当前范围企业消息；输入静默和滚动选项，返回消息数组并保持失败可见。 */
+  /** 读取范围消息并忽略过期请求，保留阅读位置与可见错误。 Read scoped messages, ignore stale requests and preserve reading position and visible errors. */
   async loadEnterpriseMessages(options = {}) {
-    const workspaceId = this.getEnterpriseChatWorkspaceId();
-    if (!workspaceId) {
+    const scope = this.ensureEnterpriseChatScope();
+    const request = ++this.enterpriseChatLoadGeneration;
+    if (!scope.workspaceId) {
       this.enterpriseMessages = [];
       return [];
     }
@@ -41111,26 +43347,38 @@ async handleRefreshSkills() {
     try {
       const runtime = this.getApplicationEnterpriseRuntime();
       const result = await runtime.listApplicationEnterpriseMessages({
-        workspaceId,
-        projectId: this.getEnterpriseChatProjectId(),
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
         limit: 300,
       });
-      this.enterpriseMessages = Array.isArray(result?.messages) ? result.messages : [];
-      if (options.scrollToBottom) this.scrollEnterpriseChatToBottom();
+      if (!this.isEnterpriseChatScopeCurrent(scope) || request !== this.enterpriseChatLoadGeneration) return [];
+      if (result?.success !== true || !Array.isArray(result.messages)) throw new Error(this.enterpriseChatText('消息服务未返回有效记录，请重试。', 'The message service did not return valid records. Retry.'));
+      const previousIds = new Set(this.enterpriseMessages.map(item => item.id));
+      const nextMessages = result.messages.filter(message => this.isEnterpriseMessageInScope(message, scope));
+      const added = nextMessages.filter(message => !previousIds.has(message.id)).length;
+      this.enterpriseMessages = nextMessages;
+      this.enterpriseChatLoadError = '';
+      if (!nextMessages.some(message => message.id === this.enterpriseChatDetailId)) this.enterpriseChatDetailId = '';
+      if (options.scrollToBottom || this.enterpriseChatPinned) this.scrollEnterpriseChatToBottom();
+      else this.enterpriseChatNewCount += added;
       return this.enterpriseMessages;
     } catch (error) {
       console.error('[Enterprise] Failed to load collaboration messages:', error);
-      if (!options.silent) showNotification(error?.message || '企业协作消息加载失败', 'error');
+      if (this.isEnterpriseChatScopeCurrent(scope) && request === this.enterpriseChatLoadGeneration) this.enterpriseChatLoadError = error?.message || this.enterpriseChatText('企业协作消息加载失败', 'Failed to load enterprise messages');
       return this.enterpriseMessages;
     } finally {
-      if (!options.silent) this.enterpriseChatLoading = false;
+      if (this.isEnterpriseChatScopeCurrent(scope) && request === this.enterpriseChatLoadGeneration) this.enterpriseChatLoading = false;
     }
   },
 
-  /** 滚动企业群聊到底部；无输入，在 Vue 完成 DOM 更新后定位唯一消息滚动区。 */
+  /** 在当前范围渲染后返回最新消息。 Return to the latest message after rendering the current scope. */
   scrollEnterpriseChatToBottom() {
+    const scope = this.ensureEnterpriseChatScope();
+    this.enterpriseChatPinned = true;
+    this.enterpriseChatNewCount = 0;
     this.$nextTick(() => {
-      const container = document.querySelector('.enterprise-sandbox-chat-messages');
+      if (!this.isEnterpriseChatScopeCurrent(scope)) return;
+      const container = this.$refs?.enterpriseChatMessages || document.querySelector('.enterprise-sandbox-chat-messages');
       if (container) container.scrollTop = container.scrollHeight;
     });
   },
@@ -41161,70 +43409,96 @@ async handleRefreshSkills() {
     return this.enterpriseChatRecipientIds.includes(String(roleId || '').trim());
   },
 
-  /** 发布企业群消息；无输入，把内容和接收员工 ID 交给 Main 校验并追加真实审计记录。 */
+  /** 发布真实消息并只更新原范围的未改动草稿。 Publish a real message and update only its unchanged originating draft. */
   async sendEnterpriseMessage() {
+    const scope = this.ensureEnterpriseChatScope();
+    const draft = String(this.enterpriseChatInput || '');
     const content = String(this.enterpriseChatInput || '').trim();
-    const workspaceId = this.getEnterpriseChatWorkspaceId();
-    if (!content || !workspaceId || this.enterpriseChatSending) return;
+    if (!content || !scope.workspaceId || this.enterpriseChatSending || this.enterpriseChatTaskStarting) return;
+    const recipientIds = [...this.enterpriseChatRecipientIds];
+    this.enterpriseChatPending[scope.key] = { send: true };
     this.enterpriseChatSending = true;
+    this.setEnterpriseChatActionError(scope, '');
     try {
       const runtime = this.getApplicationEnterpriseRuntime();
       const result = await runtime.postApplicationEnterpriseMessage({
-        workspaceId,
-        projectId: this.getEnterpriseChatProjectId(),
-        recipientIds: [...this.enterpriseChatRecipientIds],
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
+        recipientIds,
         content,
         taskId: null,
         traceId: null,
       });
-      this.enterpriseMessages = [...this.enterpriseMessages, result.message];
-      this.enterpriseChatInput = '';
-      this.enterpriseChatRecipientIds = [];
+      if (result?.success !== true || !this.isEnterpriseMessageInScope(result.message, scope) || (result.message.projectId || null) !== scope.projectId) throw new Error(this.enterpriseChatText('消息发送未返回可核验回执，草稿已保留。', 'No verifiable message receipt was returned. Your draft is preserved.'));
+      if (!this.isEnterpriseChatScopeCurrent(scope)) {
+        if (this.enterpriseChatDrafts[scope.key]?.text === draft) this.enterpriseChatDrafts[scope.key] = { text: '', recipients: [] };
+        return;
+      }
+      this.enterpriseChatLoadGeneration += 1;
+      this.enterpriseChatLoading = false;
+      if (!this.enterpriseMessages.some(message => message.id === result.message.id)) this.enterpriseMessages = [...this.enterpriseMessages, result.message];
+      if (this.enterpriseChatInput === draft) {
+        this.enterpriseChatInput = '';
+        this.enterpriseChatRecipientIds = [];
+      }
       this.scrollEnterpriseChatToBottom();
     } catch (error) {
       console.error('[Enterprise] Failed to post collaboration message:', error);
-      showNotification(error?.message || '企业协作消息发送失败', 'error');
+      this.setEnterpriseChatActionError(scope, error?.message || this.enterpriseChatText('企业协作消息发送失败', 'Failed to send enterprise message'));
     } finally {
-      this.enterpriseChatSending = false;
+      delete this.enterpriseChatPending[scope.key];
+      if (this.enterpriseChatScopeKey === scope.key) this.enterpriseChatSending = false;
     }
   },
 
-  /** 从当前企业项目群发起受控协同任务；无输入，持久化领导消息并等待 AgentTeams 完成调查阶段。 */
+  /** 从明确范围发起受控任务，切换后不覆盖新范围状态。 Start a governed task in an explicit scope without overwriting a later scope. */
   async startEnterpriseCompetitionTask() {
+    const scope = this.ensureEnterpriseChatScope();
+    const draft = String(this.enterpriseChatInput || '');
     const content = String(this.enterpriseChatInput || '').trim();
-    const workspaceId = this.getEnterpriseChatWorkspaceId();
     const teamTemplateId = String(this.competitionTeamTemplateId || '').trim();
-    if (!content || !workspaceId || this.enterpriseChatTaskStarting) return;
+    if (!content || !scope.workspaceId || this.enterpriseChatTaskStarting || this.enterpriseChatSending) return;
     if (this.competitionTeamRuntime === 'agentteams' && !teamTemplateId) {
       showNotification(this.isCurrentLanguageZh() ? '请选择可用的 AgentTeams 协作团队' : 'Select an AgentTeams team', 'warning');
       return;
     }
     this.enterpriseChatTaskStarting = true;
+    this.enterpriseChatPending[scope.key] = { task: true };
+    this.setEnterpriseChatActionError(scope, '');
     try {
       const result = await this.getApplicationCompetitionRuntime().startApplicationCompetitionEnterpriseTask({
-        workspaceId,
-        projectId: this.getEnterpriseChatProjectId(),
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
         recipientIds: [...this.enterpriseChatRecipientIds],
         content,
         scenarioType: this.enterpriseCompetitionScenarioType,
         teamRuntime: this.competitionTeamRuntime,
         teamTemplateId: this.competitionTeamRuntime === 'agentteams' ? teamTemplateId : null,
       });
-      this.competitionSnapshot = result.snapshot;
+      if (!this.isEnterpriseChatScopeCurrent(scope)) return;
+      const incident = result?.snapshot?.incidents?.find(item => item.incidentId === result.incidentId && item.workspaceId === scope.workspaceId && (item.projectId || null) === scope.projectId);
+      if (!incident) throw new Error(this.enterpriseChatText('任务未返回当前范围的可核验记录，草稿已保留。', 'No verifiable task record was returned for this scope. Your draft is preserved.'));
+      this.applyOperationsRuntimeSnapshot(result.snapshot);
       this.enterpriseAuditIncidentId = result.incidentId;
-      this.enterpriseChatInput = '';
-      this.enterpriseChatRecipientIds = [];
+      this.competitionSelectedIncidentId = result.incidentId;
+      this.competitionApprovalReason = '';
+      this.competitionRollbackIdempotencyKey = '';
+      this.competitionMemoryRecords = [];
+      this.competitionMemoryError = '';
+      if (this.enterpriseChatInput === draft) {
+        this.enterpriseChatInput = '';
+        this.enterpriseChatRecipientIds = [];
+      }
       await this.loadEnterpriseMessages({ scrollToBottom: true });
-      showNotification(
-        this.isCurrentLanguageZh() ? '协同调查已完成，等待人工审批' : 'Investigation completed; awaiting approval',
-        'success'
-      );
     } catch (error) {
       console.error('[Enterprise] Failed to start governed competition task:', error);
-      await this.loadEnterpriseMessages({ scrollToBottom: true });
-      showNotification(error?.message || (this.isCurrentLanguageZh() ? '协同任务发起失败' : 'Failed to start task'), 'error');
+      this.setEnterpriseChatActionError(scope, error?.message || this.enterpriseChatText('协同任务发起失败', 'Failed to start task'));
+      if (this.isEnterpriseChatScopeCurrent(scope)) {
+        await this.loadEnterpriseMessages({ silent: true });
+      }
     } finally {
-      this.enterpriseChatTaskStarting = false;
+      delete this.enterpriseChatPending[scope.key];
+      if (this.enterpriseChatScopeKey === scope.key) this.enterpriseChatTaskStarting = false;
     }
   },
 
@@ -41363,24 +43637,28 @@ async handleRefreshSkills() {
       ));
   },
 
-  /** 返回一条群聊操作关联的工具调用；输入消息，仅解析 operation 中受信任的 Invocation ID。 */
+  /** 只读取当前空间、追踪和显式 ID 对应的工具调用。 Read tool calls only for the current workspace, trace and explicit invocation IDs. */
   getEnterpriseMessageInvocations(message) {
+    if (!this.isEnterpriseMessageInScope(message) || !message.traceId) return [];
     const invocationIds = new Set(Array.isArray(message?.operation?.invocationIds) ? message.operation.invocationIds : []);
     if (invocationIds.size === 0) return [];
     return (Array.isArray(this.competitionSnapshot?.invocations) ? this.competitionSnapshot.invocations : [])
       .filter(item => (
         invocationIds.has(item.invocationId)
-        && (!message.traceId || item.traceId === message.traceId)
+        && item.traceId === message.traceId
+        && item.workspaceId === message.workspaceId
+        && this.getEnterpriseSandboxIncidents().some(incident => incident.incidentId === item.incidentId)
       ))
       .slice()
       .sort((left, right) => String(left.startedAt).localeCompare(String(right.startedAt)));
   },
 
-  /** 返回工具调用执行者名称；输入调用记录，优先匹配固化角色卡并回退到职责标签。 */
+  /** 在同一事件、空间和追踪中解析执行身份。 Resolve execution identity within the same incident, workspace and trace. */
   getEnterpriseInvocationActorLabel(invocation) {
     const actorId = String(invocation?.actorId || '').trim();
     const bindings = Array.isArray(this.competitionSnapshot?.teamBindings) ? this.competitionSnapshot.teamBindings : [];
     for (const binding of bindings) {
+      if (binding.workspaceId !== invocation.workspaceId || binding.incidentId !== invocation.incidentId || binding.traceId !== invocation.traceId) continue;
       const member = (Array.isArray(binding?.memberSnapshots) ? binding.memberSnapshots : [])
         .find(item => item.roleCardId === actorId || item.transportSender === actorId);
       if (member) return member.name;
@@ -41415,23 +43693,27 @@ async handleRefreshSkills() {
     return this.getCompetitionStatusLabel(invocation.status);
   },
 
-  /** 返回工具调用关联 Evidence；输入调用记录，严格按 Evidence ID 和 Incident 查询。 */
+  /** 按证据 ID、事件、空间与追踪严格关联证据。 Associate evidence by exact evidence ID, incident, workspace and trace. */
   getEnterpriseInvocationEvidence(invocation) {
     if (!invocation?.evidenceId) return null;
     const evidence = Array.isArray(this.competitionSnapshot?.evidence) ? this.competitionSnapshot.evidence : [];
     return evidence.find(item => (
       item.evidenceId === invocation.evidenceId
       && item.incidentId === invocation.incidentId
+      && item.workspaceId === invocation.workspaceId
+      && item.traceId === invocation.traceId
     )) || null;
   },
 
-  /** 返回工具调用关联审计回执；输入调用记录，优先按 requestId 并限制同一 Incident。 */
+  /** 审计回执必须匹配请求、事件、空间与追踪。 Require an exact request, incident, workspace and trace match for an audit receipt. */
   getEnterpriseInvocationReceipt(invocation) {
-    if (!invocation) return null;
+    if (!invocation?.requestId || !invocation.workspaceId || !invocation.incidentId || !invocation.traceId) return null;
     const receipts = Array.isArray(this.competitionSnapshot?.auditReceipts) ? this.competitionSnapshot.auditReceipts : [];
     return receipts.find(item => (
       item.incidentId === invocation.incidentId
-      && (item.requestId === invocation.requestId || item.toolName === invocation.toolName)
+      && item.requestId === invocation.requestId
+      && item.workspaceId === invocation.workspaceId
+      && item.traceId === invocation.traceId
     )) || null;
   },
 
@@ -41593,6 +43875,8 @@ async handleRefreshSkills() {
 
   /** 打开项目楼层表单；输入可选项目和工作空间 ID，返回完整的新建或编辑草稿并显示面板。 */
   openProjectForm(project = null, workspaceId = '') {
+    this.sandboxNavigatorOpen = false;
+    this.sandboxDetailsOpen = false;
     const draft = this.createEmptyProjectDraft({
       workspaceId: String(workspaceId || this.sandboxCurrentWs || '').trim(),
     });
@@ -41788,28 +44072,15 @@ async handleRefreshSkills() {
     this.showStaffRoleForm = true;
   },
 
+  /** 保存完整员工草稿并保持禁用状态，失败不关闭表单。Save the complete staff draft, preserve disabled state, and retain the form on failure. */
   async saveStaffRole() {
-    const role = {
-      id: String(this.newStaffRole.id || uuid.v4()).trim(),
-      name: this.newStaffRole.name,
-      department: this.newStaffRole.department,
-      icon: String(this.newStaffRole.icon || this.defaultStaffRoleIcon || 'fa-solid fa-hard-hat').trim()
-        || (this.defaultStaffRoleIcon || 'fa-solid fa-hard-hat'),
-      system_prompt: this.newStaffRole.system_prompt,
-      skills: [...this.newStaffRole.skills],
-      assignedWorkspace: this.newStaffRole.assignedWorkspace,
-      projectId: this.newStaffRole.projectId || '',
-      templateId: this.newStaffRole.templateId || '',
-      category: this.newStaffRole.category || '',
-      categoryZh: this.newStaffRole.categoryZh || '',
-      categoryEn: this.newStaffRole.categoryEn || '',
-      summaryZh: this.newStaffRole.summaryZh || '',
-      summaryEn: this.newStaffRole.summaryEn || '',
-      accent: Array.isArray(this.newStaffRole.accent) ? [...this.newStaffRole.accent] : [],
-      description: this.newStaffRole.description || '',
-      enabled: true,
-    };
+    if (this.staffRoleSaving) return false;
+    this.staffRoleSaving = true;
     try {
+      const role = this.normalizeStaffRoleRecord({
+        ...this.newStaffRole,
+        id: String(this.newStaffRole.id || uuid.v4()).trim(),
+      });
       const existed = Array.isArray(this.enterpriseRoleCards)
         ? this.enterpriseRoleCards.some((item) => String(item?.id || '').trim() === role.id)
         : false;
@@ -41818,22 +44089,30 @@ async handleRefreshSkills() {
       this.showSandboxFloatPanel = false;
       this.newStaffRole = this.createEmptyStaffRoleDraft({ department: '' });
       this.newSkillInput = '';
-      await this.autoSaveSettings();
-      await this.loadEnterpriseRoleCards();
-      if (typeof this.refreshSandboxState === 'function') {
-        await this.refreshSandboxState();
+      try {
+        await this.autoSaveSettings();
+        await this.loadEnterpriseRoleCards();
+        if (typeof this.refreshSandboxState === 'function') {
+          await this.refreshSandboxState();
+        }
+        this._refreshSandbox();
+      } catch (error) {
+        console.warn('[Enterprise] Staff profile saved; derived presentation refresh failed.', error);
       }
-      this._refreshSandbox();
       setTimeout(() => { if (this.enterprise3DScene) this.enterprise3DScene.resize(); }, 300);
       showNotification(
         this.isCurrentLanguageZh()
-          ? `员工 ${role.name} 已${existed ? '更新' : '创建'}`
-          : `Staff role ${role.name} ${existed ? 'updated' : 'created'}`,
+          ? `员工 ${role.name} 的岗位资料已${existed ? '更新' : '保存'}`
+          : `Staff profile ${role.name} ${existed ? 'updated' : 'saved'}`,
         'success'
       );
+      return true;
     } catch (err) {
       console.error('[Enterprise] Failed to save staff role:', err);
       showNotification(err.message || '员工角色创建失败', 'error');
+      return false;
+    } finally {
+      this.staffRoleSaving = false;
     }
   },
 

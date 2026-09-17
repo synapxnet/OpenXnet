@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { resolveCompetitionMemoryAccess, type ApplicationCompetitionMemoryAccess } from "./competition-memory-access";
+import { resolveIndependentVerification } from "./competition-verification";
 
 import {
   parseCreateApplicationCompetitionIncidentRequest,
@@ -38,6 +40,8 @@ import {
   type ApplicationCompetitionSkillEvolutionRun,
   type ApplicationCompetitionToolInvocation,
   type ApplicationCompetitionTrace,
+  type ApplicationCompetitionResidentContext,
+  type ApplicationCompetitionResidentEvent,
   type ExecuteApplicationCompetitionRollbackRequest,
 } from "../contracts/application-competition-runtime";
 import type { ApplicationEnterpriseResolvedTeamTemplate } from "../contracts/application-enterprise-runtime";
@@ -57,7 +61,16 @@ import type {
   CompetitionToolAdapterResponse,
   CompetitionToolGovernance,
 } from "./competition-tool-adapter";
-import { CompetitionStore } from "./competition-store";
+import { CompetitionStore, CompetitionStoreWriteError } from "./competition-store";
+import {
+  assertResidentContext,
+  assertResidentToolAccess,
+  createDefaultResidentAgents,
+  createResidentContext,
+  createResidentCollaborationRequest,
+  CompetitionResidentAgentError,
+} from "./competition-resident-agents";
+import { assertCompetitionWriteVersion, collectCompetitionResourceVersions } from "./competition-resource-versions";
 import {
   getCompetitionScenarioProfile,
   type CompetitionScenarioExecutionStep,
@@ -183,6 +196,7 @@ export interface ApplicationCompetitionEnterpriseTaskConversationInput {
 
 /** 成功闭环向 Memory V3 发布的脱敏事件摘要。 */
 export interface ApplicationCompetitionResolvedMemoryPublicationRequest {
+  readonly memoryAccess: ApplicationCompetitionMemoryAccess | null;
   readonly workspaceId: string;
   readonly projectId: string | null;
   readonly incidentId: string;
@@ -197,6 +211,7 @@ export interface ApplicationCompetitionResolvedMemoryPublicationRequest {
   readonly verificationEvidenceIds: readonly string[];
   readonly toolNames: readonly string[];
   readonly agentDecisions: readonly {
+    readonly roleCardId: string;
     readonly stage: ApplicationCompetitionAgentDecision["stage"];
     readonly agentName: string;
     readonly teamRole: ApplicationCompetitionAgentDecision["teamRole"];
@@ -210,6 +225,12 @@ export interface ApplicationCompetitionRuntimeServiceOptions {
   readonly userDataDirectory: string;
   readonly fixtureAdapter: CompetitionToolAdapter;
   readonly liveAdapter: CompetitionToolAdapter;
+  /** 在创建运行记录前由 Main 核对 Live 授权和协作模式。 / Let Main validate Live access and collaboration mode before creating a run record. */
+  readonly requireLiveAccess?: (scope: {
+    readonly workspaceId: string;
+    readonly scenario: ApplicationCompetitionScenarioContext["scenarioType"];
+    readonly teamRuntime: "builtin" | "agentteams";
+  }) => void | Promise<void>;
   readonly store?: CompetitionStore;
   readonly now?: () => Date;
   readonly createId?: () => string;
@@ -234,10 +255,14 @@ export interface ApplicationCompetitionRuntimeServiceOptions {
     request: ApplicationCompetitionResolvedMemoryPublicationRequest,
   ) => Promise<unknown>;
   readonly resolveTeamTemplate?: (teamTemplateId: string) => Promise<ApplicationEnterpriseResolvedTeamTemplate>;
+  /** 由企业存储确认真实 Workspace，禁止渲染器别名作为授权范围。 / Resolve a real workspace through enterprise storage, never using a renderer alias as an authorization scope. */
+  readonly resolveWorkspaceId?: (workspaceId: string) => Promise<string>;
   readonly resolveEnabledEnterpriseSkill?: (
     workspaceId: string,
     skillId: string,
   ) => Promise<ApplicationCompetitionEnterpriseSkillResolution | null>;
+  /** 解析当前实际平台环境，不从 Skill 认证倒推。 / Resolve the current platform environment independently of Skill certification. */
+  readonly resolveCurrentEnvironmentFingerprint?: () => Promise<string | null>;
   readonly retrieveCompetitionKnowledge?: (
     workspaceId: string,
     query: string,
@@ -248,6 +273,8 @@ export interface ApplicationCompetitionRuntimeServiceOptions {
     readonly confidence: number;
   }[]>;
   readonly agentTeamsIsolatedServiceEnabled?: boolean;
+  /** 在准备和派发时读取实际开关，兼容构造后加载的受控配置。 / Read actual enablement at prepare and dispatch time for configuration loaded after construction. */
+  readonly isAgentTeamsIsolatedServiceEnabled?: () => boolean;
   readonly synchronizeKnowledge?: (request: ApplicationCompetitionKnowledgeProjectionRequest) => Promise<unknown>;
   readonly purgeKnowledge?: (request: ApplicationCompetitionKnowledgePurgeRequest) => Promise<unknown>;
   readonly purgeEnterpriseTaskConversations?: (request: {
@@ -260,16 +287,21 @@ export interface ApplicationCompetitionRuntimeServiceOptions {
   readonly logger?: { warn(message: string): void };
 }
 
-/** 企业 Skill 解析结果；描述 Workspace 绑定、生命周期、环境认证和生产资格。 */
+/** 企业 Skill 解析结果，附带外部认证与当前制品摘要。 / Enterprise Skill resolution with external certification and the current artifact digest. */
 export interface ApplicationCompetitionEnterpriseSkillResolution {
   readonly sourceIncidentId: string | null;
   readonly lifecycleStatus: "candidate" | "verified" | "active" | "deprecated" | "retired" | "legacy";
   readonly environmentScope: "synthetic" | "simulation" | "staging" | "shadow" | "canary" | "production" | "legacy";
   readonly productionEligible: boolean;
+  readonly environmentFingerprint?: string | null;
+  readonly artifactDigest?: string | null;
+  readonly currentArtifactDigest?: string | null;
 }
 
 /** 复盘 Skill 发布到 OpenXnet 技能目录和企业空间所需的有界字段。 */
 export interface ApplicationCompetitionRetrospectiveSkillPublicationRequest {
+  readonly traceId: string;
+  readonly memoryAccess: ApplicationCompetitionMemoryAccess | null;
   readonly workspaceId: string;
   readonly incidentId: string;
   readonly skillId: string;
@@ -413,6 +445,7 @@ export class ApplicationCompetitionRuntimeService {
   private readonly retrospectiveRoot: string;
   private readonly evaluationRoot: string;
   private readonly logger: { warn(message: string): void };
+  private activeInvestigationCount = 0;
 
   /** 创建竞赛控制面；输入 Store、Fixture/Live Adapter 和可选 Agent Team 插件，不提前访问平台。 */
   public constructor(private readonly options: ApplicationCompetitionRuntimeServiceOptions) {
@@ -427,16 +460,67 @@ export class ApplicationCompetitionRuntimeService {
     this.logger = options.logger ?? console;
   }
 
+  /** 只读协同配置变更边界；不修复业务记录。 / Read collaboration configuration boundaries without repairing business records. */
+  public async readCollaborationConfigurationContext(): Promise<{
+    readonly adapterMode: ApplicationCompetitionAdapterMode;
+    readonly canChange: boolean;
+  }> {
+    const current = await this.store.read();
+    const activeIncident = current.incidents.some(
+      /** 活跃事件包括人工审批间隙。 / Active incidents include the human-approval interval. */
+      (incident) => ["INVESTIGATING", "AWAITING_APPROVAL", "MITIGATING", "VERIFYING"].includes(incident.status),
+    );
+    const pendingCall = current.invocations.some(
+      /** 已发出的工具调用必须先结束。 / Issued tool calls must finish first. */
+      (invocation) => invocation.status === "RUNNING",
+    );
+    return { adapterMode: current.adapterMode, canChange: this.activeInvestigationCount === 0 && !activeIncident && !pendingCall };
+  }
+
   /** 读取完整竞赛快照；无输入，返回 Store 安全副本并有界修复历史知识投影，不访问三平台。 */
   public async getSnapshot(): Promise<ApplicationCompetitionSnapshot> {
-    const snapshot = await this.store.read();
+    const snapshot = await this.reconcileUnstartedDemoWorkspaces();
     const incidents = snapshot.incidents.slice(-3);
     const synchronizations: Promise<void>[] = [];
     for (const incident of incidents) {
       synchronizations.push(this.synchronizeIncidentKnowledge(snapshot, incident.incidentId));
     }
     await Promise.all(synchronizations);
-    return snapshot;
+    return {
+      ...snapshot,
+      taskGraphs: snapshot.taskGraphs.map(/** 只修正展示名称，不改写历史状态或证据。 / Correct display labels without rewriting historical states or evidence. */ graph => {
+        const decision = snapshot.reasoningDecisions.find(/** 只取同事件同Trace的真实检索模式。 / Use the actual retrieval mode of the same incident and trace only. */ item => item.incidentId === graph.incidentId && item.traceId === graph.traceId && item.decisionType === "SKILL_SELECTION");
+        return { ...graph, nodes: graph.nodes.map(/** 保留节点事实，只投影可核实名称。 / Retain node facts and project verifiable labels only. */ node => ({ ...node, title: this.getTaskGraphNodeTitle(node, decision?.retrievalMode) })) };
+      }),
+    };
+  }
+
+  /** 仅校准未开始的旧演示事件，已有范围记录保持原样。 / Reconcile only unstarted legacy demo incidents, preserving all existing scoped records. */
+  private async reconcileUnstartedDemoWorkspaces(): Promise<ApplicationCompetitionSnapshot> {
+    const snapshot = await this.store.read();
+    if (!this.options.resolveWorkspaceId) return snapshot;
+    /** 已生成任何运行事实都不可改属空间。 / Any recorded runtime fact makes a workspace scope immutable. */
+    const canReconcile = (incident: ApplicationCompetitionIncident, current: ApplicationCompetitionSnapshot): boolean => {
+      if (incident.workspaceId !== "ws_goai_demo" || incident.status !== "OPEN" || incident.activeTraceId || incident.activeApprovalId || incident.activeActionId) return false;
+      const collections = [current.traces, current.invocations, current.evidence, current.approvals, current.actions, current.auditReceipts,
+        current.teamBindings, current.agentDecisions, current.skillUsages, current.taskGraphs, current.reasoningDecisions,
+        current.skillEvolutionRuns, current.residentContexts, current.residentEvents];
+      return !collections.some((records) => records.some((record) => record.incidentId === incident.incidentId));
+    };
+    if (!snapshot.incidents.some((incident) => canReconcile(incident, snapshot))) return snapshot;
+    let workspaceId: string;
+    try {
+      workspaceId = await this.options.resolveWorkspaceId("ws_goai_demo");
+    } catch {
+      // 保留可打开的历史记录，由明确选择的新事件解决模糊范围。 / Keep history readable; use an explicitly selected workspace for a new incident.
+      return snapshot;
+    }
+    if (workspaceId === "ws_goai_demo") return snapshot;
+    return this.store.update((current) => ({
+      ...current,
+      incidents: current.incidents.map((incident) => canReconcile(incident, current) ? { ...incident, workspaceId, updatedAt: this.now().toISOString() } : incident),
+      updatedAt: this.now().toISOString(),
+    }));
   }
 
   /** 补投影历史成功闭环到 Memory V3；无输入，返回已存在或成功写入的可信记忆数量。 */
@@ -602,7 +686,7 @@ export class ApplicationCompetitionRuntimeService {
       scenario: definition.scenario,
     });
     await this.options.recordEnterpriseTaskConversation({
-      workspaceId: request.workspaceId,
+      workspaceId: requireIncident(created.snapshot, created.incidentId).workspaceId,
       projectId: request.projectId,
       taskId: created.incidentId,
       recipientIds: request.recipientIds,
@@ -619,11 +703,12 @@ export class ApplicationCompetitionRuntimeService {
   /** 创建待调查事件；输入未知 Renderer 请求，返回新事件和最新快照。 */
   public async createIncident(value: unknown): Promise<ApplicationCompetitionMutationResult> {
     const request = parseCreateApplicationCompetitionIncidentRequest(value);
+    const workspaceId = this.options.resolveWorkspaceId ? await this.options.resolveWorkspaceId(request.workspaceId) : request.workspaceId;
     const timestamp = this.now().toISOString();
     const incidentId = this.id("inc");
     const incident: ApplicationCompetitionIncident = {
       incidentId,
-      workspaceId: request.workspaceId,
+      workspaceId,
       projectId: request.projectId,
       title: request.title,
       summary: request.summary,
@@ -647,13 +732,41 @@ export class ApplicationCompetitionRuntimeService {
     return this.mutationResult(snapshot, incidentId);
   }
 
-  /** 执行跨 AIOps、DataOps 和 MLOps 取证；输入事件、操作者和 Team Runtime，返回待审批状态。 */
+  /** 执行跨平台取证并绑定实际目标版本，返回待审批状态。 / Collect cross-platform evidence, bind actual target versions, and return the approval state. */
   public async runInvestigation(value: unknown): Promise<ApplicationCompetitionMutationResult> {
+    this.activeInvestigationCount += 1;
+    try {
+      return await this.runInvestigationOperation(value);
+    } finally {
+      this.activeInvestigationCount -= 1;
+    }
+  }
+
+  /** 在平台模式被当前调用保护期间完成取证与审批准备。 / Complete investigation and approval preparation while this call protects the platform mode. */
+  private async runInvestigationOperation(value: unknown): Promise<ApplicationCompetitionMutationResult> {
     const request = parseRunApplicationCompetitionInvestigationRequest(value);
-    const current = await this.store.read();
-    const incident = requireIncident(current, request.incidentId);
+    const current = await this.reconcileUnstartedDemoWorkspaces();
+    const previousIncident = requireIncident(current, request.incidentId);
+    if (this.options.resolveWorkspaceId) {
+      const resolved = await this.options.resolveWorkspaceId(previousIncident.workspaceId);
+      if (resolved !== previousIncident.workspaceId) {
+        throw new ApplicationCompetitionRuntimeError("LEGACY_WORKSPACE_SCOPE_IMMUTABLE", "此历史事件已有运行记录，不能更改工作空间。请保留审计记录并在正确空间新建事件。");
+      }
+    }
+    const { governedResourceVersions: _previousVersions, ...scenarioForInvestigation } = previousIncident.scenario;
+    let incident: ApplicationCompetitionIncident = {
+      ...previousIncident,
+      scenario: scenarioForInvestigation,
+    };
     if (!["OPEN", "FAILED"].includes(incident.status)) {
       throw new ApplicationCompetitionRuntimeError("INCIDENT_STATE_INVALID", "当前事件状态不能重新开始取证。");
+    }
+    if (current.adapterMode === "live") {
+      await this.options.requireLiveAccess?.({
+        workspaceId: incident.workspaceId,
+        scenario: incident.scenario.scenarioType,
+        teamRuntime: request.teamRuntime,
+      });
     }
     const timestamp = this.now().toISOString();
     const traceId = this.id("trace");
@@ -667,6 +780,15 @@ export class ApplicationCompetitionRuntimeService {
       updatedAt: timestamp,
       completedAt: null,
     };
+    const residentContexts = createDefaultResidentAgents().map(/** 为每个平台冻结本次 Run 的最小只读上下文。 / Freeze the minimal read-only context for each platform in this Run. */ (agent) => createResidentContext(agent, {
+      workspaceId: incident.workspaceId,
+      environment: "staging",
+      source: current.adapterMode === "live" ? "LIVE-STAGING" : "SIMULATION",
+      runId: `run-${traceId}`,
+      incidentId: incident.incidentId,
+      traceId,
+      contextTtl: new Date(this.now().getTime() + 15 * 60_000).toISOString(),
+    }));
     const skillSelection = await this.createSkillSelection(incident, traceId, current.adapterMode, timestamp);
     const binding = await this.prepareTeamBinding(
       incident,
@@ -677,6 +799,11 @@ export class ApplicationCompetitionRuntimeService {
     );
     const taskGraph = this.createTaskGraph(incident, traceId, binding, current, timestamp);
     await this.store.update((snapshot) => {
+      const latest = requireIncident(snapshot, incident.incidentId);
+      if (snapshot.adapterMode !== current.adapterMode || latest.status !== previousIncident.status
+        || latest.activeTraceId !== previousIncident.activeTraceId) {
+        throw new ApplicationCompetitionRuntimeError("INVESTIGATION_CONTEXT_CHANGED", "事件或平台模式已变化，请刷新后重新取证。", true);
+      }
       const next = {
         ...snapshot,
         incidents: replaceIncident(snapshot.incidents, incident.incidentId, {
@@ -689,6 +816,7 @@ export class ApplicationCompetitionRuntimeService {
           resolvedAt: null,
         }),
         traces: [...snapshot.traces, trace],
+        residentContexts: [...snapshot.residentContexts, ...residentContexts],
         teamBindings: [...snapshot.teamBindings, binding],
         skillUsages: [...snapshot.skillUsages, skillSelection.usage],
         taskGraphs: [...snapshot.taskGraphs, taskGraph],
@@ -732,7 +860,41 @@ export class ApplicationCompetitionRuntimeService {
           toolName,
           arguments: argumentsValue,
           governance: null,
+          residentContext: residentContexts.find(/** 只把本平台上下文传给该平台工具。 / Pass only the matching platform context to its tool. */ (context) => context.platform === getCompetitionToolDescriptor(toolName).platform),
         })));
+      await this.recordResidentInvestigation(residentContexts, recordedEvidence, request.teamRuntime);
+      if (current.adapterMode === "live") {
+        try {
+          for (const recorded of recordedEvidence) {
+            const meta = recorded.response.meta;
+            if (meta.workspaceId !== incident.workspaceId || meta.incidentId !== incident.incidentId
+              || meta.traceId !== traceId || meta.requestId !== recorded.adapterRequest.requestId
+              || meta.toolName !== recorded.adapterRequest.toolName
+              || meta.platform !== getCompetitionToolDescriptor(recorded.adapterRequest.toolName).platform) {
+              throw new TypeError("Resource version response scope does not match this investigation.");
+            }
+          }
+          const governedResourceVersions = collectCompetitionResourceVersions(recordedEvidence.map(/** 仅聚合本轮完成的真实调用响应。 / Aggregate only responses completed in this investigation. */ (recorded) => ({
+            toolName: recorded.adapterRequest.toolName, response: recorded.response,
+          })));
+          incident = { ...incident, scenario: { ...incident.scenario, governedResourceVersions } };
+          getCompetitionScenarioProfile(incident.scenario);
+          const boundIncident = incident;
+          await this.store.update(/** 固化内部版本而保留本轮实时状态。 / Persist internal versions while retaining current trace state. */ (state) => ({
+            ...state,
+            incidents: replaceIncident(state.incidents, boundIncident.incidentId, {
+              ...requireIncident(state, boundIncident.incidentId), scenario: boundIncident.scenario,
+            }),
+            updatedAt: this.now().toISOString(),
+          }));
+        } catch {
+          throw new ApplicationCompetitionRuntimeError(
+            "RESOURCE_VERSION_EVIDENCE_INVALID",
+            "本轮调查缺少完整、一致的实际资源版本。请核对平台接口并重新取证，未创建处置审批。",
+            true,
+          );
+        }
+      }
       let approvalRequester = request.actorId;
       let approvalReason: string | undefined;
       if (request.teamRuntime === "agentteams") {
@@ -908,6 +1070,9 @@ export class ApplicationCompetitionRuntimeService {
     const before = await this.store.read();
     const approval = requireApproval(before, request.approvalId);
     const incident = requireIncident(before, approval.incidentId);
+    if (before.adapterMode === "live" && incident.scenario.governedResourceVersions === undefined) {
+      throw new ApplicationCompetitionRuntimeError("RESOURCE_VERSION_EVIDENCE_INVALID", "该审批缺少逐资源版本取证，请重新调查后再执行。", true);
+    }
     this.assertRemediationAuthorized(before, request, approval, incident);
     const existing = before.actions.find((action) => action.idempotencyKey === request.idempotencyKey);
     if (existing !== undefined) return this.handleExistingIdempotentAction(before, existing, request);
@@ -1084,6 +1249,9 @@ export class ApplicationCompetitionRuntimeService {
       throw new ApplicationCompetitionRuntimeError("AGENTTEAMS_ROLE_INVALID", "AgentTeams Binding 缺少独立 Verifier。", true);
     }
     const verificationActorId = verifier === undefined ? request.actorId : this.agentActorId(verifier.roleCardId);
+    if (action.executedBy === verificationActorId) {
+      throw new ApplicationCompetitionRuntimeError("SEPARATION_OF_DUTIES_REQUIRED", "独立验证身份不能是处置执行人。");
+    }
     const startedAt = this.now().toISOString();
     await this.store.update((current) => ({
       ...current,
@@ -1170,7 +1338,7 @@ export class ApplicationCompetitionRuntimeService {
       if (objectiveFailure !== null) throw objectiveFailure;
       const completedAt = this.now().toISOString();
       const evidenceIds = verificationEvidenceIds;
-      const receipt = this.createAuditReceipt({
+      const receipt: ApplicationCompetitionAuditReceipt = { ...this.createAuditReceipt({
         requestId: this.id("req"),
         incident,
         traceId: action.traceId,
@@ -1181,7 +1349,8 @@ export class ApplicationCompetitionRuntimeService {
         resourceVersionBefore: String(action.targetRevision),
         resourceVersionAfter: String(action.targetRevision),
         outcome: "SUCCEEDED",
-      });
+      }), verification: { runtime: binding?.runtime ?? "builtin", actionId: action.actionId,
+        decision: "CLOSE", evidenceIds, errorCode: null } };
       const snapshot = await this.store.update((current) => {
         const next = {
           ...current,
@@ -1229,7 +1398,18 @@ export class ApplicationCompetitionRuntimeService {
       await this.persistResolvedIncidentMemory(snapshot, requireIncident(snapshot, incident.incidentId));
       return this.mutationResult(snapshot, incident.incidentId);
     } catch (error) {
-      const approval = requireApproval(await this.store.read(), action.approvalId);
+      const verificationSnapshot = await this.store.read();
+      const failedAction = requireAction(verificationSnapshot, action.actionId);
+      const failedReceipt: ApplicationCompetitionAuditReceipt = { ...this.createAuditReceipt({
+        requestId: this.id("req"), incident, traceId: action.traceId, toolName: "openxnet.remediation.verify",
+        actorId: verificationActorId, approvalId: action.approvalId, idempotencyKey: `${action.idempotencyKey}:verify`,
+        resourceVersionBefore: String(action.targetRevision), resourceVersionAfter: String(action.targetRevision), outcome: "FAILED",
+      }), verification: { runtime: binding?.runtime ?? "builtin", actionId: action.actionId,
+        decision: "ROLLBACK_REQUIRED", evidenceIds: failedAction.verificationEvidenceIds, errorCode: normalizeRuntimeError(error).code } };
+      await this.store.update(/** 补偿开始前保存真实失败结论，保留失败时已取得的证据。 / Persist the real failure before compensation and retain evidence already collected. */ (current) => ({
+        ...current, auditReceipts: [...current.auditReceipts, failedReceipt], updatedAt: failedReceipt.recordedAt,
+      }));
+      const approval = requireApproval(verificationSnapshot, action.approvalId);
       const profile = getCompetitionScenarioProfile(incident.scenario);
       await this.runCompensationPlan({
         mode: before.adapterMode,
@@ -1369,14 +1549,22 @@ export class ApplicationCompetitionRuntimeService {
     };
   }
 
-  /** 切换 Fixture 或 Live Adapter；输入未知模式请求，持久化后返回最新快照。 */
+  /** 仅在没有活跃追踪时切换平台模式，防止取证和执行跨环境。 / Switch platform modes only without active traces to prevent cross-environment investigation and execution. */
   public async setAdapterMode(value: unknown): Promise<ApplicationCompetitionSnapshot> {
     const request = parseSetApplicationCompetitionAdapterModeRequest(value);
     const timestamp = this.now().toISOString();
-    return this.store.update((current) => ({ ...current, adapterMode: request.mode, updatedAt: timestamp }));
+    return this.store.update(/** 在同一存储事务内核对活跃追踪。 / Check active traces within the same store transaction. */ (current) => {
+      const activeIncident = current.incidents.some(/** 依据事件当前状态，不让已拒绝审批的历史追踪永久锁定模式。 / Use current incident state so historical rejected traces cannot lock the mode forever. */ (incident) =>
+        ["INVESTIGATING", "AWAITING_APPROVAL", "MITIGATING", "VERIFYING"].includes(incident.status));
+      const pendingCall = current.invocations.some(/** 等待已经发出的调用完成后再换环境。 / Wait for already issued calls before changing environments. */ (invocation) => invocation.status === "RUNNING");
+      if (current.adapterMode !== request.mode && (this.activeInvestigationCount > 0 || activeIncident || pendingCall)) {
+        throw new ApplicationCompetitionRuntimeError("ADAPTER_MODE_IN_USE", "当前还有运行中或待审批的事件，请先结束事件再切换平台模式。");
+      }
+      return { ...current, adapterMode: request.mode, updatedAt: timestamp };
+    });
   }
 
-  /** 在线检索并选择企业 Skill；输入事件、Trace、环境和时间，返回复用证据及可解释多候选裁决。 */
+  /** 在线选择企业 Skill 并校验当前环境及制品绑定。 / Select enterprise Skills online and validate current environment and artifact bindings. */
   private async createSkillSelection(
     incident: ApplicationCompetitionIncident,
     traceId: string,
@@ -1410,7 +1598,15 @@ export class ApplicationCompetitionRuntimeService {
         lookupFailed = true;
       }
     }
-    const reuseEligible = enabled !== null && isEnterpriseSkillReusable(enabled, adapterMode);
+    let currentEnvironmentFingerprint: string | null = null;
+    if (adapterMode === "live" && enabled !== null && this.options.resolveCurrentEnvironmentFingerprint !== undefined) {
+      try {
+        currentEnvironmentFingerprint = await this.options.resolveCurrentEnvironmentFingerprint();
+      } catch {
+        currentEnvironmentFingerprint = null;
+      }
+    }
+    const reuseEligible = enabled !== null && isEnterpriseSkillReusable(enabled, adapterMode, currentEnvironmentFingerprint, incident.incidentId);
     const candidates = COMPETITION_SCENARIO_SKILLS.map((candidate) => {
       const matchesScenario = candidate.scenarioType === incident.scenario.scenarioType;
       const semanticScore = matchesScenario
@@ -1480,7 +1676,7 @@ export class ApplicationCompetitionRuntimeService {
           ? "混合检索命中场景 Skill，但企业空间未启用同指纹版本，使用受治理基线流程。"
           : reuseEligible
             ? "语义、知识图谱、场景硬门、企业绑定与当前环境认证一致，复用受治理 Skill。"
-            : "企业空间已启用该 Skill，但生命周期或环境认证不覆盖本轮运行，继续使用基线流程。",
+            : "企业空间已启用该 Skill，但生命周期或环境认证不覆盖本轮运行，或当前制品摘要不匹配，继续使用基线流程。",
       recordedAt,
     };
     return {
@@ -1619,6 +1815,15 @@ export class ApplicationCompetitionRuntimeService {
     };
   }
 
+  /** 按真实检索模式和候选发布边界命名，不提升事实状态。 / Name nodes using actual retrieval mode and candidate publication boundaries without promoting factual state. */
+  private getTaskGraphNodeTitle(node: ApplicationCompetitionTaskGraphNode, retrievalMode?: ApplicationCompetitionReasoningDecision["retrievalMode"]): string {
+    if (node.nodeId === "crystallize-retrospective-skill") return "结晶候选 Skill（待认证与启用）";
+    if (node.nodeId !== "retrieve-enterprise-skill") return node.title;
+    if (retrievalMode === "ONLINE_HYBRID_RAG_KG") return "在线 RAG 与知识图谱辅助筛选";
+    if (retrievalMode === "CATALOG_FALLBACK") return "本地 Skill 目录候选筛选";
+    return "Skill 候选筛选";
+  }
+
   /** 编译一次 Trace 的动态 Task Graph；输入场景、团队、历史快照和时间，返回含并行组、依赖、超时及冲突策略的图。 */
   private createTaskGraph(
     incident: ApplicationCompetitionIncident,
@@ -1733,7 +1938,7 @@ export class ApplicationCompetitionRuntimeService {
       {
         nodeId: "retrieve-enterprise-skill",
         lane: "RETRIEVAL",
-        title: "在线 RAG 与知识图谱检索",
+        title: "Skill 候选筛选",
         nodeType: "SKILL_RETRIEVAL",
         toolName: null,
         dependsOn: ["route-agent-team"],
@@ -1816,7 +2021,7 @@ export class ApplicationCompetitionRuntimeService {
       {
         nodeId: "crystallize-retrospective-skill",
         lane: "CRYSTALLIZATION",
-        title: "结晶并启用企业 Skill",
+        title: "结晶候选 Skill（待认证与启用）",
         nodeType: "SKILL_WRITE",
         toolName: null,
         dependsOn: ["verifier-conclusion"],
@@ -1891,18 +2096,36 @@ export class ApplicationCompetitionRuntimeService {
     const binding = snapshot.teamBindings.find((item) => item.incidentId === incidentId && item.traceId === traceId);
     const approval = [...snapshot.approvals].reverse().find((item) => item.incidentId === incidentId && item.traceId === traceId);
     const action = [...snapshot.actions].reverse().find((item) => item.incidentId === incidentId && item.traceId === traceId);
-    const skillDecision = snapshot.reasoningDecisions.find((item) => item.traceId === traceId && item.decisionType === "SKILL_SELECTION");
+    const skillDecision = snapshot.reasoningDecisions.find((item) => item.incidentId === incidentId && item.traceId === traceId && item.decisionType === "SKILL_SELECTION");
     const planDecision = snapshot.reasoningDecisions.find((item) => item.traceId === traceId && item.decisionType === "PLAN_SELECTION");
     const verificationEvidence = new Set(action?.verificationEvidenceIds ?? []);
     const investigationInvocations = snapshot.invocations.filter((item) => (
-      item.traceId === traceId && item.actionId === null && !verificationEvidence.has(item.evidenceId ?? "")
+      item.incidentId === incidentId && item.workspaceId === incident.workspaceId
+      && item.traceId === traceId && item.actionId === null && !verificationEvidence.has(item.evidenceId ?? "")
     ));
+    /** 固定原调查依赖的调用与证据身份，额外调用不得替代已有引用。 / Bind original investigation dependencies to invocation and evidence identities; extra calls cannot replace existing references. */
+    const investigationNodes = new Map(graph.nodes.filter(/** 只接受原调查工具节点。 / Accept only original investigation tool nodes. */ (node) => (
+      node.lane === "EVIDENCE" && node.nodeType === "TOOL_CALL" && node.toolName !== null
+      && node.nodeId === taskNodeId("evidence", node.toolName)
+    )).map(/** 将节点固定到原调用和证据。 / Bind each node to its original invocation and evidence. */ (node) => {
+      const invocation = investigationInvocations.find(/** 已有证据引用禁止被后续同工具调用替代。 / Existing evidence references cannot be replaced by later calls to the same tool. */ (item) => (
+        item.toolName === node.toolName
+        && (node.evidenceIds.length === 0 || node.evidenceIds.includes(item.evidenceId ?? ""))
+      ));
+      const evidence = invocation?.evidenceId === null ? undefined : snapshot.evidence.find(/** 校验调用证据的完整范围。 / Validate the full scope of invocation evidence. */ (item) => (
+        item.evidenceId === invocation?.evidenceId && item.incidentId === incidentId
+        && item.workspaceId === incident.workspaceId && item.traceId === traceId && item.toolName === node.toolName
+      ));
+      const status = invocation?.status === "SUCCEEDED" && evidence === undefined ? "PENDING" : invocation?.status ?? "PENDING";
+      return [node.nodeId, { invocation, evidence, status }] as const;
+    }));
     const verificationInvocations = snapshot.invocations.filter((item) => (
       item.traceId === traceId && verificationEvidence.has(item.evidenceId ?? "")
     ));
     const agentVerification = snapshot.agentDecisions.find((item) => (
       item.traceId === traceId && item.stage === "VERIFICATION_CONCLUSION"
     ));
+    const independentVerification = resolveIndependentVerification(snapshot, incident);
     const agentEvidencePlan = snapshot.agentDecisions.find((item) => (
       item.traceId === traceId && item.stage === "INVESTIGATION_PLAN"
     ));
@@ -1920,19 +2143,23 @@ export class ApplicationCompetitionRuntimeService {
       } else if (node.nodeId === "retrieve-enterprise-skill") {
         status = skillDecision === undefined ? "PENDING" : "SUCCEEDED";
       } else if (node.lane === "EVIDENCE" && node.toolName !== null) {
-        const invocation = investigationInvocations.find((item) => item.toolName === node.toolName);
-        status = invocation === undefined ? "PENDING" : invocation.status;
-        evidenceIds = invocation?.evidenceId ? [invocation.evidenceId] : [];
+        const dependency = investigationNodes.get(node.nodeId);
+        status = dependency?.status ?? "PENDING";
+        evidenceIds = dependency?.evidence === undefined ? node.evidenceIds : [dependency.evidence.evidenceId];
         if (agentEvidencePlan !== undefined && node.assignedRoleCardId === null) {
           assignedRoleCardId = agentEvidencePlan.roleCardId;
           assignedAgentName = agentEvidencePlan.agentName;
           assignmentMode = "CAPABILITY_MATCH";
         }
       } else if (node.nodeId === "fuse-cross-platform-evidence") {
-        status = investigationInvocations.some((item) => item.status === "FAILED") ? "FAILED"
-          : investigationInvocations.length === node.dependsOn.length
-            && investigationInvocations.every((item) => item.status === "SUCCEEDED") ? "SUCCEEDED" : "PENDING";
-        evidenceIds = investigationInvocations.flatMap((item) => item.evidenceId ? [item.evidenceId] : []);
+        const dependencies = node.dependsOn.map(/** 按原依赖ID读取调查结果。 / Read investigation results by their original dependency IDs. */ (dependencyId) => investigationNodes.get(dependencyId));
+        const uniqueDependencies = new Set(node.dependsOn).size === node.dependsOn.length;
+        const complete = dependencies.length > 0 && uniqueDependencies
+          && dependencies.every(/** 每一必需依赖必须成功且有证据。 / Every required dependency must succeed with evidence. */ (dependency) => dependency?.status === "SUCCEEDED" && dependency.evidence !== undefined)
+          && new Set(dependencies.map(/** 调用身份不能复用以补齐依赖。 / Invocation identities cannot be reused to fill dependencies. */ (dependency) => dependency?.invocation?.invocationId)).size === dependencies.length
+          && new Set(dependencies.map(/** 证据身份不能重复计数。 / Evidence identities cannot be counted twice. */ (dependency) => dependency?.evidence?.evidenceId)).size === dependencies.length;
+        status = dependencies.some(/** 保留必需依赖的明确失败。 / Preserve explicit failure of any required dependency. */ (dependency) => dependency?.status === "FAILED") ? "FAILED" : complete ? "SUCCEEDED" : "PENDING";
+        evidenceIds = [...new Set(dependencies.flatMap(/** 仅汇聚已核对的原始证据。 / Aggregate only validated original evidence. */ (dependency) => dependency?.evidence === undefined ? [] : [dependency.evidence.evidenceId]))];
       } else if (node.nodeId === "select-governed-plan") {
         status = planDecision === undefined ? "PENDING" : "SUCCEEDED";
         evidenceIds = planDecision === undefined ? [] : investigationInvocations.flatMap((item) => item.evidenceId ? [item.evidenceId] : []);
@@ -1959,17 +2186,15 @@ export class ApplicationCompetitionRuntimeService {
           assignmentMode = "CAPABILITY_MATCH";
         }
       } else if (node.nodeId === "verifier-conclusion") {
-        status = agentVerification !== undefined
-          ? (agentVerification.decision === "CLOSE" ? "SUCCEEDED" : "FAILED")
-          : incident.status === "RESOLVED" ? "SUCCEEDED"
-            : incident.status === "FAILED" && action !== undefined ? "FAILED" : "PENDING";
+        status = independentVerification.status === "PASSED" ? "SUCCEEDED"
+          : independentVerification.status === "FAILED" ? "FAILED" : "PENDING";
         evidenceIds = [...verificationEvidence];
       } else if (node.nodeId === "crystallize-retrospective-skill") {
         status = graph.crystallizedAt !== null ? "SUCCEEDED"
           : incident.status === "RESOLVED" ? "READY"
             : incident.status === "FAILED" ? "BLOCKED" : "PENDING";
       }
-      return { ...node, status, evidenceIds, assignedRoleCardId, assignedAgentName, assignmentMode };
+      return { ...node, title: this.getTaskGraphNodeTitle(node, skillDecision?.retrievalMode), status, evidenceIds, assignedRoleCardId, assignedAgentName, assignmentMode };
     });
     const transitionEvents = updatedNodes.flatMap((node): readonly ApplicationCompetitionTaskGraphEvent[] => {
       const previousNode = graph.nodes.find((item) => item.nodeId === node.nodeId);
@@ -2161,7 +2386,7 @@ export class ApplicationCompetitionRuntimeService {
     return getCompetitionScenarioProfile(incident.scenario).verificationCalls;
   }
 
-  /** 调用当前 Adapter 并记录 invocation/evidence；输入调用上下文，返回响应和记录 ID。 */
+  /** 校验驻场 scope 后调用 Adapter 并记录证据。 / Validate resident scope before invoking the adapter and recording evidence. */
   private async invokeAndRecord(input: {
     incident: ApplicationCompetitionIncident;
     traceId: string;
@@ -2169,7 +2394,12 @@ export class ApplicationCompetitionRuntimeService {
     toolName: CompetitionToolName;
     arguments: Readonly<Record<string, unknown>>;
     governance: CompetitionToolGovernance | null;
+    residentContext?: ApplicationCompetitionResidentContext | undefined;
   }): Promise<RecordedToolResult> {
+    if (input.residentContext !== undefined) {
+      this.assertResidentInvocation(input.residentContext, input.incident, input.traceId, input.toolName);
+      if (input.governance !== null) throw new ApplicationCompetitionRuntimeError("RESIDENT_TOOL_FORBIDDEN", "驻场 Agent 不接受写操作授权包。");
+    }
     const descriptor = getCompetitionToolDescriptor(input.toolName);
     const argumentsValue = parseCompetitionToolArguments(descriptor, input.arguments);
     const invocationId = this.id("invoke");
@@ -2225,6 +2455,13 @@ export class ApplicationCompetitionRuntimeService {
       }
       if (response.data === null) {
         throw new ApplicationCompetitionRuntimeError("INTERNAL_ERROR", "平台成功响应缺少结构化数据。");
+      }
+      if (mode === "live" && input.governance !== null) {
+        try {
+          assertCompetitionWriteVersion(input.governance.expectedResourceVersion, response.meta.resourceVersion);
+        } catch {
+          throw new ApplicationCompetitionRuntimeError("RESOURCE_VERSION_RECEIPT_INVALID", "平台写回执的版本与审批不一致，无法确认该步骤完成。", true);
+        }
       }
       const evidenceId = response.meta.evidenceId ?? this.id("ev");
       const evidence: ApplicationCompetitionEvidence = {
@@ -2304,7 +2541,7 @@ export class ApplicationCompetitionRuntimeService {
     if (
       binding.runtime !== "agentteams"
       || binding.status !== "READY"
-      || this.options.agentTeamsIsolatedServiceEnabled !== true
+      || (this.options.isAgentTeamsIsolatedServiceEnabled?.() ?? this.options.agentTeamsIsolatedServiceEnabled) !== true
       || this.options.dispatchAgentTeamTask === undefined
     ) {
       throw new ApplicationCompetitionRuntimeError(
@@ -2315,11 +2552,86 @@ export class ApplicationCompetitionRuntimeService {
     }
   }
 
-  /** 调用隔离 AgentTeams 任务通道；输入阶段上下文，返回经身份和阶段校验的结果。 */
+  /** 在控制面校验身份、Run 和本平台工具边界。 / Validate identity, Run ownership and local tool boundaries in the control plane. */
+  private assertResidentInvocation(
+    context: ApplicationCompetitionResidentContext,
+    incident: ApplicationCompetitionIncident,
+    traceId: string,
+    toolName: CompetitionToolName,
+  ): void {
+    try {
+      assertResidentContext(context, this.now());
+      const agent = createDefaultResidentAgents().find(/** 只接受构建期固定身份。 / Accept only a build-time identity. */ (item) => item.agentId === context.agentId);
+      if (agent === undefined || context.workspaceId !== incident.workspaceId || context.incidentId !== incident.incidentId
+        || context.traceId !== traceId || context.platform !== agent.platform || !context.allowedTools.includes(toolName)) {
+        throw new CompetitionResidentAgentError("RESIDENT_CONTEXT_SCOPE_MISMATCH", "驻场 Agent 上下文与当前 Run 不匹配。");
+      }
+      assertResidentToolAccess(agent, toolName);
+    } catch (error) {
+      if (error instanceof CompetitionResidentAgentError) throw new ApplicationCompetitionRuntimeError(error.code, error.message);
+      throw new ApplicationCompetitionRuntimeError("RESIDENT_CONTEXT_INVALID", "驻场 Agent 工具上下文无效。");
+    }
+  }
+
+  /** 将平台取证和升级协同分别记录，保持本地事件不改变业务终态。 / Record local evidence and escalation separately without changing incident terminal state. */
+  private async recordResidentInvestigation(
+    contexts: readonly ApplicationCompetitionResidentContext[],
+    recorded: readonly RecordedToolResult[],
+    runtime: "builtin" | "agentteams",
+  ): Promise<void> {
+    const occurredAt = this.now().toISOString();
+    const events: ApplicationCompetitionResidentEvent[] = [];
+    const updatedContexts = contexts.map(/** 给每名驻场 Agent 只注入本平台证据引用。 / Inject only local evidence references into each resident context. */ (context) => {
+      const evidenceRefs = recorded.filter(/** 按工具所属平台隔离证据。 / Isolate evidence by tool owner. */ (item) => getCompetitionToolDescriptor(item.adapterRequest.toolName).platform === context.platform)
+        .map(/** 只传不可变引用。 / Pass immutable references only. */ (item) => item.evidenceId);
+      const updated = { ...context, contextVersion: "ctx-2", evidenceRefs };
+      assertResidentContext(updated, new Date(occurredAt));
+      events.push({
+        eventId: this.id("resident-event"), scope: "PLATFORM_LOCAL", eventType: "EVIDENCE_COLLECTED",
+        workspaceId: context.workspaceId, runId: context.runId, incidentId: context.incidentId, traceId: context.traceId,
+        source: context.source, environment: context.environment,
+        agentId: context.agentId, platform: context.platform, contextVersion: updated.contextVersion,
+        contextTtl: context.contextTtl, evidenceRefs, reason: "本平台只读取证完成。", occurredAt,
+      });
+      if (runtime === "agentteams") {
+        const agent = createDefaultResidentAgents().find(/** 匹配当前上下文身份。 / Match the current context identity. */ (item) => item.agentId === context.agentId);
+        if (agent !== undefined) events.push({
+          ...createResidentCollaborationRequest(updated, agent, "跨域诊断由 AgentTeams Leader 汇总，所有变更仍需 Human Gate。", occurredAt),
+          eventId: this.id("resident-event"),
+        });
+      }
+      return updated;
+    });
+    await this.store.update(/** 原子持久化上下文和追加事件，不变更 Incident。 / Persist contexts and append events atomically without changing the incident. */ (snapshot) => ({
+      ...snapshot,
+      residentContexts: snapshot.residentContexts.map(/** 仅更新本次 Run 的对应上下文。 / Update matching contexts for this Run only. */ (context) => updatedContexts.find(/** 匹配 Trace 和 Agent。 / Match Trace and agent. */ (updated) => updated.traceId === context.traceId && updated.agentId === context.agentId) ?? context),
+      residentEvents: [...snapshot.residentEvents, ...events],
+      updatedAt: occurredAt,
+    }));
+  }
+
+  /** 校验上下文后调用 AgentTeams，并核对身份化阶段结果。 / Validate contexts before dispatch and verify the identity-bound stage result. */
   private async dispatchAgentTask(input: CompetitionAgentTeamsTaskInput): Promise<CompetitionAgentTeamsTaskResult> {
     this.assertAgentTeamReady(input.binding);
     try {
-      const result = await this.options.dispatchAgentTeamTask?.(input);
+      let snapshot = await this.store.read();
+      if (input.stage === "VERIFICATION_CONCLUSION") {
+        const refreshedAt = this.now();
+        snapshot = await this.store.update(/** 验证上下文只引用本阶段独立证据，历史调查事件保持不变。 / Verification contexts reference only this stage's independent evidence; investigation events remain unchanged. */ (current) => ({
+          ...current,
+          residentContexts: current.residentContexts.map(/** 仅刷新同 Workspace、Incident 和 Trace 的验证范围。 / Refresh only verification scopes matching this workspace, incident and trace. */ (context) => {
+            if (context.workspaceId !== input.incident.workspaceId || context.incidentId !== input.incident.incidentId || context.traceId !== input.traceId) return context;
+            return { ...context, contextVersion: "ctx-3", contextTtl: new Date(refreshedAt.getTime() + 15 * 60_000).toISOString(),
+              evidenceRefs: input.evidence.filter(/** 按平台隔离独立验证引用。 / Isolate independent verification references by platform. */ (item) => item.workspaceId === context.workspaceId && item.incidentId === context.incidentId && item.traceId === context.traceId && item.platform === context.platform)
+                .map(/** 只提供不可变证据标识。 / Provide only immutable evidence identifiers. */ (item) => item.evidenceId) };
+          }),
+          updatedAt: refreshedAt.toISOString(),
+        }));
+      }
+      const residentContexts = snapshot.residentContexts.filter(/** 仅传当前工作空间和本 Run 的上下文。 / Include only contexts belonging to the current workspace and Run. */ (context) => context.traceId === input.traceId && context.workspaceId === input.incident.workspaceId && context.incidentId === input.incident.incidentId);
+      for (const context of residentContexts) assertResidentContext(context, this.now());
+      const dispatchInput = { ...input, residentContexts };
+      const result = await this.options.dispatchAgentTeamTask?.(dispatchInput);
       const member = result === undefined
         ? undefined
         : input.binding.memberSnapshots.find((item) => item.roleCardId === result.result.roleCardId);
@@ -2327,12 +2639,13 @@ export class ApplicationCompetitionRuntimeService {
         throw new Error("AgentTeams result scope is invalid.");
       }
       try {
-        await this.options.recordAgentTeamConversation?.(input, result);
+        await this.options.recordAgentTeamConversation?.(dispatchInput, result);
       } catch {
         this.logger.warn("AgentTeams enterprise conversation projection failed; the accepted task result remains unchanged.");
       }
       return result;
     } catch (error) {
+      if (error instanceof CompetitionResidentAgentError) throw new ApplicationCompetitionRuntimeError(error.code, error.message);
       if (error instanceof ApplicationCompetitionRuntimeError) throw error;
       const diagnostic = describeAgentTeamsDispatchFailure(error);
       throw new ApplicationCompetitionRuntimeError(
@@ -2372,6 +2685,7 @@ export class ApplicationCompetitionRuntimeService {
     ));
     try {
       await this.options.persistResolvedIncidentMemory({
+        memoryAccess: resolveCompetitionMemoryAccess(snapshot, incident),
         workspaceId: incident.workspaceId,
         projectId: incident.projectId,
         incidentId: incident.incidentId,
@@ -2386,6 +2700,7 @@ export class ApplicationCompetitionRuntimeService {
         verificationEvidenceIds: action.verificationEvidenceIds,
         toolNames: [...new Set(evidence.map((item) => item.toolName))],
         agentDecisions: decisions.map((item) => ({
+          roleCardId: item.roleCardId,
           stage: item.stage,
           agentName: item.agentName,
           teamRole: item.teamRole,
@@ -2560,7 +2875,7 @@ export class ApplicationCompetitionRuntimeService {
     if (
       runtime === "agentteams"
       && resolvedTemplate !== null
-      && this.options.agentTeamsIsolatedServiceEnabled === true
+      && (this.options.isAgentTeamsIsolatedServiceEnabled?.() ?? this.options.agentTeamsIsolatedServiceEnabled) === true
       && this.options.prepareAgentTeam !== undefined
     ) {
       try {
@@ -3262,6 +3577,8 @@ export class ApplicationCompetitionRuntimeService {
     const evidence = snapshot.evidence.filter((item) => item.incidentId === incident.incidentId);
     const skill = getCompetitionScenarioProfile(incident.scenario).skill;
     return {
+      traceId: incident.activeTraceId ?? "",
+      memoryAccess: resolveCompetitionMemoryAccess(snapshot, incident),
       workspaceId: incident.workspaceId,
       incidentId: incident.incidentId,
       skillId: skill.skillId,
@@ -3304,12 +3621,7 @@ export class ApplicationCompetitionRuntimeService {
     const planDecision = snapshot.reasoningDecisions.find((item) => (
       item.traceId === traceId && item.decisionType === "PLAN_SELECTION"
     )) ?? null;
-    const verifierDecision = snapshot.agentDecisions.find((item) => (
-      item.traceId === traceId && item.stage === "VERIFICATION_CONCLUSION"
-    )) ?? null;
-    const verificationReceipt = [...snapshot.auditReceipts].reverse().find((item) => (
-      item.traceId === traceId && item.toolName === "openxnet.remediation.verify"
-    )) ?? null;
+    const independentVerification = resolveIndependentVerification(snapshot, incident);
     const selectedCandidate = planDecision?.candidates.find((item) => item.candidateId === planDecision.selectedCandidateId) ?? null;
     const rejectedStrategyIds = planDecision?.candidates
       .filter((item) => item.candidateId !== planDecision.selectedCandidateId)
@@ -3344,10 +3656,10 @@ export class ApplicationCompetitionRuntimeService {
         role: "VERIFIER" as const,
         stage: "INDEPENDENT_CERTIFICATION" as const,
         question: "Verifier 身份、确定性门禁和审计回执是否共同支持进入环境认证？",
-        outcome: verifierDecision?.decision === "CLOSE" && verificationReceipt?.outcome === "SUCCEEDED"
+        outcome: independentVerification.status === "PASSED"
           ? "PASSED" as const
           : "FAILED" as const,
-        evidenceIds: [verifierDecision?.decisionId, verificationReceipt?.receiptId]
+        evidenceIds: [independentVerification.decisionId, independentVerification.receiptId]
           .filter((item): item is string => typeof item === "string"),
       },
     ];
@@ -3732,15 +4044,15 @@ export class ApplicationCompetitionRuntimeService {
       resourceSpans: [{
         resource: { attributes: telemetryAttributes({
           "service.name": "openxnet-enterprise-space",
-          "service.version": "1.2.0",
+          "service.version": "1.3.0",
           "deployment.environment.name": snapshot.adapterMode === "fixture" ? "simulation" : "staging",
         }) },
-        scopeSpans: [{ scope: { name: "openxnet.competition-runtime", version: "1.2.0" }, spans }],
+        scopeSpans: [{ scope: { name: "openxnet.competition-runtime", version: "1.3.0" }, spans }],
       }],
       resourceMetrics: [{
         resource: { attributes: telemetryAttributes({ "service.name": "openxnet-enterprise-space" }) },
         scopeMetrics: [{
-          scope: { name: "openxnet.competition-runtime", version: "1.2.0" },
+          scope: { name: "openxnet.competition-runtime", version: "1.3.0" },
           metrics: [
             { name: "openxnet.tool.invocations", sum: { dataPoints: [{ asInt: String(invocations.length), timeUnixNano: endTime }], aggregationTemporality: 2, isMonotonic: true } },
             { name: "openxnet.trace.count", sum: { dataPoints: [{ asInt: String(traces.length), timeUnixNano: endTime }], aggregationTemporality: 2, isMonotonic: true } },
@@ -4012,23 +4324,35 @@ export class ApplicationCompetitionRuntimeService {
   }
 }
 
-/** 规范化未知异常；输入未知错误，返回 Renderer 安全文案和错误码。 */
+/** 规范化未知异常并区分本机持久化故障。 / Normalize unknown failures while distinguishing local persistence errors. */
 function normalizeRuntimeError(error: unknown): ApplicationCompetitionRuntimeError {
   if (error instanceof ApplicationCompetitionRuntimeError) return error;
+  if (error instanceof CompetitionStoreWriteError) {
+    return new ApplicationCompetitionRuntimeError(error.code, error.message, false);
+  }
   return new ApplicationCompetitionRuntimeError("UPSTREAM_UNAVAILABLE", "竞赛平台工具暂时不可用。", true);
 }
 
-/** 判断企业 Skill 是否覆盖当前运行环境；输入资产认证和 Adapter 模式，返回是否允许声明复用。 */
+/** 检查生命周期、当前环境与实际制品字节；Fixture 兼容旧合同。 / Check lifecycle, current environment, and actual artifact bytes while retaining legacy Fixture compatibility. */
 function isEnterpriseSkillReusable(
   skill: ApplicationCompetitionEnterpriseSkillResolution,
   adapterMode: ApplicationCompetitionAdapterMode,
+  currentEnvironmentFingerprint: string | null,
+  incidentId: string,
 ): boolean {
   if (skill.lifecycleStatus !== "verified" && skill.lifecycleStatus !== "active") return false;
   const allowedScopes = adapterMode === "fixture"
     ? new Set(["simulation", "staging", "shadow", "canary", "production"])
     : new Set(["staging", "shadow", "canary", "production"]);
   if (!allowedScopes.has(skill.environmentScope)) return false;
-  return skill.environmentScope !== "production" || skill.productionEligible;
+  if (skill.environmentScope === "production" && !skill.productionEligible) return false;
+  if (adapterMode === "fixture") return true;
+  return typeof currentEnvironmentFingerprint === "string" && currentEnvironmentFingerprint.trim().length > 0
+    && skill.environmentFingerprint === currentEnvironmentFingerprint
+    && typeof skill.artifactDigest === "string" && /^[a-f0-9]{64}$/u.test(skill.artifactDigest)
+    && skill.currentArtifactDigest === skill.artifactDigest
+    && typeof skill.sourceIncidentId === "string" && skill.sourceIncidentId.trim().length > 0
+    && skill.sourceIncidentId !== incidentId;
 }
 
 /** 生成 JSON 的稳定 SHA-256；输入结构化值，返回十六进制摘要。 */

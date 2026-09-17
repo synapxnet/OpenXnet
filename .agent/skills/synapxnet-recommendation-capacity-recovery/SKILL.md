@@ -15,7 +15,7 @@ Version: `1.0.0`
 4. Submit the complete seven-step plan and compensation steps to the AgentTeams Leader; do not execute before a distinct human approver fixes the parameter digest and resource version.
 5. Ensure GPU capacity, tune runtime, expand replicas, shift traffic progressively, install queue-aware autoscaling, converge capacity, and normalize runtime in dependency order.
 6. Stop on the first failed quality gate. Run only approved compensation steps and keep the Incident open or failed.
-7. Ask the independent Verifier to re-read recovery, workload, deployment, workflow, P99, success rate, queue depth, GPU state, ready replicas, and autoscaling policy.
+7. Ask the independent Verifier to collect all five recovery, workload, deployment, workflow, and inference-probe receipts, including P99, success rate, queue depth, GPU state, ready replicas, autoscaling policy, and matching recommendation model identity.
 8. Return the exact output contract and preserve every Evidence ID, Action ID, approval, Matrix event, and audit receipt.
 
 ## Contract

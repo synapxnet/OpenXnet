@@ -19,6 +19,7 @@ import {
   type ApplicationProjectSkillStatus,
   type ApplicationSkillCatalog,
   type ApplicationSkillContentResult,
+  type ApplicationSkillContentRequest,
   type ApplicationSkillCertificationInput,
   type ApplicationSkillDerivationMethod,
   type ApplicationSkillEnvironmentScope,
@@ -208,6 +209,14 @@ function parseSkillRepository(value: unknown): ParsedSkillRepository {
 function parseSkillIdRequest(value: unknown): string {
   const request = requireExactRecord(value, ["skillId"], "skill request");
   return requirePackageId(request.skillId, "Skill id");
+}
+
+/** 校验正文来源并拒绝调用端路径。 Validate content scope and reject caller-owned paths. */
+function parseSkillContentRequest(value: unknown): Required<ApplicationSkillContentRequest> {
+  const request = requireExactRecord(value, ["skillId", "source"], "skill content request");
+  const source = request.source === undefined ? "global" : request.source;
+  if (source !== "global" && source !== "project") throw new Error("Skill content source is invalid.");
+  return { skillId: requirePackageId(request.skillId, "Skill id"), source };
 }
 
 /** 校验 MLOps 上传请求；输入未知值，返回稳定 Skill/Workspace ID，字段漂移时抛错。 */
@@ -406,11 +415,24 @@ export class ApplicationSkillRuntimeService {
     return { schema: APPLICATION_SKILL_RUNTIME_SCHEMA, success: true, skills };
   }
 
-  /** 读取技能 Markdown；输入稳定 ID，返回 UTF-8 内容，缺失、链接或超过 1 MiB 时拒绝。 */
+  /** 读取指定来源的技能正文，拒绝缺失、链接及超限文件。 Read the selected skill source, rejecting missing, linked or oversized files. */
   public async getSkillContent(request: unknown): Promise<ApplicationSkillContentResult> {
-    const skillId = parseSkillIdRequest(request);
-    await this.ensureBundledSkills();
-    const metadataPath = await this.findSkillMetadataFile(this.skillPath(skillId));
+    const { skillId, source } = parseSkillContentRequest(request);
+    let skillDirectory: string;
+    if (source === "project") {
+      const workspace = await this.requireConfiguredWorkspace();
+      const agentDirectory = path.join(workspace, ".agent");
+      const projectSkills = path.join(agentDirectory, "skills");
+      if (!await this.isRegularDirectory(agentDirectory) || !await this.isRegularDirectory(projectSkills)) {
+        throw new Error("Project skill directory is unavailable or linked.");
+      }
+      skillDirectory = path.join(projectSkills, skillId);
+    } else {
+      await this.ensureBundledSkills();
+      skillDirectory = this.skillPath(skillId);
+    }
+    if (!await this.isRegularDirectory(skillDirectory)) throw new Error("Skill directory is unavailable or linked.");
+    const metadataPath = await this.findSkillMetadataFile(skillDirectory);
     if (metadataPath === null) throw new Error("Skill metadata file was not found.");
     const content = await readBoundedUtf8File(metadataPath, MAX_SKILL_MARKDOWN_BYTES, "Skill metadata");
     return { schema: APPLICATION_SKILL_RUNTIME_SCHEMA, success: true, skillId, content };

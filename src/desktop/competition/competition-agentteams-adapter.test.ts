@@ -40,7 +40,7 @@ function resolvedTemplate(): ApplicationEnterpriseResolvedTeamTemplate {
   /** 创建单个测试角色卡；输入角色标识和名称，返回满足企业契约的固定记录。 */
   const card = (id: string, name: string) => ({
     id, name, description: `${name} description`, system_prompt: `${name} prompt`, permissions: ["read"], tools: [],
-    enabled: true, department: "Engineering", icon: "", skills: ["openxnet.evidence"], skill_ids: [],
+    enabled: true, department: "Engineering", icon: "", avatarUrl: "", skills: ["openxnet.evidence"], skill_ids: [],
     assignedWorkspace: "", projectId: "", templateId: "", category: "", categoryZh: "", categoryEn: "",
     summaryZh: "", summaryEn: "", accent: [], runtime_system_prompt: `${name} runtime`, agent_name: name,
     role_scope: "enterprise", syncSource: "enterprise", bodyType: "default", position3D: null,

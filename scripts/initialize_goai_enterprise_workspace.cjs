@@ -1,7 +1,19 @@
+#!/usr/bin/env node
+/*
+ * Copyright (C) 2026 Synapxnet. All rights reserved.
+ * This file is Synapxnet Proprietary and Confidential. It is strictly
+ * forbidden to copy, distribute, or use without explicit authorization.
+ * 比赛企业工作空间初始化 / Competition enterprise workspace initialization.
+ * Author: maoyo | Department: 研发部 | Date: 2026-09-14
+ * Version: 1.0.0 | Security Level: INTERNAL
+ * __version__: 1.0.0 | __author__: maoyo | __copyright__: Copyright 2026 Synapxnet
+ * __maintainer__: maoyo | __email__: synapxnet@gmail.com
+ */
 "use strict"
 
 const assert = require("node:assert/strict")
 const path = require("node:path")
+const { isIP } = require("node:net")
 
 const {
   ApplicationEnterpriseRuntimeService,
@@ -76,29 +88,42 @@ function resolveUserDataDirectory() {
   return path.join(appData, "OpenXnet")
 }
 
-/** 返回比赛专用云工作空间草稿；输入可选现有 ID，输出不含密码或私钥的完整契约。 */
-function createWorkspaceDraft(existingId = "") {
+/** 解析新比赛主机并保留已有自定义主机。 / Resolve the current competition host while preserving custom existing hosts. */
+function resolveCloudHost(existingHost = "", environment = process.env) {
+  const configured = String(environment.OPENXNET_GOAI_CLOUD_HOST || "").trim()
+  const previous = String(existingHost || "").trim()
+  const host = configured || (previous && previous !== "101.32.9.231" ? previous : "150.109.52.248")
+  if (!isIP(host) && !(host.length <= 253 && host.split(".").every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/iu.test(label)))) {
+    throw new Error("OPENXNET_GOAI_CLOUD_HOST must be a hostname or IP address without a URL, port or credentials.")
+  }
+  return host
+}
+
+/** 创建比赛草稿并保留现有连接配置。 / Create a competition draft while preserving existing connection configuration. */
+function createWorkspaceDraft(existing = null, environment = process.env) {
+  const config = existing?.config || {}
   return {
-    ...(existingId ? { id: existingId } : {}),
+    ...(existing || {}),
     name: "GOAI Competition Demo",
     type: "cloud",
     status: "running",
     config: {
-      local: { path: "", permission_mode: "default" },
-      docker: { image: "ubuntu:22.04", daemon_url: "", container_id: "" },
-      cloud: { host: "101.32.9.231", port: 22, user: "ubuntu", key_path: "" },
-      sandbox: { image: "openxnet/sandbox:latest", ttl_hours: 24 },
+      ...config,
+      local: { path: "", permission_mode: "default", ...config.local },
+      docker: { image: "ubuntu:22.04", daemon_url: "", container_id: "", ...config.docker },
+      cloud: { port: 22, user: "ubuntu", key_path: "", ...config.cloud, host: resolveCloudHost(config.cloud?.host, environment) },
+      sandbox: { image: "openxnet/sandbox:latest", ttl_hours: 24, ...config.sandbox },
     },
-    role_card_id: null,
+    role_card_id: existing?.role_card_id ?? null,
   }
 }
 
-/** 创建或更新固定 Workspace；输入 Enterprise Runtime，返回规范工作空间记录。 */
+/** 创建或更新固定 Workspace。 / Create or update the fixed workspace without resetting its connection preferences. */
 async function ensureWorkspace(runtime) {
   const snapshot = await runtime.listWorkspaces()
   const existing = snapshot.workspaces.find((workspace) => workspace.id === WORKSPACE_ID)
   const result = await runtime.saveWorkspace({
-    workspace: createWorkspaceDraft(existing?.id || ""),
+    workspace: createWorkspaceDraft(existing),
   })
   assert.equal(result.workspace.id, WORKSPACE_ID)
   return result.workspace
@@ -233,7 +258,10 @@ async function main() {
   }))
 }
 
-main().catch((error) => {
+module.exports = { createWorkspaceDraft, resolveCloudHost }
+
+/** 仅在命令行直接启动时写入初始化数据。 / Initialize data only when this file is invoked directly. */
+if (require.main === module) main().catch((error) => {
   console.error(JSON.stringify({
     success: false,
     message: error instanceof Error ? error.message : String(error),

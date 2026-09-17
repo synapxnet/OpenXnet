@@ -4,13 +4,13 @@
 
 OpenXnet is the SynapXnet enterprise AI workspace for organizing AI employees, AgentTeams collaboration, governed Skill/MCP execution, independent verification, audit evidence, and reusable organizational experience.
 
-GOAI Agent Infra semifinal implementation and reproducible Demo: [docs/GOAI-SEMIFINAL-RUNBOOK.md](docs/GOAI-SEMIFINAL-RUNBOOK.md).
+GOAI Agent Infra Finals v1.3.0 implementation and reproducible Demo: [docs/GOAI-FINALS-DEMO-RUNBOOK.md](docs/GOAI-FINALS-DEMO-RUNBOOK.md). Historical semifinal materials remain in [docs/GOAI-SEMIFINAL-RUNBOOK.md](docs/GOAI-SEMIFINAL-RUNBOOK.md).
 
 ## Current Source Baseline
 
-- Version: `v1.2.0`
+- Version: `v1.3.0`
 - Repository role: authoritative desktop integration and release source
-- Final desktop package: build from `openxnet-desktop` only, after all upgrades and validations are complete
+- Final desktop package: build from this `openxnet-source` repository after validation; place release artifacts in sibling `openxnet-desktop` without replacing earlier versioned installers
 - Standalone backend package: build from the sibling `openxnet-server` repository with `pyinstaller server.spec --clean --noconfirm`
 - During the ongoing upgrade cycle, do not package from `openxnet-server` if the target artifact is the desktop release
 

@@ -157,7 +157,8 @@ class ServerTaskApiTests(unittest.IsolatedAsyncioTestCase):
         """Register scheduler adapters and developer-workbench creation in Server."""
 
         application = self._build_application()
-        paths = {getattr(route, "path", "") for route in application.routes}
+        # 校验对外路径，兼容 FastAPI 延迟挂载的路由。 / Verify public paths across FastAPI deferred router inclusion.
+        paths = set(application.openapi()["paths"])
         self.assertIn("/v1/tasks/scheduler/project/{task_id}", paths)
         self.assertIn("/v1/tasks/scheduler/activate/{task_id}", paths)
         self.assertIn("/v1/dev/workbench/tasks/create", paths)

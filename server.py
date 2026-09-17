@@ -14,11 +14,11 @@ FastAPI/ASGI 服务器，集成 LLM 网关、Agent 调度、工具编排、
 Author: maoyo
 Department: 研发部
 Date: 2026-04-13
-Version: 0.5.3
+Version: 1.3.0
 Security Level: INTERNAL
 """
 
-__version__ = "0.5.3"
+__version__ = "1.3.0"
 __author__ = "maoyo"
 __copyright__ = "Copyright 2026 Synapxnet"
 __maintainer__ = "maoyo"
@@ -36,6 +36,8 @@ import errno
 from importlib import import_module
 
 from py.cli_tool import read_file_tool_local
+from py.conversation_file_receipts import FileChangeResult, file_changes_of, merge_file_changes
+from py.conversation_recovery import ConversationExecutionRegistry, run_registered_chat
 from py.context.compactor import ContextCompactor
 from py.enterprise.role_cards import RoleCardManager
 from py.enterprise.knowledge_base import EnterpriseKBManager
@@ -386,7 +388,7 @@ import logging
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from fastapi import status
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse,Response
 import uuid
@@ -482,7 +484,7 @@ print(
 )
 
 # --- [v0.5.3 P0-B] AbortController: 流式请求中断注册表 ---
-_active_streams: dict = {}  # request_id → asyncio.Event
+_conversation_executions = ConversationExecutionRegistry()
 
 # --- [v0.5.3] Enterprise Module: 全局管理器 ---
 role_card_manager: RoleCardManager = None
@@ -491,18 +493,6 @@ enterprise_kb_manager: EnterpriseKBManager = None
 workspace_manager: WorkspaceManager = None
 xnet_bridge: XnetBridge = None
 sandbox_manager: SandboxStateManager = None
-
-def _register_stream(request_id: str) -> 'asyncio.Event':
-    """注册一个流式请求，返回其 abort_event"""
-    import asyncio
-    event = asyncio.Event()
-    _active_streams[request_id] = event
-    return event
-
-def _unregister_stream(request_id: str):
-    """注销流式请求"""
-    _active_streams.pop(request_id, None)
-
 
 def _persist_workspace_session_memory(
     current_settings: dict,
@@ -706,12 +696,8 @@ def _persist_context_compaction_memory(
 
 
 def _abort_stream(request_id: str) -> bool:
-    """中断指定流式请求"""
-    event = _active_streams.get(request_id)
-    if event:
-        event.set()
-        return True
-    return False
+    """请求终止但不提前释放执行登记。 / Request cancellation without releasing the active execution prematurely."""
+    return _conversation_executions.abort(request_id)
 
 _TOOL_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
@@ -1016,18 +1002,33 @@ async def _inject_synapxnet_v3_chat_memory(
     request: Any,
     settings: Dict[str, Any],
     user_prompt: Any,
+    receipts: Optional[List[Dict[str, Any]]] = None,
 ) -> int:
-    """Recall authorized V3 memory and append a bounded system context block."""
+    """注入授权 V3 记忆并记录实际回执；recall authorized V3 memory and report only actual injection."""
+
+    receipt = {
+        "schema": "openxnet.chat-memory-context.v1",
+        "id": str(uuid.uuid4()),
+        "source": "synapxnet-memory-v3",
+        "type": "long_term",
+        "conversationId": str(getattr(request, "conversationId", None) or getattr(request, "conversation_id", "") or "")[:512],
+        "status": "not_used", "reason": "disabled", "count": 0,
+        "characters": 0, "detail": "", "items": [],
+    }
+    if receipts is not None:
+        receipts.append(receipt)
 
     options = _synapxnet_v3_chat_options(settings)
     normalized_prompt = str(user_prompt or "").strip()
     if not options["enabled"] or not normalized_prompt or bool(getattr(request, "is_sub_agent", False)):
+        receipt["reason"] = "disabled" if not options["enabled"] else ("sub_agent" if bool(getattr(request, "is_sub_agent", False)) else "empty_query")
         return 0
     try:
         from py.memory_worker_client import MemoryWorkerClient
 
         client = MemoryWorkerClient.from_environment()
         if not client.configured:
+            receipt.update(status="unavailable", reason="worker_unavailable")
             if RUNTIME_PROFILE == "desktop":
                 logger.warning("[SynapXnetMemoryV3] Chat recall skipped: Memory Worker RPC is not configured.")
             return 0
@@ -1041,8 +1042,10 @@ async def _inject_synapxnet_v3_chat_memory(
         )
         memories = result.get("items", []) if isinstance(result, Mapping) else []
         if not memories:
+            receipt["reason"] = "no_match"
             return 0
         sections = []
+        injected_items = []
         for memory in memories:
             if not isinstance(memory, Mapping):
                 continue
@@ -1056,7 +1059,15 @@ async def _inject_synapxnet_v3_chat_memory(
             sections.append(
                 f"[title={title}; owner={owner}; task={task_id}; record={record_sha}]\n{content}"
             )
+            injected_items.append({
+                "memoryId": str(memory.get("memoryId") or "")[:256],
+                "version": memory.get("version"), "title": title[:240],
+                "ownerAgent": owner[:256], "taskId": task_id[:512],
+                "recordSha256": record_sha[:64], "characters": len(content),
+                "injectedContentSha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            })
         if not sections:
+            receipt["reason"] = "empty_content"
             return 0
         context = (
             "\n\n<synapxnet-memory-context>\n"
@@ -1070,8 +1081,11 @@ async def _inject_synapxnet_v3_chat_memory(
             max(0, len(request.messages) - 1),
             {"role": "system", "content": context},
         )
+        receipt.update(status="injected", reason="", count=len(sections), characters=len(context), items=injected_items,
+                       detail=f"{len(sections)} authorized memory records; {len(context)} context characters.")
         return len(sections)
     except Exception as error:
+        receipt.update(status="error", reason="recall_failed", count=0, characters=0, items=[])
         logger.warning(
             "[SynapXnetMemoryV3] Chat recall skipped (%s): %s",
             type(error).__name__,
@@ -1258,7 +1272,7 @@ async def lifespan(app: FastAPI):
     # --- [模型 Client 初始化] ---
     # 辅助函数：统一注入 global_http_client
     def create_model_client(provider_key, config_node=None):
-        """创建共享 HTTP 连接池的模型客户端；输入提供商键和可选配置，返回客户端，配置无效时向上抛出异常。"""
+        """创建共享 HTTP 连接池的模型客户端；尚未配置凭据时返回空值，等待用户完成配置。"""
 
         return create_provider_client(
             settings,
@@ -1276,9 +1290,9 @@ async def lifespan(app: FastAPI):
         else:
             fast_client = None
     else:
-        client = AsyncOpenAI(http_client=global_http_client)
-        reasoner_client = AsyncOpenAI(http_client=global_http_client)
-        fast_client = AsyncOpenAI(http_client=global_http_client)
+        client = None
+        reasoner_client = None
+        fast_client = None
 
     # Local ASR is activated on demand by Desktop Core instead of blocking backend startup.
     # MCP 初始化逻辑 (保持你原有的逻辑，但内部会复用 global_http_client)
@@ -1940,7 +1954,7 @@ async def openxnet_create_character_card(
     }, ensure_ascii=False)
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(title="OpenXnet", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -2018,9 +2032,11 @@ async def execute_tool(tool_id: str, tool_name: str, args: dict, settings: dict,
         results = await dispatch_tool(tool_name, args, settings)
         if isinstance(results, AsyncIterator):
             buffer = []
+            file_changes = []
             async for chunk in results:
                 buffer.append(chunk)
-            results = "".join(buffer)
+                file_changes = merge_file_changes(file_changes, file_changes_of(chunk))
+            results = FileChangeResult("".join(buffer), file_changes)
                 
         if tool_name in ["query_knowledge_base"] and type(results) == list:
             from py.know_base import rerank_knowledge_base
@@ -2085,8 +2101,17 @@ async def get_image_content(image_url: str) -> str:
                 f.write(str(response.choices[0].message.content))
     return content
 
-async def dispatch_tool(tool_name: str, tool_params: dict, settings: dict) -> str | List | AsyncIterator[str] | None :
-    """通过 Kernel 策略执行工具；输入名称、参数和设置，返回工具结果，审批与失败语义由执行器统一处理。"""
+def _chat_tool_outcome_result(outcome: Dict[str, Any]) -> Any:
+    """保留结果并补回执行器异常详情；preserve results and recover executor error details without forwarding traces."""
+
+    result = outcome.get("result", "")
+    if outcome.get("status") == "error" and (result is None or result == ""):
+        return outcome.get("error") or result
+    return result
+
+
+async def dispatch_tool(tool_name: str, tool_params: dict, settings: dict, *, include_outcome: bool = False) -> Any:
+    """按现有授权执行，可返回真实状态；execute with existing authorization and optionally return the authoritative outcome."""
 
     from py.kernel.executor import get_kernel_executor
 
@@ -2096,6 +2121,7 @@ async def dispatch_tool(tool_name: str, tool_params: dict, settings: dict) -> st
         settings=settings or {},
         legacy_call=lambda: _dispatch_tool_legacy(tool_name, tool_params, settings),
         actor="model",
+        return_trace=include_outcome,
     )
 
 
@@ -2330,77 +2356,9 @@ async def _dispatch_tool_legacy(tool_name: str, tool_params: dict, settings: dic
             return _serialize_mcp_tool_result(result)
                 
     # ==================== 5. 任务中心工具特殊处理 ====================
-    if tool_name in ["create_subtask", "query_task_progress", "cancel_subtask", "start_subtask", "finish_task"]:
-        cli_settings = settings.get("CLISettings", {})
-        cwd = cli_settings.get("cc_path")
-        consensus_content = None
-        
-        if tool_name == "create_subtask":
-            # 读取共识文件（如果存在）
-            from pathlib import Path
-            import aiofiles
-            
-            consensus_content = None
-            consensus_file = Path(cwd) / ".agent" / "consensus.md"
-            if consensus_file.exists():
-                async with aiofiles.open(consensus_file, 'r', encoding='utf-8') as f:
-                    consensus_content = await f.read()
-            
-            result = await create_subtask(
-                title=tool_params.get("title"),
-                description=tool_params.get("description"),
-                agent_type=tool_params.get("agent_type", "default"),
-                workspace_dir=cwd,
-                settings=settings,
-                consensus_content=consensus_content,
-                parent_task_id=tool_params.get("parent_task_id"),
-                schedule_type=tool_params.get("schedule_type"),
-                schedule_expression=tool_params.get("schedule_expression"),
-                next_run_at=tool_params.get("next_run_at"),
-                delivery_targets=tool_params.get("delivery_targets"),
-                start_immediately=tool_params.get("start_immediately"),
-            )
-            return result
-        
-        elif tool_name == "query_task_progress":
-            result = await query_task_progress(
-                workspace_dir=cwd,
-                task_id=tool_params.get("task_id"),         
-                parent_task_id=tool_params.get("parent_task_id"),
-                status=tool_params.get("status"),
-                verbose=tool_params.get("verbose", False)  
-            )
-            return result
-        
-        elif tool_name == "cancel_subtask":
-            result = await cancel_subtask(
-                workspace_dir=cwd,
-                task_id=tool_params.get("task_id"),
-            )
-            return result
-        elif tool_name == "start_subtask":
-            if consensus_content is None:
-                from pathlib import Path
-                import aiofiles
-
-                consensus_file = Path(cwd) / ".agent" / "consensus.md"
-                if consensus_file.exists():
-                    async with aiofiles.open(consensus_file, 'r', encoding='utf-8') as f:
-                        consensus_content = await f.read()
-            result = await start_subtask(
-                workspace_dir=cwd,
-                task_id=tool_params.get("task_id"),
-                settings=settings,
-                consensus_content=consensus_content,
-            )
-            return result
-        elif tool_name == "finish_task":
-            result = await finish_task(
-                workspace_dir=cwd,
-                task_id=tool_params.get("task_id"),
-                result=tool_params.get("result"),
-            )
-            return result
+    from py.task_tools import TASK_TOOL_NAMES, dispatch_bound_task_tool
+    if tool_name in TASK_TOOL_NAMES:
+        return await dispatch_bound_task_tool(tool_name, tool_params, settings, settings.get("_task_runtime_scope") or {})
 
     if tool_name not in _TOOL_HOOKS:
         if EXECUTION_ENGINE_PROFILE_ACTIVE:
@@ -2602,6 +2560,8 @@ class ChatRequest(BaseModel):
     disable_tools: List[str] = None
     conversationId: Optional[str] = None
     conversation_id: Optional[str] = None
+    _task_runtime_scope: dict = PrivateAttr(default_factory=dict)
+    _stream_registration: Any = PrivateAttr(default=None)
 
 
 def _normalize_request_tools(
@@ -2852,12 +2812,14 @@ def _request_conversation_id(request: Any) -> str:
 
 
 def _consume_kernel_live_guidance(request: Any, stage: str, tool_name: str = "") -> List[Any]:
+    """只在当前会话检查点接收引导，不中止已发出的模型请求。 / Receive guidance only at this conversation's checkpoint without aborting an in-flight model request."""
     try:
         from py.kernel.guidance import format_guidance_context, get_guidance_bus
 
         items = get_guidance_bus().consume(
             conversation_id=_request_conversation_id(request),
             trace_id=tool_name or "",
+            stage=stage,
         )
         if items:
             context = format_guidance_context(items)
@@ -2868,6 +2830,13 @@ def _consume_kernel_live_guidance(request: Any, stage: str, tool_name: str = "")
     except Exception as guidance_err:
         logger.debug(f"[Kernel] Live guidance consume skipped: {guidance_err}")
         return []
+
+
+def _set_kernel_live_guidance_support(request: Any, chat_vendor: str) -> None:
+    """将实际执行通路能力公开给队列，Dify不伪报可接收。 / Expose the actual execution route's capability without claiming Dify accepts checkpoints."""
+    from py.kernel.guidance import get_guidance_bus
+    get_guidance_bus().set_support(_request_conversation_id(request), chat_vendor != "Dify",
+        "Queued text is received at the next supported checkpoint." if chat_vendor != "Dify" else "Dify does not expose in-flight guidance checkpoints.")
 
 
 def _kernel_planner_settings(current_settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -3902,13 +3871,10 @@ def _build_error_response_from_exception(
 async def generate_stream_response(client, reasoner_client, request: ChatRequest, settings: dict, 
                                    fastapi_base_url, enable_thinking, enable_deep_research, 
                                    enable_web_search, async_tools_id):
-    # --- [v0.5.3 P0-B] 注册 abort event ---
-    _stream_id = (
-        getattr(request, "conversationId", None)
-        or getattr(request, "conversation_id", None)
-        or str(uuid.uuid4())
-    )
-    _abort_event = _register_stream(_stream_id)
+    settings = {**settings, "_task_runtime_scope": dict(getattr(request, "_task_runtime_scope", {}))}
+    # 请求登记由真实响应生命周期管理。 / The actual response lifecycle owns registration.
+    registration = getattr(request, "_stream_registration", None)
+    _abort_event = registration.abort_event if registration is not None else asyncio.Event()
     try:
         global mcp_client_list, HA_client, ChromeMCP_client, sql_client
         
@@ -4206,6 +4172,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
             cancel_subtask_tool,
             start_subtask_tool,
             finish_task_tool,
+            update_automation_task_tool,
         )
 
         m0 = None
@@ -4417,7 +4384,8 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
             content_append(request.messages, 'system', fileLinks_message)
             source_prompt += fileLinks_message
         user_prompt = request.messages[-1].get('content') or ""
-        await _inject_synapxnet_v3_chat_memory(request, settings, user_prompt)
+        memory_context_receipts = []
+        await _inject_synapxnet_v3_chat_memory(request, settings, user_prompt, memory_context_receipts)
         if cur_memory and settings["memorySettings"]["is_memory"] and settings["memorySettings"]["selectedMemory"] and settings["memorySettings"]["selectedMemory"] != ""  and not request.is_sub_agent:
             if settings["memorySettings"]["userName"]:
                 print("添加用户名：\n\n" + settings["memorySettings"]["userName"] + "\n\n用户名结束\n\n")
@@ -4512,6 +4480,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
             if modelProvider['id'] == settings['reasoner']['selectedProvider']:
                 reasoner_vendor = modelProvider['vendor']
                 break
+        _set_kernel_live_guidance_support(request, chat_vendor)
         if chat_vendor == 'Dify':
             try:
                 if len(request.messages) >= 3:
@@ -4538,6 +4507,10 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
         else:
             extra_params = {}
         async def stream_generator(user_prompt,DRS_STAGE,tools,images):
+            """发送真实聊天与执行回执；stream chat content and authoritative execution receipts."""
+            # 仅当前请求的实际注入回执；emit only receipts produced for this exact request.
+            for memory_receipt in memory_context_receipts:
+                yield f"data: {json.dumps({'choices': [{'delta': {'memory_context': memory_receipt}}]})}\n\n"
             # ---------- 统一 SSE 封装 ----------
             def make_sse(tool_data: dict) -> str:
                 chunk = {
@@ -4595,6 +4568,8 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                                     "delta": {
                                         "tool_content": {"title": response["name"], "content": str(response["result"]), "type": "tool_result"},
                                         "async_tool_id": tid,
+                                        **({"task_ref": response["result"].task_ref} if isinstance(getattr(response["result"], "task_ref", None), dict) else {}),
+                                        **({"fileChanges": file_changes_of(response["result"])} if file_changes_of(response["result"]) else {}),
                                     }
                                 }]
                             }
@@ -4806,6 +4781,12 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                     tools.append(query_tasks_tool)
                     tools.append(cancel_subtask_tool)
                     tools.append(start_subtask_tool)
+
+                if not request.is_sub_agent and (settings.get("_task_runtime_scope") or {}).get("origin_conversation_id"):
+                    registered = {item.get("function", {}).get("name") for item in tools}
+                    for task_schema in [create_subtask_tool, query_tasks_tool, update_automation_task_tool]:
+                        if task_schema["function"]["name"] not in registered:
+                            tools.append(task_schema)
 
                 if request.is_sub_agent:
                     tools.append(finish_task_tool)
@@ -5405,6 +5386,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                         modified_tool = f"{await t("sendArg")}{data_list[0]}"
                         
                         if settings['tools']['asyncTools']['enabled']:
+                            tool_outcome_status = "pending"
                             # ... 异步工具逻辑保持不变 ...
                             tool_id = uuid.uuid4()
                             async_tool_id = f"{response_content.name}_{tool_id}"
@@ -5441,7 +5423,9 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                                 }
                             results = f"{response_content.name}tool has been successfully launched. It will take some time to run, and the results will be provided in the next round of conversation." # 保持原样
                         else:
-                            results = await dispatch_tool(response_content.name, data_list[0], settings)
+                            tool_outcome = await dispatch_tool(response_content.name, data_list[0], settings, include_outcome=True)
+                            results = _chat_tool_outcome_result(tool_outcome)
+                            tool_outcome_status = tool_outcome.get("status", "unknown")
 
                         if results is None:
                             # 保持原样，但建议加上 ID
@@ -5491,8 +5475,12 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                                         "tool_content": {
                                             "title": response_content.name,
                                             "content": str(results),
-                                            "type": "tool_result"
-                                        }
+                                            "type": "error" if tool_outcome_status == "error" else "tool_result"
+                                        },
+                                        "tool_status": {"completed": "done", "approval_required": "awaiting_approval", "error": "error", "pending": "pending"}.get(tool_outcome_status, "unknown"),
+                                        # 任务引用由工具返回，禁止从文本猜测；use tool-owned task references only.
+                                        **({"task_ref": results.task_ref} if isinstance(getattr(results, "task_ref", None), dict) else {}),
+                                        **({"fileChanges": file_changes_of(results)} if file_changes_of(results) else {}),
                                     }
                                 }]
                             }
@@ -5501,8 +5489,10 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                             # 流式工具结果处理 (AsyncIterator)
                             buffer = []
                             first = True
+                            streamed_file_changes = []
                             async for chunk in results:
                                 buffer.append(chunk)
+                                streamed_file_changes = merge_file_changes(streamed_file_changes, file_changes_of(chunk))
                                 if first:
                                     # 第一帧带 title
                                     stream_chunk = {
@@ -5513,7 +5503,8 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                                                     "title": response_content.name,
                                                     "content": chunk,
                                                     "type": "tool_result_stream"
-                                                }
+                                                },
+                                                **({"fileChanges": streamed_file_changes} if streamed_file_changes else {}),
                                             }
                                         }]
                                     }
@@ -5529,12 +5520,15 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                                                     "title": "tool_result_stream",
                                                     "content": chunk,
                                                     "type": "tool_result_stream"
-                                                }
+                                                },
+                                                **({"fileChanges": streamed_file_changes} if streamed_file_changes else {}),
                                             }
                                         }]
                                     }
                                     yield f"data: {json.dumps(stream_chunk)}\n\n"
-                            results = "".join(buffer)
+                            results = FileChangeResult("".join(buffer), streamed_file_changes)
+                            # 明确流式工具已经结束；explicitly acknowledge the completed streaming tool.
+                            yield f"data: {json.dumps({'choices': [{'delta': {'tool_complete': {'id': tool_calls[0].id, 'name': response_content.name}}}]})}\n\n"
 
                         request.messages.append(
                             {
@@ -6481,11 +6475,9 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
     except Exception as e:
         logger.error(f"Error occurred: {e}")
         return _build_error_response_from_exception(e)
-    finally:
-        # --- [v0.5.3 P0-B] 注销 abort event ---
-        _unregister_stream(_stream_id)
 
 async def generate_complete_response(client,reasoner_client, request: ChatRequest, settings: dict,fastapi_base_url,enable_thinking,enable_deep_research,enable_web_search):
+    settings = {**settings, "_task_runtime_scope": dict(getattr(request, "_task_runtime_scope", {}))}
     global mcp_client_list,HA_client,ChromeMCP_client,sql_client
     DRS_STAGE = 1 # 1: 明确用户需求阶段 2: 工具调用阶段 3: 生成结果阶段
     if len(request.messages) > 2:
@@ -6926,6 +6918,7 @@ async def generate_complete_response(client,reasoner_client, request: ChatReques
             if modelProvider['id'] == settings['reasoner']['selectedProvider']:
                 reasoner_vendor = modelProvider['vendor']
                 break
+        _set_kernel_live_guidance_support(request, chat_vendor)
         if chat_vendor == 'Dify':
             try:
                 if len(request.messages) >= 3:
@@ -6994,6 +6987,15 @@ async def generate_complete_response(client,reasoner_client, request: ChatReques
                     tools.append(markdown_new_tool)
         if kb_list:
             tools.append(kb_tool)
+        from py.task_tools import create_subtask_tool, query_tasks_tool, update_automation_task_tool, finish_task_tool
+        if (settings.get("_task_runtime_scope") or {}).get("task_id"):
+            tools.append(finish_task_tool)
+        elif (settings.get("_task_runtime_scope") or {}).get("origin_conversation_id"):
+            tools.extend([create_subtask_tool, query_tasks_tool, update_automation_task_tool])
+        if request.enable_tools:
+            tools = [item for item in tools if item.get("function", {}).get("name") in request.enable_tools]
+        elif request.disable_tools:
+            tools = [item for item in tools if item.get("function", {}).get("name") not in request.disable_tools]
         _run_kernel_shadow_plan(
             request,
             settings,
@@ -7561,7 +7563,8 @@ async def execute_tool_manually(request: Request):
 
 
 async def _execute_tool_manually_payload(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute one validated manual tool payload through the governed registry."""
+    """经授权执行工具并返回真实状态；execute governed tools and return their authoritative outcome."""
+    from py.conversation_file_receipts import FileChangeResult, file_changes_of, merge_file_changes
 
     tool_name = data.get("tool_name")
     tool_params = data.get("tool_params") or {}
@@ -7572,6 +7575,9 @@ async def _execute_tool_manually_payload(data: Dict[str, Any]) -> Dict[str, Any]
     # 获取当前配置
     settings = await load_settings()
     cwd = settings.get("CLISettings", {}).get("cc_path")
+    from py.conversation_automation import conversation_identity
+    from py.task_tools import TASK_TOOL_NAMES, dispatch_bound_task_tool
+    settings = {**settings, "_task_runtime_scope": {"origin_conversation_id": conversation_identity(data.get("conversationId") or data.get("conversation_id"))}}
 
     validation = None
     if approval_id:
@@ -7582,7 +7588,7 @@ async def _execute_tool_manually_payload(data: Dict[str, Any]) -> Dict[str, Any]
             workspace_dir=cwd or "",
         )
         if not validation.get("ok"):
-            return {"result": f"[Permission] Approval rejected: {validation.get('reason', 'invalid_approval')}"}
+            return {"success": False, "status": "error", "result": f"[Permission] Approval rejected: {validation.get('reason', 'invalid_approval')}"}
         approval_record = validation.get("approval") or {}
         parent_trace_id = parent_trace_id or approval_record.get("trace_id") or ""
     
@@ -7594,9 +7600,9 @@ async def _execute_tool_manually_payload(data: Dict[str, Any]) -> Dict[str, Any]
                 add_tool_to_project_config(cwd, tool_name)
                 print(f"[Permission] Added {tool_name} to whitelist for project {cwd}")
             except Exception as e:
-                return {"result": f"[System Error] Failed to save permission: {str(e)}"}
+                return {"success": False, "status": "error", "result": f"[System Error] Failed to save permission: {str(e)}"}
         else:
-             return {"result": "[System Error] No working directory found to save config."}
+             return {"success": False, "status": "error", "result": "[System Error] No working directory found to save config."}
 
     if approval_id:
         resolved = get_approval_center().resolve(
@@ -7608,7 +7614,7 @@ async def _execute_tool_manually_payload(data: Dict[str, Any]) -> Dict[str, Any]
             workspace_dir=cwd or "",
         )
         if not resolved.get("ok"):
-            return {"result": f"[Permission] Approval rejected: {resolved.get('reason', 'invalid_approval')}"}
+            return {"success": False, "status": "error", "result": f"[Permission] Approval rejected: {resolved.get('reason', 'invalid_approval')}"}
 
     from py.execution_tool_registry import build_execution_tool_registry
 
@@ -7620,23 +7626,25 @@ async def _execute_tool_manually_payload(data: Dict[str, Any]) -> Dict[str, Any]
     _TOOL_HOOKS = registry.hooks
     
 
-    if tool_name not in _TOOL_HOOKS:
-        return {"result": f"Tool {tool_name} not found in backend registry."}
+    if tool_name not in _TOOL_HOOKS and tool_name not in TASK_TOOL_NAMES:
+        return {"success": False, "status": "error", "result": f"Tool {tool_name} not found in backend registry."}
     
-    tool_func = _TOOL_HOOKS[tool_name]
+    tool_func = _TOOL_HOOKS.get(tool_name)
     
     try:
         from py.kernel.executor import get_kernel_executor
 
         async def _manual_tool_call():
-            """Invoke the selected legacy hook and collect async generator output."""
+            """执行已选工具并保留聚合文件回执。 / Invoke the selected tool and preserve aggregated file receipts."""
 
-            result = await tool_func(**tool_params)
+            result = await dispatch_bound_task_tool(tool_name, tool_params, settings, settings["_task_runtime_scope"]) if tool_name in TASK_TOOL_NAMES else await tool_func(**tool_params)
             if hasattr(result, "__aiter__"):
                 output_buffer = []
+                file_changes = []
                 async for chunk in result:
                     output_buffer.append(chunk)
-                return "".join(output_buffer)
+                    file_changes = merge_file_changes(file_changes, file_changes_of(chunk))
+                return FileChangeResult("".join(output_buffer), file_changes)
             return result
 
         result = await get_kernel_executor().execute_tool(
@@ -7645,6 +7653,7 @@ async def _execute_tool_manually_payload(data: Dict[str, Any]) -> Dict[str, Any]
             settings=settings,
             legacy_call=_manual_tool_call,
             actor="user",
+            return_trace=True,
             approval_id=approval_id,
             metadata={
                 "manual_execute": True,
@@ -7653,10 +7662,16 @@ async def _execute_tool_manually_payload(data: Dict[str, Any]) -> Dict[str, Any]
                 "approval_trace_role": "execution" if approval_id else "",
             },
         )
-        return {"result": str(result)}
+        return {
+            "success": bool(result.get("ok")) and result.get("status") == "completed",
+            "status": result.get("status", "unknown"),
+            "result": str(_chat_tool_outcome_result(result)),
+            **({"taskRef": _chat_tool_outcome_result(result).task_ref} if isinstance(getattr(_chat_tool_outcome_result(result), "task_ref", None), dict) else {}),
+            **({"fileChanges": file_changes_of(_chat_tool_outcome_result(result))} if file_changes_of(_chat_tool_outcome_result(result)) else {}),
+        }
 
     except Exception as e:
-        return {"result": f"Error executing {tool_name}: {str(e)}"}
+        return {"success": False, "status": "error", "result": f"Error executing {tool_name}: {str(e)}"}
 
 
 async def _resolve_chat_tool_approval_payload(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -7695,7 +7710,7 @@ async def get_models():
                 id=agent["name"],  
                 created=0,  
                 object="model",
-                owned_by="super-agent-party"  # 非空字符串
+                owned_by="openxnet"  # 产品身份 / Product identity
             )
             for agent in agents.values()  
         ]
@@ -7705,7 +7720,7 @@ async def get_models():
                 id='openxnet-model',
                 created=0,
                 object="model",
-                owned_by="super-agent-party"  # 非空字符串
+                owned_by="openxnet"  # 产品身份 / Product identity
             )
         )
 
@@ -8823,10 +8838,27 @@ async def developer_workbench_apply_workspace_endpoint(req: DevWorkbenchWorkspac
 
 @app.post("/v1/chat/completions", operation_id="chat_with_agent_party")
 async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
+    """独占当前会话直到真实响应结束。 / Own the current conversation until the actual response ends."""
+    return await run_registered_chat(_conversation_executions, request, lambda: _chat_endpoint_impl(request, fastapi_request))
+
+
+@app.get("/v1/chat/recovery-status")
+async def chat_recovery_status(conversation_id: str):
+    """读取当前进程的实际执行状态，不推断过去工具结果。 / Read actual execution state in this process without inferring past tool outcomes."""
+    try:
+        return JSONResponse(_conversation_executions.status(conversation_id), headers={"Cache-Control": "no-store"})
+    except ValueError as error:
+        return JSONResponse({"error": {"code": "invalid_conversation_id", "message": str(error)}}, status_code=422)
+
+
+async def _chat_endpoint_impl(request: ChatRequest, fastapi_request: Request):
     """
     用来与agent party中的模型聊天
     """
     fastapi_base_url = str(fastapi_request.base_url)
+    from py.conversation_automation import conversation_identity
+    verified_scope = getattr(fastapi_request.state, "openxnet_task_scope", None)
+    request._task_runtime_scope = dict(verified_scope) if isinstance(verified_scope, dict) else {"origin_conversation_id": conversation_identity(request.conversationId or request.conversation_id)}
     # 【注意】引入全局 fast_client
     global client, reasoner_client, fast_client, settings, mcp_client_list
     
@@ -8960,7 +8992,7 @@ async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
                 base_url=current_settings['base_url'] or "https://api.openai.com/v1",
             )
             # 如果当前没有触发快速模型，需要确保 active_client 指向最新的主 client
-            if active_client != fast_client:
+            if active_client is None or active_client != fast_client:
                 active_client = client
 
         # 动态更新推理模型 Client
@@ -9145,6 +9177,11 @@ async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
 
 @app.post("/simple_chat")
 async def simple_chat_endpoint(request: ChatRequest):
+    """简单对话沿用相同的会话独占保护。 / Apply the same conversation ownership guard to simple chat."""
+    return await run_registered_chat(_conversation_executions, request, lambda: _simple_chat_endpoint_impl(request))
+
+
+async def _simple_chat_endpoint_impl(request: ChatRequest):
     """
     同时支持流式(stream=true)与非流式(stream=false)
     """
@@ -14994,6 +15031,7 @@ def _register_execution_engine_chat_api() -> Any:
             abort_chat=_abort_stream,
             execute_tool=_execute_tool_manually_payload,
             resolve_approval=_resolve_chat_tool_approval_payload,
+            recovery_status=chat_recovery_status,
         ),
     )
 

@@ -1,3 +1,14 @@
+import type { CompletionNoticeListener, CompletionNoticeNavigateListener, CompletionNoticeResult, CompletionNoticeSnapshot, PublishCompletionNoticeRequest } from "./completion-notice";
+import type {
+  ApplicationCompetitionConnectionRequest,
+  ApplicationCompetitionConnectionResult,
+  ApplicationCompetitionConnectionSaveRequest,
+} from "./application-competition-connection";
+import type {
+  ApplicationCompetitionLiveConnectionRequest,
+  ApplicationCompetitionLiveConnectionResult,
+  ApplicationCompetitionLiveConnectionSaveRequest,
+} from "./application-competition-live-connection";
 import type {
   FeaturePackDistributionSnapshot,
   FeaturePackMutationResult,
@@ -142,6 +153,7 @@ import type {
   ApplicationSkillContentResult,
   ApplicationSkillDirectoryResult,
   ApplicationSkillIdRequest,
+  ApplicationSkillContentRequest,
   ApplicationSkillMlopsUploadResult,
   ApplicationSkillMutationResult,
   ApplicationSkillWriteResult,
@@ -239,6 +251,7 @@ import type {
   ApplicationChatStreamListener,
   CompleteApplicationChatRequest,
   ExecuteApplicationChatToolRequest,
+  GetApplicationChatRecoveryStatusRequest,
   ResolveApplicationChatApprovalRequest,
   StartApplicationChatStreamRequest,
 } from "./application-chat";
@@ -314,6 +327,10 @@ import type {
   SaveApplicationProvidersRequest,
   ValidateApplicationProviderRequest,
 } from "./application-providers";
+import type {
+  ApplicationOllamaDiscoveryRequest,
+  ApplicationOllamaDiscoveryResult,
+} from "./application-ollama-runtime";
 import type {
   ApplicationA2aInspectionResult,
   ApplicationAgentMutationResult,
@@ -589,7 +606,7 @@ export interface OpenXnetDesktopApi {
   startApplicationExtension(request: ApplicationExtensionIdRequest): Promise<ApplicationExtensionStartResult>;
   stopApplicationExtension(request: ApplicationExtensionIdRequest): Promise<ApplicationExtensionMutationResult>;
   listApplicationSkills(): Promise<ApplicationSkillCatalog>;
-  getApplicationSkillContent(request: ApplicationSkillIdRequest): Promise<ApplicationSkillContentResult>;
+  getApplicationSkillContent(request: ApplicationSkillContentRequest): Promise<ApplicationSkillContentResult>;
   installApplicationSkillFromRepository(
     request: InstallApplicationSkillRepositoryRequest,
   ): Promise<ApplicationSkillWriteResult>;
@@ -663,6 +680,22 @@ export interface OpenXnetDesktopApi {
   checkAllApplicationEnterpriseXnetServices(
     request: CheckAllApplicationEnterpriseXnetServicesRequest,
   ): Promise<ApplicationEnterpriseXnetServiceListResult>;
+  /** 读取脱敏协同接入状态。 / Read redacted collaboration connection status. */
+  getApplicationCompetitionConnection(): Promise<ApplicationCompetitionConnectionResult>;
+  /** 检查服务身份及演示授权，不保存。 / Check service identity and demo authorization without saving. */
+  testApplicationCompetitionConnection(request: ApplicationCompetitionConnectionRequest): Promise<ApplicationCompetitionConnectionResult>;
+  /** 验证后加密保存协同配置。 / Validate and encrypt the collaboration configuration. */
+  saveApplicationCompetitionConnection(request: ApplicationCompetitionConnectionSaveRequest): Promise<ApplicationCompetitionConnectionResult>;
+  /** 清除当前账号的本机配置。 / Clear the current account's local configuration. */
+  clearApplicationCompetitionConnection(): Promise<ApplicationCompetitionConnectionResult>;
+  /** 读取脱敏 Live 接入，不读取平台凭据。 / Read redacted Live access without platform credentials. */
+  getApplicationCompetitionLiveConnection(): Promise<ApplicationCompetitionLiveConnectionResult>;
+  /** 只读检测 Live 身份、范围和依赖。 / Read-only check of Live identity, scope and dependencies. */
+  testApplicationCompetitionLiveConnection(request: ApplicationCompetitionLiveConnectionRequest): Promise<ApplicationCompetitionLiveConnectionResult>;
+  /** 复核后系统加密保存 Live 授权。 / Revalidate and OS-encrypt Live authorization. */
+  saveApplicationCompetitionLiveConnection(request: ApplicationCompetitionLiveConnectionSaveRequest): Promise<ApplicationCompetitionLiveConnectionResult>;
+  /** 清除当前账号的 Live 本机保存项。 / Clear the current account's locally saved Live connection. */
+  clearApplicationCompetitionLiveConnection(): Promise<ApplicationCompetitionLiveConnectionResult>;
   loadApplicationEnterpriseUsageDashboard(
     request: ApplicationEnterpriseUsageDashboardRequest,
   ): Promise<ApplicationEnterpriseUsageDashboardResult>;
@@ -707,6 +740,18 @@ export interface OpenXnetDesktopApi {
   completeApplicationChat(request: CompleteApplicationChatRequest): Promise<ApplicationChatResponse>;
   listApplicationChatModels(): Promise<ApplicationChatResponse>;
   abortApplicationChat(request: AbortApplicationChatRequest): Promise<ApplicationChatResponse>;
+  /** 只读核对当前会话的原执行状态。 / Check original execution state for the current conversation without mutation. */
+  getApplicationChatRecoveryStatus(request: GetApplicationChatRecoveryStatusRequest): Promise<ApplicationChatResponse>;
+  /** 发布真实新完成结果并读取准确提交状态。 / Publish a real new result and read its actual submission status. */
+  publishCompletionNotice(request: PublishCompletionNoticeRequest): Promise<CompletionNoticeResult>;
+  /** 静默读取近期公开结果。 / Read recent public results silently. */
+  getCompletionNoticeSnapshot(): Promise<CompletionNoticeSnapshot>;
+  /** 显式打开近期验证身份。 / Explicitly open a recently verified identity. */
+  openCompletionNotice(request: { readonly resultId: string }): Promise<boolean>;
+  /** 订阅公开完成结果。 / Subscribe to public completion results. */
+  onCompletionNotice(listener: CompletionNoticeListener): () => void;
+  /** 订阅仅包含身份的点击导航。 / Subscribe to identity-only click navigation. */
+  onCompletionNoticeNavigate(listener: CompletionNoticeNavigateListener): () => void;
   executeApplicationChatTool(request: ExecuteApplicationChatToolRequest): Promise<ApplicationChatResponse>;
   resolveApplicationChatApproval(
     request: ResolveApplicationChatApprovalRequest,
@@ -797,6 +842,9 @@ export interface OpenXnetDesktopApi {
   probeApplicationProviderEmbedding(
     request: ProbeApplicationProviderEmbeddingRequest,
   ): Promise<ApplicationProviderEmbeddingProbeResult>;
+  discoverApplicationOllama(
+    request?: ApplicationOllamaDiscoveryRequest,
+  ): Promise<ApplicationOllamaDiscoveryResult>;
   createApplicationAgent(request: CreateApplicationAgentRequest): Promise<ApplicationAgentMutationResult>;
   removeApplicationAgent(request: RemoveApplicationAgentRequest): Promise<ApplicationAgentMutationResult>;
   inspectApplicationA2a(request: InspectApplicationA2aRequest): Promise<ApplicationA2aInspectionResult>;

@@ -26,6 +26,7 @@ import sys
 from typing import Dict, List, Optional, Any
 
 from py.task_center import get_task_center, TaskStatus
+from py.conversation_agent_transcript import AgentTranscript
 from py.task_execution_session import (
     TaskExecutionSessionClient,
     TaskExecutionSessionError,
@@ -44,11 +45,12 @@ class SubAgentExecutor:
         *,
         checkpoint_publisher: Optional[TaskCheckpointPublisher] = None,
     ) -> None:
-        """Create an executor over one task-bound typed session client."""
+        """创建绑定单任务的类型化执行器。 / Create an executor over one task-bound typed session client."""
 
         self.workspace_dir = workspace_dir
         self._session_client = session_client
         self._checkpoint_publisher = checkpoint_publisher
+        self._transcript: Optional[AgentTranscript] = None
 
     def _is_task_cancelled(self, task: Any) -> bool:
         """Return whether the latest task state carries authoritative cancellation."""
@@ -81,13 +83,16 @@ class SubAgentExecutor:
         task_id: str,
         iteration: int = 0,
     ) -> tuple[Any, Optional[Dict[str, Any]]]:
-        """Reload a task and return a response when it reached a terminal state."""
+        """重载任务并停止已结束的执行，包括结构化失败。 / Reload a task and stop terminal execution, including structured failures."""
 
         latest_task = await task_center.get_task(task_id)
         if not latest_task:
             return None, {"success": False, "task_id": task_id, "error": f"Task {task_id} not found"}
         if self._is_task_cancelled(latest_task):
             return latest_task, self._build_cancelled_response(task_id, latest_task, iteration)
+        if latest_task.status == TaskStatus.FAILED:
+            return latest_task, {"success": False, "task_id": task_id, "status": TaskStatus.FAILED.value,
+                                 "error": latest_task.error or "Task execution failed.", "iterations": iteration}
         if latest_task.status == TaskStatus.COMPLETED:
             return latest_task, {
                 "success": True,
@@ -104,7 +109,7 @@ class SubAgentExecutor:
         consensus_content: Optional[str] = None,
         max_iterations: int = 30
     ) -> Dict[str, Any]:
-        """Run the bounded SubAgent loop until completion, cancellation, or failure."""
+        """运行有界子任务并记录真实公开委派。 / Run the bounded SubAgent loop and record actual public delegation."""
 
         task_center = await get_task_center(self.workspace_dir)
         task = await task_center.get_task(task_id)
@@ -113,13 +118,16 @@ class SubAgentExecutor:
             return {"success": False, "error": f"Task {task_id} not found"}
         if self._is_task_cancelled(task):
             return self._build_cancelled_response(task_id, task)
+
+        self._transcript = AgentTranscript(task, self._session_client.session_id)
+        self._transcript.append("delegation", task.description, record_id=f"{self._session_client.session_id}:delegation")
         
         await self._update_task_progress(
             task_center,
             task_id=task_id,
             progress=0,
             status=TaskStatus.RUNNING,
-            context={"resume_requested": False}
+            context={"resume_requested": False, "agent_transcript": self._transcript.snapshot()}
         )
 
         task, terminal_result = await self._check_task_terminal_state(task_center, task_id)
@@ -180,7 +188,8 @@ class SubAgentExecutor:
                     if terminal_result:
                         return terminal_result
 
-                    is_complete = await self._check_task_completion_smart(
+                    # 自动检查只能由结构化finish_task回执结束，不能靠普通文字判断。 / Automated checks require structured finish_task receipts, never prose-based completion.
+                    is_complete = False if task.context.get("automation") else await self._check_task_completion_smart(
                         conversation_history=conversation_history,
                     )
                     
@@ -211,10 +220,14 @@ class SubAgentExecutor:
                             "iterations": iteration
                         }
                     
+                    continuation = "请继续执行任务。如果已完成所有步骤，请总结并给出最终结果。"
+                    if task.context.get("automation"):
+                        continuation = "请完成本轮检查并调用 finish_task，明确 outcome、evidence 与 observation_key；没有变化也需要结束本轮。"
                     conversation_history.append({
                         "role": "user",
-                        "content": "请继续执行任务。如果已完成所有步骤，请总结并给出最终结果。"
+                        "content": continuation
                     })
+                    self._transcript.append("continuation", continuation)
                 
                 timeout_error = f"Max iterations reached ({max_iterations})"
                 task, terminal_result = await self._check_task_terminal_state(task_center, task_id, iteration)
@@ -253,18 +266,20 @@ class SubAgentExecutor:
         base_progress: int = 0,
         display_history: List[str] = None
     ) -> str:
-        """Consume one typed broker turn and persist bounded execution activity."""
+        """消费类型化执行流，只记录公开正文与真实工具回执。 / Consume typed execution events and record visible text and actual tool receipts only."""
 
         full_content = ""
         current_text_buffer = ""
         tool_step_counter = 0
         stream_error_message = ""
+        turn_finished = False
+        display_history = display_history if display_history is not None else []
 
         try:
             async for event in self._session_client.stream_turn(messages):
                 if task_center and task_id:
                     _, terminal_result = await self._check_task_terminal_state(task_center, task_id)
-                    if terminal_result:
+                    if terminal_result and event.event_type != "tool_event":
                         break
                 if event.event_type == "text_delta":
                     full_content += event.text
@@ -280,13 +295,11 @@ class SubAgentExecutor:
                     current_text_buffer = ""
                 tool_type = event.tool_type
                 tool_title = event.title.strip() or "Unknown"
-                if "finish_task" in tool_title:
-                    display_history.append(
-                        f"[SUCCESS] [{tool_title}]\nResult: {event.content[:100]}..."
-                    )
-                    continue
                 if tool_type not in {"tool_result", "error"}:
                     continue
+                if self._transcript is not None:
+                    self._transcript.append("tool_receipt", event.content, tool_name=tool_title,
+                                            status="error" if tool_type == "error" else "done")
                 tool_step_counter += 1
                 if tool_type == "error":
                     stream_error_message = event.content or tool_title or "Unknown tool error"
@@ -306,10 +319,19 @@ class SubAgentExecutor:
                     task_id=task_id,
                     progress=micro_progress,
                     status=TaskStatus.RUNNING,
-                    context={"history": display_history},
+                    context={"history": display_history, **({"agent_transcript": self._transcript.snapshot()} if self._transcript else {})},
                 )
+            turn_finished = True
         except TaskExecutionSessionError as error:
             raise RuntimeError(f"Execution session failed: {error.code}") from error
+        finally:
+            # 即使finish_task已经提交终态，也仅追加元数据，不反转任务状态。 / Append metadata even after finish_task commits a terminal state without reversing it.
+            if self._transcript is not None and task_center and task_id:
+                self._transcript.append("assistant", full_content, status="error" if stream_error_message else "done" if turn_finished else "interrupted")
+                latest = await task_center.get_task(task_id)
+                if latest is not None:
+                    await self._update_task_progress(task_center, task_id=task_id, progress=latest.progress,
+                                                     context={"agent_transcript": self._transcript.snapshot()})
 
         if current_text_buffer.strip() and display_history is not None:
             display_history.append(current_text_buffer.strip())
@@ -320,10 +342,20 @@ class SubAgentExecutor:
         return full_content if full_content else "(任务执行中...)"
     
     def _build_system_prompt(self, task, consensus_content: Optional[str]) -> str:
-        """Build the task-specific system prompt with optional workspace consensus."""
+        """构造任务系统指令与自动检查完成契约，不加入公开记录。 / Build task system instructions and the automated-check contract outside public records."""
 
         prompt = f"你是一个专业的任务执行助手。\n【任务信息】ID: {task.task_id} | 标题: {task.title}\n【执行要求】专注完成任务，使用可用工具，完成后明确表示结束。"
         if consensus_content: prompt += f"\n\n【共识规范】\n{consensus_content}\n"
+        if task.context.get("automation"):
+            prompt += (
+                "\n【会话自动任务】每轮检查必须调用 finish_task 结束本轮，outcome 只能为 "
+                "unchanged、changed、completed、failed、action_required；evidence 为真实证据字符串数组，"
+                "observation_key 为可稳定对比的观察摘要。无变化也必须结束本轮。"
+                "until_done 只有明确完成证据才可报告 completed；一次检查完成不等于整个持续监控完成。"
+                "不得仅用最终文字结束整个监控。 / Every automated check must call finish_task with a structured "
+                "outcome, actual evidence, and a stable observation_key. Unchanged checks still finish the current run. "
+                "Report completed for until_done only with explicit completion evidence; completing a check does not end ongoing monitoring."
+            )
         return prompt
 
     def _build_initial_user_message(self, task, assistant_only_history: List[str]) -> str:

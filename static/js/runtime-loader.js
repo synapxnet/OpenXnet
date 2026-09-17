@@ -6,16 +6,16 @@
   const runtimePromises = new Map();
 
   const SURFACE_RUNTIMES = Object.freeze({
-    chat: Object.freeze({ key: 'chat', source: 'chat-vite/openxnet-chat.js', event: 'openxnet-vite-chat-remount' }),
-    role: Object.freeze({ key: 'role', source: 'role-vite/openxnet-role.js', event: 'openxnet-vite-role-remount' }),
-    'model-config': Object.freeze({ key: 'model', source: 'model-vite/openxnet-model.js', event: 'openxnet-vite-model-remount' }),
-    toolkit: Object.freeze({ key: 'toolkit', source: 'toolkit-vite/openxnet-toolkit.js', event: 'openxnet-vite-toolkit-remount' }),
-    skills: Object.freeze({ key: 'skills', source: 'skills-vite/openxnet-skills.js', event: 'openxnet-vite-skills-remount' }),
+    chat: Object.freeze({ key: 'chat', source: 'chat-vite/openxnet-chat.js?v=20260914-conversation1', event: 'openxnet-vite-chat-remount' }),
+    role: Object.freeze({ key: 'role', source: 'role-vite/openxnet-role.js?v=20260908-ui-actions1', event: 'openxnet-vite-role-remount' }),
+    'model-config': Object.freeze({ key: 'model', source: 'model-vite/openxnet-model.js?v=20260908-ui-actions1', event: 'openxnet-vite-model-remount' }),
+    toolkit: Object.freeze({ key: 'toolkit', source: 'toolkit-vite/openxnet-toolkit.js?v=20260908-ui-actions1', event: 'openxnet-vite-toolkit-remount' }),
+    skills: Object.freeze({ key: 'skills', source: 'skills-vite/openxnet-skills.js?v=20260914-employee-skills1', event: 'openxnet-vite-skills-remount' }),
     'ai-browser': Object.freeze({ key: 'browser', source: 'browser-vite/openxnet-browser.js', event: 'openxnet-vite-browser-remount' }),
-    'task-center': Object.freeze({ key: 'ops', source: 'ops-vite/openxnet-ops.js?v=20260901-memory-v3', event: 'openxnet-vite-ops-remount' }),
-    system: Object.freeze({ key: 'ops', source: 'ops-vite/openxnet-ops.js?v=20260901-memory-v3', event: 'openxnet-vite-ops-remount' }),
-    storage: Object.freeze({ key: 'ops', source: 'ops-vite/openxnet-ops.js?v=20260901-memory-v3', event: 'openxnet-vite-ops-remount' }),
-    vrm: Object.freeze({ key: 'ops', source: 'ops-vite/openxnet-ops.js?v=20260901-memory-v3', event: 'openxnet-vite-ops-remount' }),
+    'task-center': Object.freeze({ key: 'ops', source: 'ops-vite/openxnet-ops.js?v=20260913-memory-context1', event: 'openxnet-vite-ops-remount' }),
+    system: Object.freeze({ key: 'ops', source: 'ops-vite/openxnet-ops.js?v=20260913-memory-context1', event: 'openxnet-vite-ops-remount' }),
+    storage: Object.freeze({ key: 'ops', source: 'ops-vite/openxnet-ops.js?v=20260913-memory-context1', event: 'openxnet-vite-ops-remount' }),
+    vrm: Object.freeze({ key: 'ops', source: 'ops-vite/openxnet-ops.js?v=20260913-memory-context1', event: 'openxnet-vite-ops-remount' }),
   });
 
   /**

@@ -1,0 +1,213 @@
+/*
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+用途：员工工作台原创蓝青界面与能力详情布局。
+Purpose: Original blue/cyan employee workbench and capability detail layout.
+Author: maoyo | Department: 研发部 | Date: 2026-09-14
+Version: 1.0.0 | Security Level: INTERNAL
+__version__: 1.0.0 | __author__: maoyo | __copyright__: Copyright 2026 Synapxnet
+__maintainer__: maoyo | __email__: synapxnet@gmail.com
+*/
+
+.ox-employee-workbench,
+.ox-employee-detail {
+  --employee-accent: var(--ox-accent, #187bbd);
+  --employee-surface: var(--ox-bg-surface, #fff);
+  --employee-base: var(--ox-bg-base, #f2f5f8);
+  --employee-input: var(--ox-bg-input, #f6f8fb);
+  --employee-text: var(--ox-text-primary, #203046);
+  --employee-secondary: var(--ox-text-secondary, #576a80);
+  --employee-border: var(--ox-border, #dfe6ed);
+  --employee-soft: color-mix(in srgb, var(--employee-accent) 7%, var(--employee-surface));
+  --employee-radius: var(--ox-radius-card, 12px);
+  color: var(--employee-text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.ox-employee-workbench *, .ox-employee-detail * { box-sizing: border-box; }
+.ox-employee-workbench {
+  min-width: 0;
+  padding: calc(14px * var(--ox-skin-spacing, 1));
+  border-radius: var(--employee-radius);
+  background: color-mix(in srgb, var(--employee-accent) 2%, var(--employee-base));
+}
+.ox-employee-workbench button, .ox-employee-detail button { font: inherit; cursor: pointer; }
+.ox-employee-workbench button:disabled, .ox-employee-detail button:disabled { opacity: .5; cursor: not-allowed; }
+.ox-employee-workbench button:focus-visible, .ox-employee-detail button:focus-visible,
+.ox-employee-workbench input:focus-visible, .ox-employee-detail textarea:focus-visible {
+  outline: 2px solid var(--employee-accent);
+  outline-offset: 3px;
+}
+.ox-employee-toolbar, .ox-employee-heading, .ox-employee-controls, .ox-employee-section-line,
+.ox-employee-card-top, .ox-employee-card-footer, .ox-employee-staff-actions, .ox-employee-detail-identity,
+.ox-employee-detail-footer { display: flex; align-items: center; gap: 12px; }
+.ox-employee-toolbar, .ox-employee-controls, .ox-employee-section-line,
+.ox-employee-card-top, .ox-employee-card-footer { justify-content: space-between; }
+.ox-employee-toolbar { margin-bottom: 12px; }
+.ox-employee-heading { min-width: 0; }
+.ox-employee-heading h3 { margin: 0; font-size: 18px; font-weight: 680; letter-spacing: -.3px; color: var(--employee-text); }
+.ox-employee-heading p { margin: 2px 0 0; font-size: 12px; color: var(--employee-secondary); }
+.ox-employee-brandmark { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border-radius: 11px; background: var(--employee-soft); color: var(--employee-accent); font-size: 17px; }
+.ox-employee-button, .ox-employee-icon-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 34px; padding: 6px 12px; border: 1px solid var(--employee-border); border-radius: 8px; background: var(--employee-surface); color: var(--employee-text); font-size: 13px !important; white-space: nowrap; }
+.ox-employee-button:hover:not(:disabled), .ox-employee-icon-button:hover { border-color: var(--employee-accent); color: var(--employee-accent); }
+.ox-employee-button.is-primary { border-color: var(--employee-accent); background: var(--employee-accent); color: var(--ox-on-accent, #fff); }
+.ox-employee-button.is-primary:hover:not(:disabled) { color: var(--ox-on-accent, #fff); background: var(--ox-accent-hover, var(--employee-accent)); }
+.ox-employee-icon-button { width: 32px; padding: 6px; background: transparent; border-color: transparent; }
+.ox-employee-icon-button.is-danger:hover { color: var(--ox-danger, #cc5261); border-color: currentColor; }
+.ox-employee-controls { flex-wrap: wrap; gap: 8px 16px; padding-bottom: 9px; margin-bottom: 12px; border-bottom: 1px solid var(--employee-border); }
+.ox-employee-views { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ox-employee-views button { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; color: var(--employee-secondary); background: transparent; font-size: 13px; }
+.ox-employee-views button.is-active { color: var(--employee-accent); background: var(--employee-soft); font-weight: 650; }
+.ox-employee-views button span { font-size: 11px; font-weight: 500; opacity: .85; }
+.ox-employee-search { display: flex; align-items: center; gap: 8px; width: 268px; max-width: 100%; padding: 0 11px; border: 1px solid var(--employee-border); border-radius: 8px; background: var(--employee-surface); color: var(--employee-secondary); }
+.ox-employee-search input { width: 100%; min-width: 0; height: 34px; border: 0; background: transparent; color: var(--employee-text); font: inherit; font-size: 13px; }
+.ox-employee-search input::placeholder { color: var(--employee-secondary); opacity: 1; }
+.ox-employee-search button { padding: 0; border: 0; background: transparent; color: var(--employee-secondary); }
+.ox-employee-section-line { min-height: 24px; gap: 8px; margin: 10px 0 8px; flex-wrap: wrap; }
+.ox-employee-section-line h4 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 14px; font-weight: 650; color: var(--employee-text); }
+.ox-employee-section-line > span, .ox-employee-section-line small, .ox-employee-section-line h4 > span { font-size: 12px; font-weight: 400; color: var(--employee-secondary); }
+.ox-employee-text-button { display: inline-flex; align-items: center; gap: 7px; padding: 3px 0; border: 0; background: transparent; color: var(--employee-accent); font-size: 12px !important; }
+.ox-employee-text-button:hover { text-decoration: underline; }
+.ox-employee-scenarios { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+/* 紧凑场景入口为岗位目录留出首屏面积。 Compact scenario entries reserve the first viewport for the role catalog. */
+.ox-employee-scene { position: relative; display: grid; grid-template-columns: 42px minmax(0, 1fr); grid-template-rows: auto auto auto; align-content: center; column-gap: 10px; row-gap: 2px; min-width: 0; min-height: 100px; overflow: hidden; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--employee-accent) 15%, var(--employee-border)); border-radius: var(--employee-radius); background: color-mix(in srgb, var(--employee-accent) 5%, var(--employee-surface)); color: var(--employee-text); text-align: left; }
+.ox-employee-scene.is-selected, .ox-employee-scene:hover { border-color: var(--employee-accent); }
+.ox-employee-scene strong { grid-column: 2; z-index: 1; margin: 0; font-size: 14px; font-weight: 650; line-height: 1.5; }
+.ox-employee-scene small { grid-column: 2; margin: 0; color: var(--employee-secondary); font-size: 11px; line-height: 1.5; }
+.ox-employee-scene-link { grid-column: 2; display: inline-flex; align-items: center; gap: 9px; margin-top: 4px; font-size: 11px; color: var(--employee-accent); line-height: 1.5; }
+/* 原创场景图案只由线框和原生图标组成。 Original scene patterns use outlines and native icons only. */
+.ox-employee-scene-art { grid-column: 1; grid-row: 1 / 4; align-self: center; position: relative; display: block; width: 42px; height: 42px; overflow: hidden; color: var(--employee-accent); }
+.ox-employee-scene-art i { position: absolute; display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid color-mix(in srgb, var(--employee-accent) 22%, transparent); border-radius: 11px; background: var(--employee-surface); font-size: 19px; }
+.ox-employee-scene-art span { position: absolute; top: 12px; left: 30px; width: 78px; height: 25px; border-top: 1px solid color-mix(in srgb, var(--employee-accent) 27%, transparent); border-right: 1px solid color-mix(in srgb, var(--employee-accent) 27%, transparent); border-radius: 0 10px 0 0; }
+.ox-employee-scene-art span + span { top: 24px; left: 40px; width: 112px; height: 8px; }
+.ox-employee-scene.is-recovery .ox-employee-scene-art span { border-radius: 50%; width: 46px; height: 46px; left: 18px; top: -4px; border: 1px solid color-mix(in srgb, var(--employee-accent) 18%, transparent); }
+.ox-employee-scene.is-recovery .ox-employee-scene-art span + span { width: 76px; height: 76px; top: -19px; left: 3px; }
+.ox-employee-scene.is-delivery .ox-employee-scene-art span { border: 1px solid color-mix(in srgb, var(--employee-accent) 24%, transparent); width: 45px; height: 31px; top: 6px; left: 24px; transform: rotate(-8deg); border-radius: 6px; }
+.ox-employee-scene.is-delivery .ox-employee-scene-art span + span { left: 53px; top: 9px; transform: rotate(7deg); }
+.ox-employee-categories { display: flex; flex-wrap: wrap; gap: 4px; margin: 12px 0 8px; }
+.ox-employee-categories button { display: inline-flex; gap: 6px; align-items: center; min-height: 26px; padding: 3px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--employee-secondary); font-size: 12px; }
+.ox-employee-categories button.is-active { border-color: var(--employee-border); background: var(--employee-surface); color: var(--employee-accent); font-weight: 600; }
+.ox-employee-categories button span { opacity: .75; font-size: 11px; }
+.ox-employee-role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.ox-employee-role-card { display: flex; flex-direction: column; gap: 0; min-width: 0; padding: 17px; border: 1px solid var(--employee-border); border-radius: var(--employee-radius); background: var(--employee-surface); color: var(--employee-text); text-align: left; transition: border-color 120ms ease, background-color 120ms ease; }
+.ox-employee-role-card:hover { border-color: var(--employee-accent); background: color-mix(in srgb, var(--employee-accent) 2%, var(--employee-surface)); }
+.ox-employee-role-icon { display: inline-grid; place-items: center; flex: 0 0 auto; width: 39px; height: 39px; border-radius: 11px; background: var(--employee-soft); color: var(--employee-accent); font-size: 18px; }
+.ox-employee-card-category { color: var(--employee-secondary); font-size: 11px; }
+.ox-employee-role-name { margin-top: 13px; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.ox-employee-role-department { font-size: 12px; color: var(--employee-secondary); margin-top: 2px; }
+.ox-employee-role-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 40px; margin: 9px 0 13px; color: var(--employee-secondary); font-size: 12px; line-height: 20px; }
+.ox-employee-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.ox-employee-tags > span { display: inline-block; max-width: 100%; padding: 3px 6px; border-radius: 5px; background: var(--employee-input); color: var(--employee-secondary); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.ox-employee-card-footer { margin-top: 15px; padding-top: 11px; border-top: 1px solid var(--employee-border); color: var(--employee-accent); font-size: 11px; }
+.ox-employee-pagination { display: flex; justify-content: flex-end; align-items: center; gap: 5px; margin-top: 18px; }
+.ox-employee-pagination > span { margin-right: auto; color: var(--employee-secondary); font-size: 12px; }
+.ox-employee-pagination button { min-width: 30px; height: 30px; padding: 0 7px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--employee-secondary); font-size: 12px; }
+.ox-employee-pagination button.is-current { border-color: var(--employee-border); background: var(--employee-surface); color: var(--employee-accent); }
+.ox-employee-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 44px 20px; text-align: center; }
+.ox-employee-empty > i { font-size: 28px; color: var(--employee-accent); margin-bottom: 4px; }
+.ox-employee-empty h4 { margin: 0; font-size: 15px; }
+.ox-employee-empty p { margin: 0 0 8px; font-size: 13px; color: var(--employee-secondary); }
+.ox-employee-staff-list { overflow: hidden; border-block: 1px solid var(--employee-border); }
+.ox-employee-staff-row { display: grid; grid-template-columns: minmax(160px, .9fr) minmax(190px, 1.4fr) auto; align-items: center; gap: 16px; padding: 17px 8px; border-bottom: 1px solid var(--employee-border); }
+.ox-employee-staff-row:last-child { border-bottom: 0; }
+.ox-employee-staff-identity { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--employee-text); text-align: left; }
+.ox-employee-staff-identity strong { display: block; font-size: 14px; overflow-wrap: anywhere; }
+.ox-employee-staff-identity small { display: block; margin-top: 3px; font-size: 12px; color: var(--employee-secondary); }
+.ox-employee-staff-capabilities { min-width: 0; font-size: 12px; color: var(--employee-secondary); }
+.ox-employee-staff-capabilities p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0 0 5px; }
+.ox-employee-staff-capabilities > span { display: inline-flex; align-items: center; gap: 5px; margin-right: 14px; }
+.ox-employee-staff-actions { gap: 5px; }
+.ox-employee-staff-actions .el-switch { margin-right: 9px; }
+.ox-employee-goai-intro { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 10px 0 24px; }
+.ox-employee-kicker { display: block; color: var(--employee-accent); font-size: 11px; font-weight: 650; letter-spacing: .4px; }
+.ox-employee-goai-intro h4 { margin: 7px 0 8px; font-size: 21px; font-weight: 650; }
+.ox-employee-goai-intro p { margin: 0; max-width: 630px; color: var(--employee-secondary); font-size: 13px; }
+.ox-employee-goai-symbol { display: grid; place-items: center; flex: 0 0 auto; width: 76px; height: 76px; border: 1px solid var(--employee-border); border-radius: 24px; background: var(--employee-soft); color: var(--employee-accent); font-size: 32px; }
+.ox-employee-goai-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.ox-employee-goai-card { display: flex; flex-direction: column; padding: 19px; border: 1px solid var(--employee-border); border-radius: var(--employee-radius); background: var(--employee-surface); }
+.ox-employee-goai-detail { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--employee-text); text-align: left; }
+.ox-employee-goai-detail > strong { display: block; margin: 19px 0 8px; font-size: 16px; }
+.ox-employee-goai-detail > p { min-height: 44px; margin: 0 0 16px; color: var(--employee-secondary); font-size: 13px; }
+.ox-employee-text-link { display: inline-flex; gap: 9px; align-items: center; color: var(--employee-accent); font-size: 12px; }
+.ox-employee-goai-card > .ox-employee-button { margin-top: 22px; }
+.ox-employee-goai-boundary { display: flex; align-items: flex-start; gap: 11px; margin-top: 22px; padding-top: 17px; border-top: 1px solid var(--employee-border); color: var(--employee-secondary); font-size: 12px; }
+.ox-employee-goai-boundary > i { margin-top: 3px; color: var(--employee-accent); }
+.ox-employee-goai-boundary p { margin: 0; }
+.ox-employee-notice { padding: 10px 12px; border-left: 3px solid var(--employee-accent); border-radius: 0 6px 6px 0; background: var(--employee-soft); color: var(--employee-text); font-size: 13px; }
+html .el-dialog.ox-employee-detail { display: flex; flex-direction: column; width: min(940px, calc(100vw - 32px)); max-height: calc(100dvh - 56px); margin-block: 28px; padding: 0; border-radius: 14px; background: var(--employee-surface); overflow: hidden; }
+html .ox-employee-detail > .el-dialog__header { flex: 0 0 auto; margin: 0; padding: 19px 48px 17px 24px; border-bottom: 1px solid var(--employee-border); }
+html .ox-employee-detail .el-dialog__title { font-size: 19px; font-weight: 650; color: var(--employee-text); }
+html .ox-employee-detail > .el-dialog__body { min-height: 0; overflow: auto; padding: 20px 24px; }
+html .ox-employee-detail > .el-dialog__footer { flex: 0 0 auto; padding: 14px 24px; border-top: 1px solid var(--employee-border); background: var(--employee-surface); }
+.ox-employee-detail-identity { margin-bottom: 22px; }
+.ox-employee-detail-identity p { margin: 3px 0 0; font-size: 12px; color: var(--employee-secondary); }
+.ox-employee-status { margin-left: auto; font-size: 11px; color: var(--employee-secondary); background: var(--employee-input); padding: 4px 8px; border-radius: 5px; }
+.ox-employee-detail-columns { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 30px; }
+.ox-employee-detail-main { min-width: 0; }
+.ox-employee-detail-main > section { margin-bottom: 22px; }
+.ox-employee-detail h4 { margin: 0 0 9px; font-size: 14px; font-weight: 650; color: var(--employee-text); }
+.ox-employee-detail-main p { margin: 0; font-size: 13px; color: var(--employee-secondary); line-height: 1.7; }
+.ox-employee-detail-main .ox-employee-inline-note { margin-top: 9px; color: var(--employee-accent); }
+.ox-employee-draft-section { padding-top: 17px; border-top: 1px solid var(--employee-border); }
+.ox-employee-draft-section .ox-employee-section-line { margin: 0 0 7px; }
+.ox-employee-draft-section .ox-employee-section-line h4 { margin: 0; }
+.ox-employee-draft-label { display: block; margin-bottom: 8px; font-size: 12px; color: var(--employee-secondary); }
+.ox-employee-draft-section textarea { display: block; width: 100%; min-height: 145px; resize: vertical; padding: 12px; border: 1px solid var(--employee-border); border-radius: 9px; background: var(--employee-input); color: var(--employee-text); font: inherit; font-size: 13px; line-height: 1.75; }
+.ox-employee-draft-section > small { display: block; margin-top: 8px; font-size: 11px; color: var(--employee-secondary); }
+.ox-employee-prompt { padding-top: 13px; border-top: 1px solid var(--employee-border); }
+.ox-employee-prompt summary { color: var(--employee-secondary); cursor: pointer; font-size: 12px; }
+.ox-employee-prompt p { padding-top: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ox-employee-passport { min-width: 0; padding-left: 22px; border-left: 1px solid var(--employee-border); }
+.ox-employee-passport-title { display: flex; align-items: center; gap: 8px; color: var(--employee-accent); }
+.ox-employee-passport-title h4 { margin: 0; }
+.ox-employee-passport > section { margin-top: 19px; }
+.ox-employee-passport h5 { margin: 0 0 7px; color: var(--employee-secondary); font-size: 12px; font-weight: 600; }
+.ox-employee-passport p, .ox-employee-passport small { margin: 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.ox-employee-muted { color: var(--employee-secondary); }
+.ox-employee-binding-list { list-style: none; margin: 0; padding: 0; }
+.ox-employee-binding-list li { margin-bottom: 9px; overflow-wrap: anywhere; }
+.ox-employee-binding-list strong, .ox-employee-binding-list small { display: block; font-size: 12px; }
+.ox-employee-binding-list strong { font-weight: 500; }
+.ox-employee-binding-list small { color: var(--employee-secondary); font-size: 11px; }
+.ox-employee-passport-links { display: grid; gap: 4px; margin-top: 19px; padding-top: 12px; border-top: 1px solid var(--employee-border); }
+.ox-employee-detail-footer { justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 1120px) {
+  .ox-employee-staff-row { grid-template-columns: minmax(180px, 1fr) auto; }
+  .ox-employee-staff-capabilities { grid-row: 2; grid-column: 1 / -1; }
+  .ox-employee-staff-actions { grid-column: 2; grid-row: 1; }
+}
+@media (max-width: 760px) {
+  .ox-employee-workbench { padding: 13px; }
+  .ox-employee-toolbar { align-items: flex-start; }
+  .ox-employee-brandmark { display: none; }
+  .ox-employee-heading h3 { font-size: 18px; }
+  .ox-employee-heading p { max-width: 240px; font-size: 12px; }
+  .ox-employee-scenarios, .ox-employee-goai-grid { grid-template-columns: 1fr; }
+  .ox-employee-scene { padding: 12px 14px; min-height: 96px; }
+  .ox-employee-scene-art { position: relative; width: 42px; }
+  .ox-employee-scene-art > span { display: none; }
+  .ox-employee-scene strong { margin-top: 0; }
+  .ox-employee-scene-link { margin-top: 4px; }
+  .ox-employee-search { width: 100%; }
+  .ox-employee-goai-intro h4 { font-size: 18px; }
+  .ox-employee-goai-symbol { display: none; }
+  .ox-employee-goai-detail > p { min-height: 0; }
+  .ox-employee-detail-columns { grid-template-columns: 1fr; gap: 24px; }
+  .ox-employee-passport { padding: 18px 0 0; border-left: 0; border-top: 1px solid var(--employee-border); }
+  html .ox-employee-detail > .el-dialog__body { padding: 17px; }
+  html .ox-employee-detail > .el-dialog__header, html .ox-employee-detail > .el-dialog__footer { padding-left: 17px; padding-right: 17px; }
+}
+@media (max-width: 480px) {
+  .ox-employee-staff-row { grid-template-columns: 1fr; gap: 11px; }
+  .ox-employee-staff-actions { grid-column: 1; grid-row: 3; justify-content: flex-end; }
+  .ox-employee-staff-capabilities { grid-column: 1; grid-row: 2; }
+  .ox-employee-views { gap: 2px; }
+  .ox-employee-views button { padding-inline: 8px; font-size: 12px; }
+  .ox-employee-role-grid { grid-template-columns: 1fr; }
+  .ox-employee-detail-footer .ox-employee-button.is-primary { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ox-employee-role-card { transition: none; }
+}

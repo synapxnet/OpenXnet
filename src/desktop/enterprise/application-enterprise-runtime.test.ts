@@ -160,7 +160,7 @@ test("Enterprise Runtime bounds Xnet health checks and rejects request drift", a
     now: () => new Date("2026-07-29T12:00:00.000Z"),
     fetch: async (url, options) => {
       requests.push({ url, redirect: options.redirect, method: options.method });
-      return { status: 204 };
+      return { status: 200, text: async () => "<title>XnetDataops</title>" };
     },
   });
   try {

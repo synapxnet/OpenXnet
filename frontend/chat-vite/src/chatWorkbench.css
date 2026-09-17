@@ -1,0 +1,159 @@
+/*
+ * Copyright (C) 2026 Synapxnet. All rights reserved.
+ * This file is Synapxnet Proprietary and Confidential. It is strictly
+ * forbidden to copy, distribute, or use without explicit authorization.
+ * 会话阅读与协作界面 / Conversation reading and collaboration interface.
+ * Author: maoyo | Department: 研发部 | Date: 2026-09-14
+ * Version: 1.0.0 | Security Level: INTERNAL
+ * __version__: 1.0.0 | __author__: maoyo | __copyright__: Copyright 2026 Synapxnet
+ * __maintainer__: maoyo | __email__: synapxnet@gmail.com
+ */
+
+#app .ox-vite-chat-shell { --chat-reading-width: 860px; background: var(--ox-bg-base, #f7f9fc); }
+#app .ox-vite-chat-shell .oxc-conversations { width: 224px !important; background: color-mix(in srgb, var(--ox-bg-surface, #fff) 84%, var(--ox-accent-soft, #eaf6fa)) !important; }
+#app .ox-vite-chat-shell .oxc-conversations__title { font-size: 14px !important; }
+#app .ox-vite-chat-shell .oxc-conversation-item { margin: 3px 8px; padding: 10px 12px; }
+#app .ox-vite-chat-shell .oxc-conversation-item__title { font-size: 13px; font-weight: 500; }
+#app .ox-vite-chat-shell .oxc-conversation-item.is-active { background: var(--ox-accent-soft, #e5f4fb) !important; box-shadow: inset 3px 0 var(--ox-accent, #168abb); border-radius: var(--ox-radius-sm, 10px); }
+#app .ox-vite-chat-shell .oxc-conversation-item.is-active .oxc-conversation-item__title { color: var(--ox-accent, #168abb); font-weight: 600; }
+#app .ox-vite-chat-shell .oxc-conversation-item__preview { -webkit-line-clamp: 1; font-size: 11px; opacity: .72; }
+#app .ox-vite-chat-shell .oxc-conversation-item__meta { display: none; }
+#app .ox-vite-chat-shell .oxc-conversation-item__time { font-size: 10px; opacity: .6; }
+#app .ox-vite-chat-shell .oxc-header { gap: 12px; min-height: 58px !important; padding: 0 22px !important; background: var(--ox-bg-base, #f7f9fc); border-bottom-color: color-mix(in srgb, var(--ox-border, #e0e7ee) 60%, transparent) !important; }
+#app .ox-vite-chat-shell .oxc-header__left { min-width: 0; gap: 10px; }
+#app .ox-vite-chat-shell .oxc-header__title { font-size: 14px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#app .ox-vite-chat-shell .oxc-header__model { font-size: 11px; max-width: 235px; color: var(--ox-text-secondary, #63778d); }
+#app .ox-vite-chat-shell .oxc-header__right { gap: 2px; flex-shrink: 0; }
+#app .ox-vite-chat-shell .oxc-icon-btn { width: 40px; height: 40px; flex: 0 0 40px; }
+#app .ox-vite-chat-shell .oxc-main { overflow: hidden; }
+#app .ox-vite-chat-shell .oxc-stream { padding: 24px 36px 24px 48px; scroll-padding: 24px 0; scrollbar-width: none !important; }
+#app .ox-vite-chat-shell .oxc-stream::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+#app .ox-vite-chat-shell .oxc-stream__inner { max-width: var(--chat-reading-width); }
+#app .ox-vite-chat-shell .oxc-input-wrapper { position: relative; inset: auto; flex: 0 0 auto; padding: 10px 36px 14px 48px; background: transparent; pointer-events: auto; }
+#app .ox-vite-chat-shell .oxc-input-card { max-width: var(--chat-reading-width); padding: 12px 14px 10px; gap: 4px; border-radius: calc(var(--ox-radius-lg, 16px) + 4px) !important; box-shadow: 0 5px 24px color-mix(in srgb, var(--ox-text-primary, #183047) 5%, transparent) !important; }
+#app .ox-vite-chat-shell .oxc-input-card:focus-within { box-shadow: 0 0 0 2px var(--ox-accent-soft, #e5f4fb) !important; }
+#app .ox-vite-chat-shell .oxc-file-summary { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 7px; max-width: var(--chat-reading-width); min-height: 32px; margin: 0 auto 8px; padding: 5px 13px; border: 1px solid var(--ox-border, #dde6ed); border-radius: 18px; background: var(--ox-bg-surface, #fff); color: var(--ox-text-secondary, #63778d); font: inherit; font-size: 11px; cursor: pointer; }
+#app .ox-vite-chat-shell .oxc-file-summary:hover { border-color: var(--ox-accent, #168abb); background: var(--ox-accent-soft, #e5f4fb); }
+#app .ox-vite-chat-shell .oxc-file-summary__add { color: var(--ox-accent, #168abb); font-variant-numeric: tabular-nums; }
+#app .ox-vite-chat-shell .oxc-file-summary__remove { color: var(--ox-danger, #cc5667); font-variant-numeric: tabular-nums; }
+#app .ox-vite-chat-shell .oxc-input-card__textarea { min-height: 48px; padding: 6px 6px 10px; font-size: 14px; line-height: 1.65; }
+#app .ox-vite-chat-shell .oxc-input-toolbar { gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+#app .ox-vite-chat-shell .oxc-input-toolbar__left { flex: 1; min-width: 0; gap: 3px; flex-wrap: wrap; }
+#app .ox-vite-chat-shell .oxc-input-toolbar__right { margin-left: auto; gap: 6px; }
+#app .ox-vite-chat-shell .oxc-input-toolbar__right { min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+#app .ox-vite-chat-shell .oxc-chip--permission { max-width: 100%; min-height: 36px; flex-shrink: 0; color: var(--ox-text-secondary, #63778d); background: var(--ox-bg-elevated, var(--ox-bg-surface, #f4f8fb)); border-color: var(--ox-border, #dce7ef); }
+#app .ox-vite-chat-shell .oxc-chip--permission .oxc-chip__label { display: inline; max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#app .ox-vite-chat-shell .oxc-chip--permission.is-accept { color: var(--ox-accent, #168abb); background: var(--ox-accent-soft, #e5f4fb); border-color: color-mix(in srgb, var(--ox-accent, #168abb) 28%, transparent); }
+#app .ox-vite-chat-shell .oxc-chip--permission.is-accept > i:first-child { color: inherit; }
+#app .ox-vite-chat-shell .oxc-chip--permission.is-plan { color: var(--ox-warning, #b78332); background: color-mix(in srgb, var(--ox-warning, #b78332) 12%, transparent); border-color: color-mix(in srgb, var(--ox-warning, #b78332) 28%, transparent); }
+#app .ox-vite-chat-shell .oxc-chip--permission.is-bypass { color: var(--ox-danger, #cc5667); background: color-mix(in srgb, var(--ox-danger, #cc5667) 12%, transparent); border-color: color-mix(in srgb, var(--ox-danger, #cc5667) 28%, transparent); }
+#app .ox-vite-chat-shell :is(.oxc-chip--permission.is-plan, .oxc-chip--permission.is-bypass) > i:first-child { color: inherit; }
+#app .ox-vite-chat-shell .oxc-permission-unconfirmed { font-size: 10px; color: var(--ox-warning, #b78332); }
+#app .ox-vite-chat-shell .oxc-toolbar-btn { width: 40px; height: 40px; min-width: 40px; flex: 0 0 auto; border-radius: var(--ox-radius-sm, 10px); color: var(--ox-text-secondary, #63778d); }
+#app .ox-vite-chat-shell .oxc-toolbar-btn.is-active { color: var(--ox-accent, #168abb); background: var(--ox-accent-soft, #e5f4fb); }
+#app .ox-vite-chat-shell .oxc-toolbar-btn.oxc-role-trigger,
+#app .ox-vite-chat-shell .oxc-toolbar-btn.oxc-tools-trigger { display: inline-flex; width: auto; padding: 0 9px; gap: 7px; font-size: 12px; }
+#app .ox-vite-chat-shell .oxc-role-trigger span { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#app .ox-vite-chat-shell .oxc-role-trigger img { width: 24px; height: 24px; border-radius: 8px; object-fit: cover; }
+#app .ox-vite-chat-shell .oxc-send-btn { width: 40px; height: 40px; border-radius: 50%; }
+#app .ox-vite-chat-shell .oxc-send-btn:disabled { opacity: .35; cursor: default; }
+#app .ox-vite-chat-shell .oxc-context-strip--below { max-width: var(--chat-reading-width); min-height: 24px; margin: 4px auto 0; padding: 0 8px; gap: 12px; justify-content: space-between; background: transparent; border: 0; }
+#app .ox-vite-chat-shell .oxc-composer-hint { font-size: 10px; color: var(--ox-text-muted, #8192a2); opacity: .8; }
+#app .ox-vite-chat-shell .oxc-composer-error { margin: 0 4px 6px; color: var(--ox-danger, #bb4758); font-size: 12px; line-height: 1.6; }
+#app .ox-vite-chat-shell .oxc-avatar-file { display: none; }
+#app .ox-vite-chat-shell .oxc-empty { flex: 1; justify-content: center; padding: 24px 8px 36px; gap: 12px; }
+#app .ox-vite-chat-shell .oxc-empty h2 { font-size: clamp(22px, 2.2vw, 30px) !important; font-weight: 580 !important; letter-spacing: -.6px; color: var(--ox-text-primary, #1c334b); margin: 0; }
+#app .ox-vite-chat-shell .oxc-empty p { max-width: 430px; line-height: 1.7; margin: 0; font-size: 13px; color: var(--ox-text-secondary, #63778d); }
+#app .ox-vite-chat-shell .oxc-welcome-identity { width: 52px; height: 52px; margin-bottom: 2px; display: grid; place-items: center; }
+#app .ox-vite-chat-shell .oxc-welcome-identity img { width: 48px; height: 48px; border-radius: 16px; object-fit: contain; }
+#app .ox-vite-chat-shell .oxc-welcome-eyebrow { color: var(--ox-accent, #168abb); font-size: 12px; font-weight: 550; letter-spacing: .3px; }
+#app .ox-vite-chat-shell .oxc-welcome-actions { margin-top: 14px; display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
+#app .ox-vite-chat-shell .oxc-welcome-actions button { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px; border: 1px solid var(--ox-border, #dde6ed); border-radius: var(--ox-radius-md, 12px); background: var(--ox-bg-surface, #fff); color: var(--ox-text-secondary, #63778d); cursor: pointer; font-size: 12px; }
+#app .ox-vite-chat-shell .oxc-welcome-actions button:hover { border-color: var(--ox-accent, #168abb); color: var(--ox-accent, #168abb); }
+#app .ox-vite-chat-shell .oxc-project-welcome { padding-top: 42px; }
+#app .ox-vite-chat-shell .oxc-msg { position: relative; gap: 0; margin-bottom: 22px; scroll-margin-top: 24px; outline: none; }
+#app .ox-vite-chat-shell .oxc-msg__avatar { position: absolute; top: 0; left: 0; border: 0; width: 32px; height: 32px; border-radius: 11px; background: var(--ox-accent-soft, #e5f4fb); color: var(--ox-accent, #168abb); font-size: 11px; font-weight: 650; cursor: pointer; }
+#app .ox-vite-chat-shell .oxc-msg__content { min-width: 0; flex: 1; }
+#app .ox-vite-chat-shell .oxc-msg__identity-name { display: block; box-sizing: border-box; min-height: 32px; margin: 0 0 13px; padding: 6px 0 0 44px; color: var(--ox-text-secondary, #63778d); font-size: 12px; font-weight: 550; }
+#app .ox-vite-chat-shell .oxc-msg__bubble--ai { padding: 0; max-width: 100%; font-size: 14px; line-height: 1.85; background: transparent; border: 0 !important; box-shadow: none !important; }
+#app .ox-vite-chat-shell .oxc-msg__bubble--user { padding: 12px 18px; max-width: min(88%, 650px); width: fit-content; margin-left: auto; border-radius: calc(var(--ox-radius-lg, 16px) + 2px); font-size: 14px; line-height: 1.75; background: color-mix(in srgb, var(--ox-accent-soft, #e5f4fb) 56%, var(--ox-bg-surface, #fff)); color: var(--ox-text-primary, #1c334b); white-space: pre-wrap; overflow-wrap: anywhere; }
+#app .ox-vite-chat-shell .oxc-msg:focus .oxc-msg__bubble { outline: 2px solid var(--ox-accent-soft, #d7edf5); outline-offset: 5px; }
+#app .ox-vite-chat-shell .oxc-msg.is-navigation-target .oxc-msg__bubble--user { background: var(--ox-accent-soft, #e5f4fb) !important; outline: 2px solid var(--ox-accent, #168abb); outline-offset: 3px; }
+#app .ox-vite-chat-shell .oxc-msg.is-navigation-target .oxc-message-actions { color: var(--ox-accent, #168abb); }
+#app .ox-vite-chat-shell .oxc-message-actions { display: flex; align-items: center; gap: 2px; margin-top: 6px; color: var(--ox-text-muted, #8192a2); }
+#app .ox-vite-chat-shell .is-user .oxc-message-actions { justify-content: flex-end; }
+#app .ox-vite-chat-shell .oxc-message-actions button { width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; opacity: .5; }
+#app .ox-vite-chat-shell .oxc-msg:hover .oxc-message-actions button,
+#app .ox-vite-chat-shell .oxc-message-actions button:focus-visible { opacity: 1; }
+#app .ox-vite-chat-shell .oxc-message-actions button:hover { background: var(--ox-accent-soft, #e5f4fb); color: var(--ox-accent, #168abb); }
+#app .ox-vite-chat-shell .oxc-message-actions time { margin-left: 8px; font-size: 10px; opacity: .55; }
+#app .ox-vite-chat-shell .oxc-memory-receipt { display: flex; gap: 8px; align-items: center; padding: 4px 8px; min-height: 36px; margin: 2px 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--ox-text-secondary, #63778d); cursor: pointer; font-size: 11px; }
+#app .ox-vite-chat-shell .oxc-memory-receipt:hover { background: var(--ox-accent-soft, #e5f4fb); color: var(--ox-accent, #168abb); }
+#app .ox-vite-chat-shell .oxc-memory-controls { min-width: 300px; max-width: calc(100vw - 88px); }
+#app .ox-vite-chat-shell .oxc-input-wrapper .oxc-popover { left: auto; right: 0; width: 300px; min-width: 0; max-width: calc(100vw - 82px); max-height: min(480px, calc(100dvh - var(--oxc-composer-space, 190px) - 100px)); overflow-y: auto; box-sizing: border-box; }
+#app .ox-vite-chat-shell .oxc-input-wrapper .oxc-popover { background: var(--ox-bg-surface, #fff); color: var(--ox-text-primary, #1c334b); border-color: var(--ox-border, #dde6ed); box-shadow: 0 12px 34px color-mix(in srgb, var(--ox-text-primary, #183047) 13%, transparent); }
+#app .ox-vite-chat-shell .oxc-input-wrapper .oxc-popover--role-card,
+#app .ox-vite-chat-shell .oxc-input-wrapper .oxc-memory-controls { left: 0; right: auto; width: 320px; }
+#app .ox-vite-chat-shell .oxc-input-wrapper .oxc-popover--context { width: 340px; }
+#app .ox-vite-chat-shell .oxc-input-wrapper .oxc-popover__head { align-items: flex-start; flex-wrap: wrap; gap: 6px 12px; }
+#app .ox-vite-chat-shell .oxc-input-wrapper .oxc-popover__head :is(strong, small) { min-width: 0; overflow-wrap: anywhere; }
+#app .ox-vite-chat-shell .oxc-context-rows > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; align-items: start; }
+#app .ox-vite-chat-shell .oxc-context-rows > div strong { text-align: right; overflow-wrap: anywhere; }
+#app .ox-vite-chat-shell .oxc-memory-controls__note { padding: 4px 12px 10px; font-size: 11px; line-height: 1.65; color: var(--ox-text-secondary, #63778d); }
+#app .ox-vite-chat-shell .oxc-popover__option-copy { min-width: 0; }
+#app .ox-vite-chat-shell .oxc-popover__option-copy small { overflow-wrap: anywhere; }
+#app .ox-vite-chat-shell .oxc-sent-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+#app .ox-vite-chat-shell .is-user .oxc-sent-attachments { justify-content: flex-end; }
+#app .ox-vite-chat-shell .oxc-sent-attachment { min-width: 0; max-width: min(280px, 100%); border-radius: var(--ox-radius-md, 12px); overflow: hidden; }
+#app .ox-vite-chat-shell .oxc-sent-attachment img { display: block; width: auto; height: 136px; max-width: 100%; object-fit: cover; }
+#app .ox-vite-chat-shell .oxc-sent-attachment span { display: flex; gap: 8px; padding: 12px; font-size: 12px; color: var(--ox-text-secondary, #63778d); background: var(--ox-bg-surface, #fff); border: 1px solid var(--ox-border, #dde6ed); border-radius: inherit; overflow-wrap: anywhere; }
+#app .ox-vite-chat-shell .oxc-return-latest { position: absolute; left: 50%; top: -36px; transform: translateX(-50%); z-index: 15; display: inline-flex; align-items: center; white-space: nowrap; gap: 8px; min-height: 36px; padding: 0 14px; border: 1px solid var(--ox-border, #dde6ed); border-radius: 24px; background: var(--ox-bg-surface, #fff); color: var(--ox-text-primary, #1c334b); box-shadow: var(--ox-shadow-card, 0 3px 12px #1020300a); cursor: pointer; font-size: 12px; }
+#app .ox-vite-chat-shell .oxc-inspector { flex: 0 0 365px; width: 365px; min-width: 0; max-height: 100%; border-left: 1px solid var(--ox-border, #dde6ed); }
+#app .ox-vite-chat-shell .oxc-settings-toggle { display: none; }
+#app .ox-vite-chat-shell .oxc-settings-panel { z-index: 35; }
+#app .ox-vite-chat-shell .oxc-conversations-handle { display: none; }
+#app .ox-vite-chat-shell :is(button, a):focus-visible { outline: 2px solid var(--ox-accent, #168abb); outline-offset: 2px; }
+#app .ox-vite-chat-shell .oxc-conversation-backdrop { position: absolute; inset: 0; z-index: 29; background: #091c303d; border: 0; }
+#app .ox-vite-chat-shell :is(.oxc-conversation-item, .oxc-input-card, .oxc-msg__bubble--user, .oxc-message-actions button, .oxc-memory-receipt) { transition: background-color 180ms cubic-bezier(.2,.8,.2,1), color 180ms ease, box-shadow 200ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease, outline-color 180ms ease; }
+
+@media (max-width: 999px) {
+  #app .ox-vite-chat-shell .oxc-conversations { display: flex !important; position: absolute; inset: 0 auto 0 0; width: min(290px, 85%) !important; z-index: 30; box-shadow: 10px 0 35px #091c301f; }
+  #app .ox-vite-chat-shell .oxc-inspector { position: absolute; inset: 0 0 0 auto; z-index: 32; width: min(420px, 100%); box-shadow: -15px 0 40px #091c301f; }
+  #app .ox-vite-chat-shell .oxc-header__model { max-width: 180px; }
+  #app .ox-vite-chat-shell .oxc-input-wrapper { padding: 8px 20px 8px 42px; }
+  #app .ox-vite-chat-shell .oxc-stream { padding: 20px 20px 24px 42px; }
+}
+@media (max-width: 680px) {
+  #app .ox-vite-chat-shell .oxc-header { min-height: 52px !important; gap: 4px; padding: 0 8px !important; }
+  #app .ox-vite-chat-shell .oxc-header__left { flex: 1; flex-wrap: wrap; gap: 0 6px; }
+  #app .ox-vite-chat-shell .oxc-header__title { max-width: 120px; font-size: 12px !important; }
+  #app .ox-vite-chat-shell .oxc-header__model { max-width: 120px; padding: 0 4px; font-size: 10px; }
+  #app .ox-vite-chat-shell .oxc-header__right { gap: 0; }
+  #app .ox-vite-chat-shell .oxc-header__right .oxc-icon-btn { width: 36px; flex-basis: 36px; }
+  #app .ox-vite-chat-shell .oxc-stream { padding: 16px 16px 20px 40px; }
+  #app .ox-vite-chat-shell .oxc-input-wrapper { padding: 6px 16px 6px 40px; }
+  #app .ox-vite-chat-shell .oxc-input-card { padding: 8px; }
+  #app .ox-vite-chat-shell .oxc-input-card__textarea { font-size: 14px; }
+  #app .ox-vite-chat-shell .oxc-input-toolbar__left { gap: 0; }
+  #app .ox-vite-chat-shell .oxc-role-trigger span { max-width: 65px; }
+  #app .ox-vite-chat-shell .oxc-composer-hint { font-size: 9px; }
+  #app .ox-vite-chat-shell .oxc-empty { padding: 18px 0; }
+  #app .ox-vite-chat-shell .oxc-empty h2 { font-size: 22px !important; }
+  #app .ox-vite-chat-shell .oxc-welcome-actions { gap: 6px; }
+  #app .ox-vite-chat-shell .oxc-welcome-actions button { padding: 8px; font-size: 11px; }
+  #app .ox-vite-chat-shell .oxc-msg { gap: 0; }
+  #app .ox-vite-chat-shell .oxc-msg__avatar { width: 26px; height: 28px; flex-basis: 26px; font-size: 9px; }
+  #app .ox-vite-chat-shell .oxc-msg__identity-name { padding-left: 34px; min-height: 28px; }
+  #app .ox-vite-chat-shell .oxc-msg__bubble--user { max-width: 94%; padding: 10px 12px; }
+  #app .ox-vite-chat-shell .oxc-msg__bubble--ai { font-size: 13px; }
+  #app .ox-vite-chat-shell .oxc-popover { max-width: calc(100vw - 82px); }
+  #app .ox-vite-chat-shell .oxc-memory-controls { min-width: min(280px, calc(100vw - 82px)); left: auto; right: -84px; }
+  #app .ox-vite-chat-shell .oxc-input-wrapper .oxc-popover { position: fixed; left: 62px; right: 12px; bottom: var(--oxc-composer-space, 190px); width: auto; min-width: 0; max-width: none; max-height: calc(100dvh - var(--oxc-composer-space, 190px) - 130px); overflow-y: auto; box-sizing: border-box; }
+  #app .ox-vite-chat-shell .oxc-input-wrapper .oxc-popover::after { display: none; }
+}
+@media (pointer: coarse) {
+  #app .ox-vite-chat-shell :is(.oxc-toolbar-btn, .oxc-send-btn, .oxc-message-actions button) { min-width: 44px; min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #app .ox-vite-chat-shell * { scroll-behavior: auto !important; animation-duration: .001ms !important; transition: none !important; }
+}

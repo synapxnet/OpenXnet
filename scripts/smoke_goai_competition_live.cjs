@@ -5,6 +5,7 @@ const { createHmac } = require("node:crypto")
 const { rm } = require("node:fs/promises")
 const os = require("node:os")
 const path = require("node:path")
+const { readCompetitionSkillCertification, resolveCompetitionEnvironmentFingerprint } = require("../build-ts/desktop/competition/competition-skill-certification")
 
 const {
   ApplicationCompetitionRuntimeService,
@@ -434,12 +435,23 @@ async function main() {
     userDataDirectory,
     fixtureAdapter,
     liveAdapter,
+    /** 按当前 HTTPS 入口和解析地址确认环境，缺配置时不声明复用。 / Confirm current HTTPS endpoints and resolved addresses; missing configuration never claims reuse. */
+    resolveCurrentEnvironmentFingerprint: () => resolveCompetitionEnvironmentFingerprint({
+      fingerprint: process.env.OPENXNET_GOAI_CERTIFICATION_ENVIRONMENT_FINGERPRINT,
+      expectedEndpoints: {
+        aiops: process.env.OPENXNET_GOAI_CERTIFICATION_AIOPS_URL,
+        dataops: process.env.OPENXNET_GOAI_CERTIFICATION_DATAOPS_URL,
+        mlops: process.env.OPENXNET_GOAI_CERTIFICATION_MLOPS_URL,
+      },
+      resolveEndpoint: async (platform) => endpoints[platform],
+    }),
     publishApproval: (approval) => publisher.publish(approval),
     resolveTeamTemplate: enterpriseRuntime === null
       ? undefined
       : (teamTemplateId) => enterpriseRuntime.resolveTeamTemplate(teamTemplateId),
     resolveEnabledEnterpriseSkill: enterpriseRuntime === null || skillRuntime === null
       ? undefined
+      /** 同时读取启用绑定、外部认证和当前原始制品摘要。 / Read the enabled binding, external certification, and current raw artifact digest together. */
       : async (workspaceId, skillId) => {
         const bindings = await enterpriseRuntime.listSkillBindings()
         const binding = bindings.bindings.find((item) => (
@@ -449,11 +461,18 @@ async function main() {
         const catalog = await skillRuntime.listSkills()
         const skill = catalog.skills.find((item) => item.id === skillId)
         if (!skill) return null
+        const certification = await readCompetitionSkillCertification({
+          skillsDirectory: skillRuntime.skillsDirectory,
+          skillId,
+          sourceIncidentId: binding.sourceIncidentId,
+          receiptPath: process.env.OPENXNET_GOAI_SKILL_CERTIFICATIONS_PATH,
+        })
         return {
           sourceIncidentId: binding.sourceIncidentId,
           lifecycleStatus: skill.lifecycleStatus,
           environmentScope: skill.environmentScope,
           productionEligible: skill.productionEligible,
+          ...(certification || {}),
         }
       },
     retrieveCompetitionKnowledge: (workspaceId, query) => knowledgeBoundary.retrieve(workspaceId, query),

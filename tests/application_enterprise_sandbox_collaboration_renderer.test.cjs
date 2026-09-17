@@ -2,11 +2,275 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const vm = require("node:vm");
+const THREE = require("../static/libs/three/build/three.cjs");
 
 /** 读取仓库内 UTF-8 文本；输入相对路径，返回完整内容。 */
 function readProjectFile(relativePath) {
   return fs.readFileSync(path.resolve(__dirname, "..", relativePath), "utf8");
 }
+
+function loadSandboxScene(globals = {}) {
+  const context = { window: {}, ...globals };
+  vm.runInNewContext(readProjectFile("static/js/enterprise3d.js"), context);
+  return Object.assign(Object.create(context.window.Enterprise3DScene.prototype), { THREE });
+}
+
+function loadSandboxMethod(name, nextName, globals = {}) {
+  const source = readProjectFile("static/js/vue_methods.js");
+  const start = source.indexOf(`  ${name}(`);
+  const end = source.indexOf(`  ${nextName}(`, start);
+  assert.ok(start >= 0 && end > start);
+  return vm.runInNewContext(`({${source.slice(start, end)}})`, globals)[name.replace(/^async /, "")];
+}
+
+test("opening a project form from the compact directory reveals its stage and preserves workspace scope", () => {
+  const open = loadSandboxMethod("openProjectForm", "getEnterpriseWorkspaceTypeLabel");
+  const app = {
+    sandboxNavigatorOpen: true,
+    sandboxDetailsOpen: true,
+    sandboxCurrentWs: "workspace-current",
+    createEmptyProjectDraft: overrides => ({ name: "", ...overrides }),
+  };
+  open.call(app, null, "workspace-selected");
+  assert.equal(app.sandboxNavigatorOpen, false);
+  assert.equal(app.sandboxDetailsOpen, false);
+  assert.equal(app.showProjectFloatPanel, true);
+  assert.equal(app.newProject.workspaceId, "workspace-selected");
+});
+
+test("opening staff creation from fullscreen members reveals the form instead of the member view", () => {
+  const open = loadSandboxMethod("openSandboxStaffForm", "zoomEnterpriseSandbox");
+  for (const fullscreen of [true, false]) {
+    const app = {
+      sandboxNavigatorOpen: true,
+      sandboxDetailsOpen: true,
+      sandboxCurrentWs: "workspace-current",
+      sandboxCurrentProject: "floor-current",
+      enterprise3DScene: { _isFullscreen: fullscreen },
+      createEmptyStaffRoleDraft: overrides => ({ ...overrides }),
+    };
+    open.call(app);
+    assert.equal(app.sandboxNavigatorOpen, false);
+    assert.equal(app.sandboxDetailsOpen, false);
+    assert.equal(fullscreen ? app.showSandboxFloatPanel : app.showStaffRoleForm, true);
+    assert.equal(app.newStaffRole.assignedWorkspace, "workspace-current");
+    assert.equal(app.newStaffRole.projectId, "floor-current");
+  }
+});
+
+test("opening enterprise chat from compact navigation reveals it before messages load", async () => {
+  const open = loadSandboxMethod("async openEnterpriseChat", "closeEnterpriseChat", {
+    document: { querySelector: () => null },
+  });
+  const app = {
+    sandboxNavigatorOpen: true,
+    sandboxDetailsOpen: true,
+    enterpriseChatRecipientIds: [],
+    enterpriseChatInput: "draft",
+    getEnterpriseChatWorkspaceId: () => "workspace-current",
+    getEnterpriseChatAvailableStaff: () => [{ id: "staff-one", name: "Alex" }],
+    async loadEnterpriseMessages() {
+      assert.equal(this.sandboxNavigatorOpen, false);
+      assert.equal(this.sandboxDetailsOpen, false);
+      assert.equal(this.showSandboxChatPanel, true);
+    },
+    startEnterpriseChatRefresh() {},
+    $nextTick: callback => callback(),
+  };
+  await open.call(app, { id: "staff-one", name: "Alex" });
+  assert.equal(app.selected3DAgent.id, "staff-one");
+  assert.deepEqual(Array.from(app.enterpriseChatRecipientIds), ["staff-one"]);
+  assert.equal(app.enterpriseChatInput, "@Alex draft");
+});
+
+test("leaving the sandbox releases its scene before switching enterprise modules", async () => {
+  const panel = { scrollTop: 420 };
+  const open = loadSandboxMethod("async openEnterpriseTab", "formatNumber", {
+    document: {
+      /** 定位内容面板，不允许定位或滚动整个外壳。 / Locate only the content panel, never the surrounding shell. */
+      querySelector(selector) { assert.equal(selector, '.ox-enterprise-detail-content'); return panel; },
+    },
+  });
+  const events = [];
+  const app = {
+    enterpriseTab: "enterprise-sandbox",
+    canUseEnterprise: true,
+    /** 模拟 Vue 渲染完成回调。 / Simulate Vue's render completion callback. */
+    $nextTick(callback) { callback(); },
+    dispose3DView() { events.push(`dispose:${this.enterpriseTab}`); },
+    async loadWorkspaceEnvs() { events.push(`load:${this.enterpriseTab}`); },
+  };
+  await open.call(app, "enterprise-workspaces");
+  assert.equal(panel.scrollTop, 0);
+  assert.deepEqual(events, ["dispose:enterprise-sandbox", "load:enterprise-workspaces"]);
+  await open.call(app, "enterprise-workspaces");
+  assert.equal(events.filter(event => event.startsWith("dispose:")).length, 1);
+});
+
+test("sandbox initialization replaces a detached scene when its container is remounted", async () => {
+  const container = { isConnected: true };
+  let disposed = 0;
+  const persisted = [];
+  class Scene {
+    constructor(target) { this.container = target; }
+    onBuildingClick() {}
+    onFloorClick() {}
+    onAgentClick() {}
+    onAgentDblClick() {}
+    onAgentMove(callback) { this.moveAgent = callback; }
+    onSelectedAgentPositionUpdate() {}
+    onGhostClick() {}
+    resize() {}
+  }
+  const init = loadSandboxMethod("async init3DView", "dispose3DView", {
+    Enterprise3DScene: Scene,
+    window: { Vue: { markRaw: value => value } },
+    document: { getElementById: () => container },
+    setTimeout() {},
+    console,
+  });
+  const app = {
+    enterprise3DScene: { container: {}, dispose() { disposed++; } },
+    async ensureEnterprise3DDependencies() {},
+    async waitForEnterprise3DContainer() {},
+    isCurrentLanguageZh: () => true,
+    syncEnterprise3DLevel() {},
+    staffRoles: [{ id: "staff-robot", bodyType: "robot" }],
+    async persistStaffRoleToEnterprise(role, options) {
+      persisted.push(JSON.parse(JSON.stringify({ role, options })));
+    },
+  };
+  await init.call(app);
+  assert.equal(disposed, 1);
+  assert.ok(app.enterprise3DScene instanceof Scene);
+  assert.equal(app.enterprise3DScene.container, container);
+  await app.enterprise3DScene.moveAgent({ id: "staff-robot" }, { x: 2.12345, z: -4.56789 });
+  assert.deepEqual(persisted, [{
+    role: { id: "staff-robot", bodyType: "robot", position3D: { x: 2.123, z: -4.568 } },
+    options: { createAgent: false },
+  }]);
+});
+
+test("staff appearance and finite coordinates survive repeated role-card normalization", () => {
+  const normalize = loadSandboxMethod("normalizeStaffRoleRecord", "resolveStaffRoleSkillIds");
+  const create = loadSandboxMethod("createEmptyStaffRoleDraft", "setStaffRoleIcon");
+  const app = { createEmptyStaffRoleDraft: create };
+  for (const bodyType of ["default", "engineer", "scholar", "captain", "ninja", "robot", "streamer", "geek"]) {
+    const raw = { id: bodyType, name: bodyType, bodyType, position3D: { x: 0, z: -4.125 } };
+    const once = normalize.call(app, raw);
+    const twice = normalize.call(app, once);
+    assert.equal(twice.bodyType, bodyType);
+    assert.equal(twice.position3D.x, 0);
+    assert.equal(twice.position3D.z, -4.125);
+    assert.notEqual(once.position3D, raw.position3D);
+    assert.notEqual(twice.position3D, once.position3D);
+  }
+  for (const position3D of [null, {}, [], { x: "0", z: 2 }, { x: NaN, z: 1 }, { x: 0, z: Infinity }]) {
+    assert.equal(normalize.call(app, { bodyType: "unsupported", position3D }).position3D, null);
+  }
+  assert.equal(normalize.call(app, { bodyType: "unsupported" }).bodyType, "default");
+});
+
+test("saving and reloading a staff draft preserves its selected avatar and location", async () => {
+  let stored = null;
+  const runtime = {
+    async saveApplicationEnterpriseRoleCard({ roleCard }) {
+      stored = JSON.parse(JSON.stringify(roleCard));
+      return { card: stored };
+    },
+    async listApplicationEnterpriseRoleCards() { return { cards: [stored] }; },
+  };
+  const app = {
+    createEmptyStaffRoleDraft: loadSandboxMethod("createEmptyStaffRoleDraft", "setStaffRoleIcon"),
+    normalizeStaffRoleRecord: loadSandboxMethod("normalizeStaffRoleRecord", "resolveStaffRoleSkillIds"),
+    persistStaffRoleToEnterprise: loadSandboxMethod("async persistStaffRoleToEnterprise", "async loadEnterpriseRoleCards"),
+    loadEnterpriseRoleCards: loadSandboxMethod("async loadEnterpriseRoleCards", "createEmptyEnterpriseTeamTemplateDraft", { console }),
+    enterpriseRoleCards: [],
+    staffRoles: [],
+    resolveStaffRoleSkillIds: () => [],
+    buildStaffRoleRuntimeSystemPrompt: () => "Design products.",
+    getApplicationEnterpriseRuntime: () => runtime,
+    async autoSaveSettings() {},
+    _refreshSandbox() {},
+    isCurrentLanguageZh: () => false,
+  };
+  app.newStaffRole = app.createEmptyStaffRoleDraft({ id: "designer", name: "Designer", bodyType: "robot", position3D: { x: 2.75, z: -1.5 } });
+  const save = loadSandboxMethod("async saveStaffRole", "async saveWorkspace", { console, setTimeout() {}, showNotification() {} });
+  await save.call(app);
+  assert.equal(stored.bodyType, "robot");
+  assert.deepEqual(stored.position3D, { x: 2.75, z: -1.5 });
+  assert.equal(app.staffRoles[0].bodyType, "robot");
+  assert.equal(app.staffRoles[0].position3D.x, 2.75);
+  assert.equal(app.staffRoles[0].position3D.z, -1.5);
+});
+
+test("sandbox camera fits tall buildings in both landscape and portrait viewports", () => {
+  const scene = loadSandboxScene();
+  scene._viewBounds = new THREE.Box3(new THREE.Vector3(-6, 0, -5), new THREE.Vector3(6, 64, 5));
+  for (const [width, height] of [[1200, 700], [390, 844]]) {
+    scene._getContainerSize = () => ({ width, height });
+    const view = scene._getDefaultCameraView();
+    const target = new THREE.Vector3(view.target.x, view.target.y, view.target.z);
+    scene.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
+    scene._applyCameraFrustum(view.distance, width, height);
+    scene.camera.position.copy(target).add(new THREE.Vector3(1.25, 1.35, 1.65).normalize().multiplyScalar(view.distance * 3));
+    scene.camera.lookAt(target);
+    scene.camera.updateMatrixWorld();
+    for (const x of [-6, 6]) {
+      for (const y of [0, 64]) {
+        for (const z of [-5, 5]) {
+          const projected = new THREE.Vector3(x, y, z).project(scene.camera);
+          assert.ok(Math.abs(projected.x) < 1 && Math.abs(projected.y) < 1, "scene corner was cropped");
+        }
+      }
+    }
+  }
+});
+
+test("sandbox resize retargets an in-flight camera transition", () => {
+  let now = 0;
+  let nextId = 1;
+  const frames = new Map();
+  const scene = loadSandboxScene({
+    performance: { now: () => now },
+    requestAnimationFrame: callback => { const id = nextId++; frames.set(id, callback); return id; },
+    cancelAnimationFrame: id => frames.delete(id),
+  });
+  let size = { width: 1200, height: 700 };
+  scene._getContainerSize = () => size;
+  scene._viewBounds = new THREE.Box3(new THREE.Vector3(-9, 0, -8), new THREE.Vector3(9, 4, 8));
+  scene.camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 1000);
+  scene.camera.position.set(14, 16, 14);
+  scene.renderer = { setSize() {} };
+  const initialView = scene._getDefaultCameraView();
+  scene._zoomCamera(initialView.distance, initialView.target);
+  now = 100;
+  size = { width: 390, height: 844 };
+  scene.resize();
+  assert.equal(frames.size, 1, "previous transition must be cancelled");
+  now = 1000;
+  for (const callback of [...frames.values()]) callback();
+  assert.ok(Math.abs(scene.camera.top - scene._getDefaultCameraView().distance) < 0.001);
+  assert.equal(scene._zoomFrame, null);
+});
+
+test("sandbox releases nested shared geometry, materials and textures exactly once", () => {
+  const scene = loadSandboxScene();
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const texture = new THREE.Texture();
+  const material = new THREE.MeshBasicMaterial({ map: texture });
+  const group = new THREE.Group();
+  const nested = new THREE.Group();
+  group.add(new THREE.Mesh(geometry, material), nested);
+  nested.add(new THREE.Mesh(geometry, material));
+  const disposed = { geometry: 0, texture: 0, material: 0 };
+  geometry.addEventListener("dispose", () => disposed.geometry++);
+  texture.addEventListener("dispose", () => disposed.texture++);
+  material.addEventListener("dispose", () => disposed.material++);
+  scene._disposeObjects([group]);
+  assert.deepEqual(disposed, { geometry: 1, texture: 1, material: 1 });
+});
 
 /** 验证项目楼层和企业群聊只通过 Main-owned 契约工作，且不复用普通聊天状态。 */
 test("enterprise sandbox persists project floors and isolates auditable group chat", () => {
@@ -58,7 +322,7 @@ test("enterprise sandbox persists project floors and isolates auditable group ch
   assert.doesNotMatch(initializer, /Object\.values\(services\)\.every/u);
   assert.match(chatBlock, /v-for="role in getEnterpriseChatAvailableStaff\(\)"/u);
   assert.match(chatBlock, /@click="toggleEnterpriseChatRecipient\(role\)"/u);
-  assert.match(chatBlock, /v-for="message in enterpriseMessages"/u);
+  assert.match(chatBlock, /v-for="message in getEnterpriseVisibleMessages\(\)"/u);
   assert.match(chatBlock, /message\.taskId/u);
   assert.match(chatBlock, /message\.traceId/u);
   assert.match(chatBlock, /v-if="!message\.operation"/u);
@@ -69,7 +333,7 @@ test("enterprise sandbox persists project floors and isolates auditable group ch
   assert.match(chatBlock, /getEnterpriseOperationDecisionLabel\(message\.operation\.decision\)/u);
   assert.match(chatBlock, /message\.operation\.toolNames/u);
   assert.match(chatBlock, /message\.operation\.evidenceIds/u);
-  assert.match(chatBlock, /@keydown\.enter\.exact\.prevent="sendEnterpriseMessage\(\)"/u);
+  assert.match(chatBlock, /@keydown\.enter\.exact="handleEnterpriseComposerEnter"/u);
   assert.match(chatBlock, /@click="startEnterpriseCompetitionTask\(\)"/u);
   assert.doesNotMatch(chatBlock, /v-for="\(message, index\) in messages"/u);
   assert.doesNotMatch(chatBlock, /v-model="userInput"/u);

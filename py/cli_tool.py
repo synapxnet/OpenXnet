@@ -48,6 +48,9 @@ from typing import AsyncIterator
 from datetime import datetime
 from collections import deque
 import aiofiles
+from py.conversation_file_receipts import (
+    CliFileEventCollector, FileChangeResult, capture_file_snapshot, completed_file_write,
+)
 import aiofiles.os
 import hashlib
 import anyio
@@ -576,7 +579,7 @@ async def docker_sandbox(command: str, background: bool = False) -> str | AsyncI
         return f"[ERROR] Docker 进程启动失败: {str(e)}"
 
 async def edit_file_patch_tool(path: str, old_string: str, new_string: str) -> str:
-    """[Docker] 精确字符串替换"""
+    """Docker 精确替换并返回已确认文件内容。 / Replace exact Docker text and return confirmed file content."""
     try:
         real_cwd = await _get_current_cwd()
         container_name = await get_or_create_docker_sandbox(real_cwd)
@@ -607,7 +610,7 @@ async def edit_file_patch_tool(path: str, old_string: str, new_string: str) -> s
         os.unlink(tmp_path)
         
         if cp_proc.returncode != 0: return "[Error] Patch copy failed."
-        return f"[Success] Patched '{path}'."
+        return completed_file_write(f"[Success] Patched '{path}'.", path, {"exists": True, "text": content}, {"exists": True, "text": new_content})
         
     except Exception as e:
         return f"[Error] Patch failed: {str(e)}"
@@ -891,6 +894,7 @@ async def tail_file_tool(path: str, lines: int = 100) -> str:
     except Exception as e: return str(e)
 
 async def edit_file_tool(path: str, content: str) -> str:
+    """写入 Docker 文件并验证复制成功，存在状态未知时只标记写入。 / Write Docker files and verify copy success, retaining unknown prior existence as a write."""
     try:
         real_cwd = await _get_current_cwd()
         container_name = await get_or_create_docker_sandbox(real_cwd)
@@ -902,7 +906,9 @@ async def edit_file_tool(path: str, content: str) -> str:
         proc = await asyncio.create_subprocess_exec("docker", "cp", tmp_path, dest, stdout=asyncio.subprocess.PIPE)
         await proc.wait()
         os.unlink(tmp_path)
-        return f"[Success] Saved {path}"
+        if proc.returncode != 0:
+            return "[Error] File copy failed."
+        return completed_file_write(f"[Success] Saved {path}", path, {}, {"exists": True, "text": content})
     except Exception as e: return str(e)
 
 async def search_files_tool(pattern: str, path: str = ".") -> str:
@@ -1363,11 +1369,12 @@ async def tail_file_tool_local(path: str, lines: int = 100) -> str:
     except Exception as e: return f"[Error] Tail failed: {str(e)}"
 
 async def edit_file_tool_local(path: str, content: str) -> str:
-    """[Local] 写入文件：修复了绝对路径误判问题"""
+    """本地受控写入并保留真实前后快照。 / Write within the local workspace and retain actual before/after snapshots."""
     try:
         cwd = await _get_current_cwd()
         # 这一步已经确保了 path 不会逃逸出 cwd
         target = resolve_strict_path(cwd, path, check_symlink=True)
+        before_snapshot = capture_file_snapshot(target)
         
         # [v0.5.2 P0] Git Shadow Checkpoint — 编辑前自动创建版本快照
         try:
@@ -1407,7 +1414,7 @@ async def edit_file_tool_local(path: str, content: str) -> str:
                 os.remove(temp_path)
             raise e
 
-        return f"Saved successfully{backup_msg}."
+        return completed_file_write(f"Saved successfully{backup_msg}.", path, before_snapshot, capture_file_snapshot(target))
 
     except Exception as e:
         return f"[Error] Edit failed: {str(e)}"
@@ -1538,13 +1545,14 @@ async def glob_files_tool_local(pattern: str, exclude: str = "") -> str:
         return f"[Error] Glob failed: {str(e)}"
 
 async def edit_file_patch_tool_local(path: str, old_string: str, new_string: str) -> str:
-    """[Local] 精确替换：自动处理换行符差异 (CRLF/LF) 与空白字符容错"""
+    """本地精确或兼容替换，回执读取实际写入内容。 / Replace local text with exact or compatible matching and read actual written content for receipts."""
     try:
         cwd = await _get_current_cwd()
         target = resolve_strict_path(cwd, path, check_symlink=True)
         
         if not target.exists():
             return f"[Error] File not found: {path}"
+        before_snapshot = capture_file_snapshot(target)
 
         # [v0.5.2 P0] Git Shadow Checkpoint — 精确替换前自动创建版本快照
         try:
@@ -1570,7 +1578,7 @@ async def edit_file_patch_tool_local(path: str, old_string: str, new_string: str
             new_content = content.replace(old_string, new_string, 1)
             async with aiofiles.open(target, 'w', encoding='utf-8') as f:
                 await f.write(new_content)
-            return "Patched successfully (Exact match)."
+            return completed_file_write("Patched successfully (Exact match).", path, before_snapshot, capture_file_snapshot(target))
 
         # --- 策略 2: 归一化换行符后替换 (处理 Windows/Linux 差异) ---
         # 将所有 \r\n 转换为 \n 进行比对
@@ -1585,7 +1593,7 @@ async def edit_file_patch_tool_local(path: str, old_string: str, new_string: str
             new_content_normalized = content_normalized.replace(old_normalized, new_normalized, 1)
             async with aiofiles.open(target, 'w', encoding='utf-8') as f:
                 await f.write(new_content_normalized)
-            return "Patched successfully (Normalized line endings match)."
+            return completed_file_write("Patched successfully (Normalized line endings match).", path, before_snapshot, capture_file_snapshot(target))
 
         # --- 策略 3: 容错匹配 (忽略行尾空格) ---
         # 如果还是找不到，尝试逐行对比，忽略 strip() 后的差异
@@ -1618,7 +1626,7 @@ async def edit_file_patch_tool_local(path: str, old_string: str, new_string: str
             
             async with aiofiles.open(target, 'w', encoding='utf-8') as f:
                 await f.write(final_content)
-            return "Patched successfully (Fuzzy match: ignored whitespace/indentation differences)."
+            return completed_file_write("Patched successfully (Fuzzy match: ignored whitespace/indentation differences).", path, before_snapshot, capture_file_snapshot(target))
 
         # --- 失败：提供详细诊断信息 ---
         # 帮助 AI 找到它可能想改的地方
@@ -2005,7 +2013,7 @@ async def _stream_claude_cli(
     permission_mode: object,
     secrets: tuple[str, ...],
 ) -> AsyncIterator[str]:
-    """运行 Claude CLI；输入可执行文件、提示词、目录、环境和权限，流式返回脱敏文本并清理进程。"""
+    """运行 Claude CLI 并保留已脱敏的文件事件。 / Run Claude CLI while retaining redacted file events and cleaning up the process."""
 
     if not prompt or len(prompt) > MAX_CLAUDE_CLI_PROMPT_LENGTH:
         yield "Claude Code request failed."
@@ -2022,6 +2030,7 @@ async def _stream_claude_cli(
     )
     stderr_task = asyncio.create_task(_discard_external_cli_stream(process.stderr))
     emitted_assistant_text = False
+    collector = CliFileEventCollector("cc", lambda text: _redact_external_cli_text(text, secrets))
     try:
         if process.stdin is None or process.stdout is None:
             raise RuntimeError("Claude Code streams are unavailable.")
@@ -2039,6 +2048,9 @@ async def _stream_claude_cli(
                 event = json.loads(raw_line.decode("utf-8", errors="strict"))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 continue
+            file_receipt = collector.feed(event)
+            if file_receipt is not None:
+                yield file_receipt
             is_assistant = isinstance(event, dict) and event.get("type") == "assistant"
             if isinstance(event, dict) and event.get("type") == "result" and emitted_assistant_text:
                 continue
@@ -2046,6 +2058,9 @@ async def _stream_claude_cli(
                 emitted_assistant_text = emitted_assistant_text or is_assistant
                 yield _redact_external_cli_text(text, secrets)
         return_code = await process.wait()
+        unfinished = collector.finish(return_code != 0)
+        if unfinished is not None:
+            yield unfinished
         if return_code != 0 and not emitted_assistant_text:
             yield "Claude Code request failed."
     finally:
@@ -2097,7 +2112,7 @@ async def claude_code(prompt) -> str | AsyncIterator[str]:
     return _stream()
 
 async def qwen_code(prompt: str) -> str | AsyncIterator[str]:
-    """Run Qwen Code with one selected Provider credential in child memory only."""
+    """运行 Qwen 并传递真实文件事件，凭据仅在子进程内存中。 / Run Qwen and forward actual file events with credentials confined to child memory."""
 
     settings = await load_settings()
     cwd = settings.get("CLISettings", {}).get("cc_path")
@@ -2116,18 +2131,23 @@ async def qwen_code(prompt: str) -> str | AsyncIterator[str]:
     executable = shutil.which("qwen") or "qwen"
 
     async def _stream():
+        """保留 Qwen 的公开文本和文件回执。 / Retain Qwen public text and file receipts."""
         try:
             permission_mode=qcSettings.get("permissionMode", "default")
             if permission_mode == "cowork":
                 permission_mode = "yolo"
             process = await asyncio.create_subprocess_exec(
-                executable, "-p", prompt, "--approval-mode", permission_mode,
+                executable, "-p", prompt, "--approval-mode", permission_mode, "--output-format", "stream-json",
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 cwd=cwd, env=runtime_environment,
             )
-            async for out in _merge_streams(read_stream(process.stdout), read_stream(process.stderr, is_error=True)):
-                yield _redact_external_cli_text(out, secrets)
+            collector = CliFileEventCollector("qc", lambda text: _redact_external_cli_text(text, secrets))
+            async for out in _merge_streams(_stream_cli_file_events(process.stdout, collector, secrets), read_stream(process.stderr, is_error=True)):
+                yield out if isinstance(out, FileChangeResult) else _redact_external_cli_text(out, secrets)
             await process.wait()
+            unfinished = collector.finish(process.returncode != 0)
+            if unfinished is not None:
+                yield unfinished
         except Exception:
             yield "Qwen Code request failed."
     return _stream()
@@ -2144,11 +2164,13 @@ def _normalize_codex_permission_mode(permission_mode: str) -> str:
 
 
 def _build_codex_exec_args(permission_mode: str, last_message_path: str) -> list[str]:
+    """启用真实 JSON 事件，同时沿用原权限参数。 / Enable actual JSON events while retaining existing permission arguments."""
     normalized = _normalize_codex_permission_mode(permission_mode)
     args = [
         "exec",
         "-",
         "--skip-git-repo-check",
+        "--json",
         "--color",
         "never",
         "--output-last-message",
@@ -2267,6 +2289,30 @@ def _build_codex_runtime_hint() -> str:
     return "OpenAI Codex CLI is not installed or not found in PATH."
 
 
+async def _stream_cli_file_events(stream, collector: CliFileEventCollector, secrets: tuple[str, ...]):
+    """从 JSONL 读取公开助手文本及文件事件，未知事件不转为正文。 / Read public assistant text and file events from JSONL without exposing unknown events as prose."""
+    async for line in read_stream(stream):
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            yield _redact_external_cli_text(line, secrets)
+            continue
+        if not isinstance(event, dict):
+            continue
+        receipt = collector.feed(event)
+        if receipt is not None:
+            yield receipt
+        item = event.get("item")
+        if collector.engine == "oc" and isinstance(item, dict) and item.get("type") == "agent_message" and event.get("type") == "item.completed":
+            if isinstance(item.get("text"), str):
+                yield _redact_external_cli_text(item["text"], secrets)
+        elif collector.engine == "qc" and event.get("type") == "message" and event.get("role") == "assistant":
+            if isinstance(event.get("content"), str):
+                yield _redact_external_cli_text(event["content"], secrets)
+        elif event.get("type") in {"error", "turn.failed"}:
+            yield "External CLI request failed."
+
+
 async def _stream_codex_native(
     executable: str,
     args: list[str],
@@ -2276,7 +2322,7 @@ async def _stream_codex_native(
     last_message_path: Path,
     secrets: tuple[str, ...],
 ):
-    """Stream native Codex output while redacting the selected Provider key."""
+    """读取原生 Codex 文件事件和脱敏文本。 / Stream native Codex file events and redacted text."""
 
     process = await asyncio.create_subprocess_exec(
         executable,
@@ -2294,14 +2340,18 @@ async def _stream_codex_native(
         process.stdin.close()
 
     output_received = False
+    collector = CliFileEventCollector("oc", lambda text: _redact_external_cli_text(text, secrets))
     async for out in _merge_streams(
-        read_stream(process.stdout),
+        _stream_cli_file_events(process.stdout, collector, secrets),
         read_stream(process.stderr, is_error=True),
     ):
-        output_received = True
-        yield _redact_external_cli_text(out, secrets)
+        output_received = output_received or bool(str(out))
+        yield out if isinstance(out, FileChangeResult) else _redact_external_cli_text(out, secrets)
 
     await process.wait()
+    unfinished = collector.finish(process.returncode != 0)
+    if unfinished is not None:
+        yield unfinished
     if process.returncode != 0:
         yield f"\n--- OpenAI Codex exec failed (exit {process.returncode}) ---"
         yield get_detailed_exit_info(process.returncode, executable)
@@ -2342,7 +2392,7 @@ async def _stream_codex_wsl(
     last_message_path: Path,
     secrets: tuple[str, ...],
 ):
-    """Stream WSL Codex output without placing its selected key in argv."""
+    """读取 WSL Codex 文件事件，凭据不进入命令参数。 / Stream WSL Codex file events without putting credentials in command arguments."""
 
     wsl_args = _build_codex_exec_args(permission_mode, _to_wsl_path(str(last_message_path)))
     wsl_command = " ".join(shlex.quote(part) for part in (["codex"] + wsl_args))
@@ -2363,14 +2413,18 @@ async def _stream_codex_wsl(
     )
 
     output_received = False
+    collector = CliFileEventCollector("oc", lambda text: _redact_external_cli_text(text, secrets))
     async for out in _merge_streams(
-        read_stream(process.stdout),
+        _stream_cli_file_events(process.stdout, collector, secrets),
         read_stream(process.stderr, is_error=True),
     ):
-        output_received = True
-        yield _redact_external_cli_text(out, secrets)
+        output_received = output_received or bool(str(out))
+        yield out if isinstance(out, FileChangeResult) else _redact_external_cli_text(out, secrets)
 
     await process.wait()
+    unfinished = collector.finish(process.returncode != 0)
+    if unfinished is not None:
+        yield unfinished
     if process.returncode != 0:
         yield f"\n--- OpenAI Codex WSL exec failed (exit {process.returncode}) ---"
         yield get_detailed_exit_info(process.returncode, "wsl codex")

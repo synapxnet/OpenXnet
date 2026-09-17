@@ -71,7 +71,7 @@ function createLeaseFactory(origin: string): {
   };
 }
 
-test("ApplicationChatService forwards bounded commands with private authorization", async () => {
+test("ApplicationChatService forwards bounded commands with private authorization", /** 验证私有认证及手动工具的来源会话不丢失。 / Verify private authorization and retained manual-tool conversation ownership. */ async () => {
   const requests: RecordedRequest[] = [];
   const server = await startTestServer(async (request, response) => {
     const body = await readRequestBody(request);
@@ -88,39 +88,98 @@ test("ApplicationChatService forwards bounded commands with private authorizatio
   try {
     const completion = await service.complete({
       mode: "simple",
-      request: { messages: [{ role: "user", content: "hello" }] },
+      request: { messages: [{ role: "user", content: "hello" }], conversationId: "" },
     });
     const models = await service.listModels();
     const tool = await service.executeTool({
       toolName: "search_tool",
       toolParameters: { query: "desktop" },
       approvalId: "approval-1",
+      conversationId: "conversation-current",
     });
     const approval = await service.resolveApproval({
       approvalId: "approval-1",
       resolution: "approved",
     });
+    const legacyTool = await service.executeTool({ toolName: "search_tool", toolParameters: {}, conversationId: "" });
 
     assert.equal(completion.schema, APPLICATION_CHAT_RESPONSE_SCHEMA);
     assert.equal(completion.statusCode, 200);
     assert.deepEqual(models.body, { ok: true, path: "/v1/models" });
     assert.equal(tool.statusCode, 200);
     assert.equal(approval.statusCode, 200);
+    assert.equal(legacyTool.statusCode, 200);
     assert.deepEqual(requests.map((request) => request.path), [
       "/simple_chat",
       "/v1/models",
       "/execute_tool_manually",
       "/v1/chat/tools/approval",
+      "/execute_tool_manually",
     ]);
     assert.ok(requests.every((request) => request.authorization === "Bearer private-token"));
     assert.equal(requests[0]?.body.stream, false);
     assert.deepEqual(requests[2]?.body.tool_params, { query: "desktop" });
+    assert.equal(requests[2]?.body.conversationId, "conversation-current");
     assert.equal(requests[3]?.body.consume, true);
-    assert.deepEqual(leases.releaseCounts, [1, 1, 1, 1]);
+    assert.equal(requests[4]?.body.conversationId, undefined);
+    assert.deepEqual(leases.releaseCounts, [1, 1, 1, 1, 1]);
   } finally {
     service.close();
     await server.close();
   }
+});
+
+test("ApplicationChatService uses an authenticated encoded GET for recovery and returns only matching public status", /** 核对真实HTTP方法、参数编码、脱敏响应及租约释放。 / Verify the actual HTTP method, encoded parameters, public response, and lease release. */ async () => {
+  const conversationId = "会话&scope=other";
+  const server = await startTestServer(/** 仅响应本测试的固定状态查询。 / Respond only to this test's fixed status query. */ async (request, response) => {
+    assert.equal(request.method, "GET"); assert.equal(request.headers.authorization, "Bearer private-token");
+    const url = new URL(request.url!, "http://127.0.0.1");
+    assert.equal(url.pathname, "/v1/chat/recovery-status"); assert.equal(url.searchParams.get("conversation_id"), conversationId);
+    assert.deepEqual([...url.searchParams.keys()], ["conversation_id"]);
+    const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    assert.equal(Buffer.concat(chunks).length, 0);
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ conversationId, state: "running", abortRequested: true, registeredAt: "2026-09-14T10:00:00Z", prompt: "private-source", toolParameters: "private-parameters" }));
+  });
+  const leases = createLeaseFactory(server.origin);
+  const service = new ApplicationChatService({ token: "private-token", acquireEngine: leases.acquire });
+  try {
+    const result = await service.getRecoveryStatus({ conversationId });
+    assert.deepEqual(result.body, { conversationId, state: "running", abortRequested: true, registeredAt: "2026-09-14T10:00:00Z" });
+    assert.doesNotMatch(JSON.stringify(result), /private-source|private-parameters|private-token/);
+    assert.deepEqual(leases.releaseCounts, [1]);
+  } finally { service.close(); await server.close(); }
+});
+
+test("ApplicationChatService rejects invalid and conflicting conversation identities before engine acquisition", /** 无效恢复和工具身份不能激活引擎。 / Invalid recovery and tool identities cannot activate an engine. */ async () => {
+  let acquisitions = 0;
+  const service = new ApplicationChatService({ token: "private-token", /** 无效请求不得到达此工厂。 / Invalid requests must not reach this factory. */ acquireEngine: async () => { acquisitions += 1; throw new Error("Unexpected acquisition"); } });
+  try {
+    for (const conversationId of ["", " ", "x\n", "x\0", "x".repeat(513), 42]) {
+      await assert.rejects(service.getRecoveryStatus({ conversationId }));
+      if (conversationId !== "") await assert.rejects(service.executeTool({ toolName: "search", toolParameters: {}, conversationId }));
+    }
+    await assert.rejects(service.getRecoveryStatus({ conversationId: "correct", url: "http://untrusted/" }));
+    await assert.rejects(service.complete({ mode: "chat", request: { messages: [{ role: "user", content: "hello" }], conversationId: "one", conversation_id: "two" } }), /identities conflict/);
+    assert.equal(acquisitions, 0);
+  } finally { service.close(); }
+});
+
+test("ApplicationChatService never treats failed or mismatched recovery responses as idle", /** 失败与身份不匹配不得变成空闲证据。 / Failures and identity mismatches cannot become idle evidence. */ async () => {
+  let sequence = 0;
+  const server = await startTestServer(/** 顺序返回身份错误、服务失败与无效状态。 / Return an identity mismatch, service failure, and invalid state in sequence. */ (_request, response) => {
+    sequence += 1; response.writeHead(sequence === 2 ? 503 : 200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(sequence === 1 ? { conversationId: "different", state: "idle" } : sequence === 2 ? { error: "private failure details" } : { conversationId: "original", state: "not-a-state" }));
+  });
+  const leases = createLeaseFactory(server.origin);
+  const service = new ApplicationChatService({ token: "private-token", acquireEngine: leases.acquire });
+  try {
+    await assert.rejects(service.getRecoveryStatus({ conversationId: "original" }), /recovery response is invalid/);
+    const failure = await service.getRecoveryStatus({ conversationId: "original" });
+    assert.equal(failure.statusCode, 503); assert.deepEqual(failure.body, { conversationId: "original", state: "unknown" });
+    await assert.rejects(service.getRecoveryStatus({ conversationId: "original" }), /recovery response is invalid/);
+    assert.deepEqual(leases.releaseCounts, [1, 1, 1]);
+  } finally { service.close(); await server.close(); }
 });
 
 test("ApplicationChatService preserves stream bytes, order, and lease ownership", async () => {

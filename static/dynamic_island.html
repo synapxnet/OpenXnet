@@ -1513,8 +1513,11 @@ Security Level: INTERNAL
       }
     }
   </style>
+  <link rel="stylesheet" href="/css/openxnet-desktop-companions.css" />
+  <script src="/js/openxnet-skins.js"></script>
+  <script src="/js/openxnet-companion-theme.js"></script>
 </head>
-<body>
+<body data-companion="island">
   <div id="shell" class="shell compact">
     <div id="header" class="header" title="Click to expand or collapse">
       <div class="brand">
@@ -1634,6 +1637,9 @@ Security Level: INTERNAL
             <div id="desktopLayoutPresetGrid" class="desktop-layout-grid"></div>
           </div>
         </div>
+        <button type="button" class="companion-open" data-companion-open hidden>查看会话或任务 <span aria-hidden="true">↗</span></button>
+        <details class="companion-disclosure">
+          <summary>执行详情与观察记录</summary>
         <div class="timeline">
           <div class="timeline-item">
             <div id="taskIdLabel" class="timeline-label">Task ID</div>
@@ -1674,6 +1680,7 @@ Security Level: INTERNAL
             <div class="empty">Select a delivery with a Task ID to preview the latest observation trail.</div>
           </div>
         </div>
+        </details>
       </div>
 
       <div class="card">
@@ -1685,6 +1692,7 @@ Security Level: INTERNAL
     </div>
   </div>
 
+  <script src="/js/openxnet-companion-events.js"></script>
   <script>
     const HOME_CURRENT_FLOW_LAUNCH_STORAGE_KEY = 'openxnet-home-current-flow-launch';
     const RECALL_LAUNCH_STORAGE_KEY = 'openxnet-recall-center-launch';
@@ -1747,7 +1755,7 @@ Security Level: INTERNAL
       recurring: '循环',
       live: '实时',
       noDeliveriesYet: '暂无任务投递',
-      noDeliverySummary: '调度器或覆盖层 API 发布任务投递事件后，最新结果会在这里展开。',
+      noDeliverySummary: '任务进度和完成结果会显示在这里，可随时回到原会话继续查看。',
       taskId: '任务 ID',
       action: '动作',
       timestamp: '时间',
@@ -1892,12 +1900,12 @@ Security Level: INTERNAL
       dynamicIslandFlowSynced: '灵动岛观察流已同步',
       taskHudFlowSynced: '任务 HUD 观察流已同步',
       currentFlowSynced: '当前观察流已同步',
-      overlayConnected: '覆盖层 WebSocket 已连接',
-      overlayReconnecting: '正在重新连接覆盖层 WebSocket',
+      overlayConnected: '任务动态已连接',
+      overlayReconnecting: '正在连接任务动态',
       taskDeliveryReceived: '收到任务投递',
       liveOverlaySurface: '实时悬浮面板',
       noSummaryProvided: '暂无摘要',
-      generatedByOverlayApi: '由覆盖层 API 生成',
+      generatedByOverlayApi: '会话结果',
       unknownWindow: '未知窗口',
       desktopAction: '桌面动作',
       selectedWindow: '已选窗口',
@@ -1933,6 +1941,10 @@ Security Level: INTERNAL
       completed: '已完成',
       delivered: '已送达',
       running: '执行中',
+      action_required: '待人工决定',
+      enterpriseRun: '企业运行',
+      enterpriseRunDetails: '从上方“查看运行详情”返回运行指挥台，查看完整证据和人工决定。',
+      entryType: '类型',
       processing: '处理中',
       failed: '失败',
       error: '错误',
@@ -2021,6 +2033,15 @@ Security Level: INTERNAL
     let forceExpanded = false;
     let latestDelivery = null;
     let currentDelivery = null;
+    // 单一公开事件桥接，原套接字继续复用。 / Bridge public events once while retaining the existing socket.
+    const companionBridge = window.OpenXnetCompanionEvents.createBridge({
+      surface: 'dynamic_island', onDelivery: handleDelivery,
+      /** 记录连接错误，不生成虚假完成提醒。 / Record bridge errors without inventing completion notices. */
+      onError(error) { console.error('Companion completion bridge failed:', error); },
+    });
+    const companionOpenButton = companionBridge.bindOpenButton(document.querySelector('[data-companion-open]'),
+      /** 返回当前选择的会话结果。 / Return the currently selected conversation result. */
+      () => currentDelivery);
     let linkedObservationTarget = null;
     let observationItems = [];
     let observationState = { taskId: '', title: '', loading: false, error: '', loadedAt: '' };
@@ -2296,7 +2317,7 @@ Security Level: INTERNAL
     function collapseDynamicIslandSurface() {
       forceExpanded = false;
       setCompact(true);
-      queueSurfaceStateSync({ interactive: false, immediate: true });
+      queueSurfaceStateSync({ interactive: true, immediate: true });
       scheduleAutoCollapse();
     }
 
@@ -2330,9 +2351,8 @@ Security Level: INTERNAL
 
       window.requestAnimationFrame(() => {
         const compact = shell.classList.contains('compact');
-        const interactive = typeof options.interactive === 'boolean'
-          ? options.interactive
-          : (!compact || forceExpanded || shell.matches(':hover'));
+        // 折叠卡片本身就是展开入口，首击不应依赖悬停与IPC时序。 / The compact card is the expand control; its first click must not depend on hover or IPC timing.
+        const interactive = true;
         const bodyScrollHeight = islandBody ? islandBody.scrollHeight : 0;
         const bodyClientHeight = islandBody ? islandBody.clientHeight : 0;
         const shellRect = shell.getBoundingClientRect();
@@ -2388,7 +2408,7 @@ Security Level: INTERNAL
 
       surfaceResizeObserver = new window.ResizeObserver(() => {
         queueSurfaceStateSync({
-          interactive: forceExpanded || !shell.classList.contains('compact') || shell.matches(':hover'),
+          interactive: true,
           immediate: true,
         });
       });
@@ -2528,8 +2548,9 @@ Security Level: INTERNAL
       };
     }
 
+    /** 企业运行不继承之前普通任务的观察范围。 / Enterprise runs do not inherit a previously linked ordinary task scope. */
     function getObservationConsoleTarget(delivery = currentDelivery) {
-      return linkedObservationTarget || delivery || null;
+      return delivery?.source === 'enterprise_run' ? delivery : linkedObservationTarget || delivery || null;
     }
 
     function clearLinkedObservationTarget() {
@@ -3017,7 +3038,18 @@ Security Level: INTERNAL
       `;
     }
 
+    /** 按来源展示企业摘要或普通任务观察快照。 / Render an enterprise summary or ordinary task observation snapshot by source. */
     function renderObservationSnapshot(delivery) {
+      if (delivery?.source === 'enterprise_run') {
+        observationOpenHomeFlow.disabled = true; observationOpenTaskDetail.disabled = true;
+        observationOpenRecall.disabled = true; observationRefresh.disabled = true;
+        observationStatus.textContent = t('enterpriseRun', 'Enterprise Run');
+        observationSummary.textContent = String(delivery.summary || '');
+        observationMeta.innerHTML = ''; observationBadges.innerHTML = ''; observationMetrics.innerHTML = '';
+        observationList.innerHTML = `<div class="empty">${escapeHtml(t('enterpriseRunDetails', 'Open run details above to review evidence and human decisions in Operations Control.'))}</div>`;
+        queueSurfaceStateSync();
+        return;
+      }
       const activeTaskId = getObservationTaskId(delivery);
       const sameTask = Boolean(activeTaskId && observationState.taskId === activeTaskId);
       const scopedItems = sameTask ? observationItems : [];
@@ -3824,7 +3856,9 @@ Security Level: INTERNAL
       queueSurfaceStateSync();
     }
 
+    /** 渲染当前公开记录，保留企业运行的产品名称。 / Render the current public record with a product label for enterprise runs. */
     function renderPrimary(delivery) {
+      if (companionOpenButton) companionOpenButton.refresh();
       const activePrimary = delivery || linkedObservationTarget || null;
       // 灵动岛 has-activity 类：JS 单一信号源——有任务/观察流时挂上，紧凑胶囊
       // 会从最简 idle 形态 (~132px) morph 出右侧活动药丸，事毕自动缩回。
@@ -3881,8 +3915,8 @@ Security Level: INTERNAL
         return;
       }
 
-      taskIdLabel.textContent = t('taskId', 'Task ID');
-      taskIdValue.textContent = activePrimary.task_id || t('generatedByOverlayApi', 'Generated by overlay API');
+      taskIdLabel.textContent = activePrimary.source === 'enterprise_run' ? t('entryType', 'Type') : t('taskId', 'Task ID');
+      taskIdValue.textContent = activePrimary.source === 'enterprise_run' ? t('enterpriseRun', 'Enterprise Run') : activePrimary.task_id || t('generatedByOverlayApi', 'Generated by overlay API');
       timestampLabel.textContent = t('timestamp', 'Timestamp');
       timestampValue.textContent = formatTimestamp(activePrimary.timestamp);
       channelLabel.textContent = t('channel', 'Channel');
@@ -4105,7 +4139,8 @@ Security Level: INTERNAL
       }, 9000);
     }
 
-    function handleDelivery(message) {
+    /** 呈现实时或静默历史结果，保留会话和企业运行身份。 / Render live or silent results while retaining chat and enterprise run identities. */
+    function handleDelivery(message, options = {}) {
       const payload = message && message.data && typeof message.data === 'object' ? message.data : {};
       const channel = String(message.channel || payload.target || '').trim().toLowerCase();
       const presentation = String(payload.presentation || '').trim().toLowerCase();
@@ -4120,6 +4155,12 @@ Security Level: INTERNAL
         status: String(payload.status || 'completed').trim(),
         schedule_type: String(payload.schedule_type || '').trim(),
         task_id: String(payload.task_id || '').trim(),
+        conversation_id: String(payload.conversation_id || '').trim(),
+        completion_event_id: String(payload.completion_event_id || '').trim(),
+        source: String(payload.source || '').trim(),
+        workspace_id: String(payload.workspace_id || '').trim(),
+        incident_id: String(payload.incident_id || '').trim(),
+        trace_id: String(payload.trace_id || '').trim(),
         timestamp: String(payload.timestamp || new Date().toISOString()).trim(),
         target: channel || 'dynamic_island',
         desktop_control: payload.desktop_control && typeof payload.desktop_control === 'object'
@@ -4134,10 +4175,12 @@ Security Level: INTERNAL
         promoteHistoryDelivery(mergeTarget);
         renderPrimary(mergeTarget);
         renderHistory();
-        pulseHighlight();
-        setCompact(false);
-        scheduleAutoCollapse();
-        void syncObservationSnapshotForDelivery(mergeTarget, true);
+        if (!options.silent) {
+          pulseHighlight();
+          setCompact(false);
+          scheduleAutoCollapse();
+        }
+        if (!options.snapshot) void syncObservationSnapshotForDelivery(mergeTarget, true);
         return;
       }
 
@@ -4146,10 +4189,12 @@ Security Level: INTERNAL
       currentDelivery = delivery;
       renderPrimary(delivery);
       addHistory(delivery);
-      pulseHighlight();
-      setCompact(false);
-      scheduleAutoCollapse();
-      void syncObservationSnapshotForDelivery(delivery, true);
+      if (!options.silent) {
+        pulseHighlight();
+        setCompact(false);
+        scheduleAutoCollapse();
+      }
+      if (!options.snapshot) void syncObservationSnapshotForDelivery(delivery, true);
     }
 
     function setConnectionState(online) {
@@ -4184,7 +4229,7 @@ Security Level: INTERNAL
         try {
           const data = JSON.parse(event.data);
           if (data.action === 'task_delivery') {
-            handleDelivery(data);
+            companionBridge.acceptOverlay(data);
           } else if (data.action === 'observation_focus') {
             handleObservationFocus(data);
           } else if (data.action === 'observation_update') {
@@ -4224,7 +4269,7 @@ Security Level: INTERNAL
       forceExpanded = !forceExpanded;
       setCompact(!forceExpanded);
       queueSurfaceStateSync({
-        interactive: forceExpanded || !shell.classList.contains('compact'),
+        interactive: true,
         immediate: true,
       });
       if (!forceExpanded) {
@@ -4412,6 +4457,7 @@ Security Level: INTERNAL
     });
 
     window.addEventListener('beforeunload', () => {
+      companionBridge.dispose();
       window.clearInterval(heartbeatTimer);
       window.clearTimeout(reconnectTimer);
       window.clearTimeout(autoCollapseTimer);
@@ -4444,7 +4490,8 @@ Security Level: INTERNAL
       updateDesktopActionBar(null);
       renderObservationSnapshot(getObservationConsoleTarget());
       renderPrimary(getObservationConsoleTarget());
-      queueSurfaceStateSync({ interactive: false, immediate: true });
+      queueSurfaceStateSync({ interactive: true, immediate: true });
+      void companionBridge.start();
       connect();
     }
 
@@ -4453,7 +4500,8 @@ Security Level: INTERNAL
       renderHistory();
       updateDesktopActionBar(null);
       renderObservationSnapshot(getObservationConsoleTarget());
-      queueSurfaceStateSync({ interactive: false, immediate: true });
+      queueSurfaceStateSync({ interactive: true, immediate: true });
+      void companionBridge.start();
       connect();
     });
   </script>

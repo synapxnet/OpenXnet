@@ -35,7 +35,7 @@ test("staff role studio keeps the compact GOAI quick-create contract", () => {
   assert.match(data, /id: 'goai-verification-agent'/u);
   assert.match(methods, /createStaffFromGoaiShortcut\(shortcut = \{\}\)/u);
   assert.match(methods, /enterprise-workspaces'[\s\S]*?await this\.loadWorkspaceEnvs\(\)/u);
-  assert.match(methods, /mapApplicationEnterpriseWorkspaceToUi\(workspace = \{\}\)/u);
+  assert.match(methods, /mapApplicationEnterpriseWorkspaceToUi\(workspace = \{\}, roleCards = this\.enterpriseRoleCards\)/u);
   assert.match(methods, /buildApplicationEnterpriseWorkspaceDraft\(workspace = \{\}\)/u);
   assert.match(methods, /saveApplicationEnterpriseWorkspace/u);
   assert.match(methods, /removeApplicationEnterpriseWorkspace/u);

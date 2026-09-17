@@ -1,0 +1,124 @@
+/*
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+企业会话阅读工作台 / Enterprise conversation reading workbench.
+Author: maoyo | Department: 研发部 | Date: 2026-09-14
+Version: 1.0.0 | Security Level: INTERNAL
+__version__: 1.0.0 | __author__: maoyo | __copyright__: Copyright 2026 Synapxnet
+__maintainer__: maoyo | __email__: synapxnet@gmail.com
+*/
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat {
+  --ec-text: var(--sandbox-text, var(--ox-text-primary, #203046));
+  --ec-muted: var(--sandbox-text-muted, var(--ox-text-muted, #66768b));
+  --ec-border: var(--sandbox-border, var(--ox-border, #dce4ee));
+  --ec-accent: var(--sandbox-accent, var(--ox-accent, #3983ef));
+  --ec-surface: var(--ox-bg-surface, #fff);
+  --ec-soft: var(--sandbox-selection, rgba(65, 136, 231, .07));
+  color: var(--ec-text);
+  min-width: 0;
+}
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-panel__header { min-height: 48px; flex: 0 0 auto; padding: 4px 12px; gap: 4px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-panel__close { width: 40px; min-width: 40px; height: 40px; margin: 0; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-heading__icon { display: none; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-heading__scope { margin: 0; line-height: 13px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-panel__header-title { font-size: 13px; line-height: 19px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-work-tabs { display: flex; min-height: 40px; padding: 0 8px; gap: 2px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-work-tab { flex: 1 1 0; min-height: 40px; padding: 0 8px; white-space: nowrap; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-header-tool,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-task-options,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-error button {
+  min-height: 40px; border: 0; background: transparent; color: var(--ec-muted); border-radius: var(--ox-radius-sm, 8px); padding: 7px 10px; font: inherit; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-header-tool { flex: 0 0 40px; width: 40px; padding: 0; justify-content: center; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat button:focus-visible,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat summary:focus-visible,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message:focus-visible { outline: 2px solid var(--ec-accent); outline-offset: 3px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-header-tool:hover,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-task-options:hover { color: var(--ec-text); background: var(--ec-soft); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-error { display: flex; align-items: center; gap: 12px; padding: 8px 24px; background: var(--ec-soft); color: var(--ec-text); border-left: 3px solid var(--ec-accent); font-size: 12px; overflow-wrap: anywhere; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-error span { flex: 1; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-navigation { flex: 0 0 auto; max-height: 190px; overflow: auto; padding: 8px 24px; background: var(--ec-surface); border-bottom: 1px solid var(--ec-border); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-navigation button { display: flex; align-items: center; width: 100%; min-height: 44px; border: 0; border-left: 2px solid var(--ec-border); background: transparent; color: var(--ec-muted); text-align: left; padding: 8px 14px; gap: 16px; font: inherit; cursor: pointer; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-navigation button strong { color: var(--ec-text); font-size: 12px; max-width: 120px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-navigation button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-navigation button:hover,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-navigation button.is-active { border-color: var(--ec-accent); background: var(--ec-soft); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-members { flex: 0 0 auto; max-height: 146px; overflow: auto; padding: 10px 24px; gap: 8px; background: transparent; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-member { min-height: 40px; box-shadow: none; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-member__avatar img,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message__avatar img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-avatar-upload { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; font-size: 12px; color: var(--ec-accent); cursor: pointer; border: 1px dashed var(--ec-border); border-radius: var(--ox-radius-sm, 8px); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-avatar-upload input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-avatar-upload:focus-within { outline: 2px solid var(--ec-accent); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-avatar-upload.is-busy { opacity: .65; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-reading { position: relative; display: flex; flex: 1 1 0; min-height: 0; min-width: 0; overflow: hidden; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-messages { flex: 1 1 0; min-height: 0; min-width: 0; padding: 18px max(20px, calc((100% - 900px) / 2)) 56px; overflow-y: auto; overflow-x: hidden; scroll-behavior: auto; background: transparent; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message { display: flex; gap: 12px; margin: 0 0 25px; padding: 0; max-width: none; background: transparent; border: 0; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message__avatar { flex: 0 0 32px; width: 32px; height: 32px; border-radius: var(--ox-radius-sm, 9px); color: var(--ec-accent); background: var(--ec-soft); font-size: 11px; font-weight: 700; box-shadow: none; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message__main { min-width: 0; flex: 1; max-width: none; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message__meta { gap: 8px; padding: 0 0 7px; min-height: 22px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message__meta strong { color: var(--ec-text); font-size: 13px; font-weight: 600; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message__meta time { margin-left: auto; font-size: 10px; color: var(--ec-muted); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message__role { border: 0; background: transparent; padding: 0; font-size: 10px; color: var(--ec-muted); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-message-failed { color: var(--ec-text); border-bottom: 1px dashed currentColor; font-size: 11px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message__bubble { padding: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; color: var(--ec-text); font-size: 14px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message.is-leader .enterprise-sandbox-chat-message__bubble { display: inline-block; padding: 10px 14px; border-radius: var(--ox-radius-sm, 10px); background: var(--ec-soft); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-activity__summary { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 48px; padding: 8px 0; text-align: left; font: inherit; border: 0; background: transparent; color: var(--ec-muted); cursor: pointer; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-activity__summary > span { display: grid; gap: 5px; flex: 1; min-width: 0; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-activity__summary strong { color: var(--ec-text); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-activity__summary small { font-size: 11px; line-height: 1.5; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-activity__description { margin: 3px 0 9px 25px; font-size: 13px; color: var(--ec-muted); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-activity .enterprise-sandbox-operation { margin: 10px 0 0 7px; padding: 12px 0 12px 17px; border: 0; border-left: 2px solid var(--ec-border); border-radius: 0; box-shadow: none; background: transparent; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-activity .enterprise-sandbox-operation__title,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-activity .enterprise-sandbox-operation__summary { display: none; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-agent { padding: 8px 0; border-bottom: 1px solid var(--ec-border); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-agent summary { min-height: 44px; display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 12px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-agent summary span { color: var(--ec-muted); margin-left: auto; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-agent p,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-agent dl { font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-agent dt { color: var(--ec-muted); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-agent dd { margin: 0 0 8px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message__audit { font-size: 10px; color: var(--ec-muted); opacity: .75; overflow-wrap: anywhere; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-latest { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 2; min-height: 40px; max-width: calc(100% - 24px); white-space: nowrap; margin: 0; padding: 7px 16px; border: 1px solid var(--ec-border); border-radius: var(--ox-radius-sm, 10px); background: var(--ec-surface); color: var(--ec-accent); font: inherit; font-size: 12px; cursor: pointer; box-shadow: 0 2px 8px #0000000a; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-input { display: flex; flex-direction: column; gap: 4px; align-items: stretch; flex: 0 0 auto; min-width: 0; max-width: 100%; margin: 0 max(12px, calc((100% - 910px) / 2)) 12px; padding: 8px; border: 1px solid var(--ec-border); border-radius: var(--ox-radius, 14px); background: var(--ec-surface); box-shadow: none; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-compose-tools { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-task-options { margin-right: auto; min-width: 0; max-width: 100%; padding: 2px 6px; min-height: 40px; white-space: nowrap; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-taskbar,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-input__recipients,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-textarea { width: 100%; min-width: 0; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-textarea textarea { padding: 6px; border: 0; background: transparent; color: var(--ec-text); box-shadow: none; font-size: 14px; line-height: 1.6; resize: none; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-textarea .el-textarea__inner { background: transparent !important; box-shadow: none !important; border: 0 !important; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-task { color: var(--ec-accent); background: var(--ec-soft); border-color: var(--ec-border); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-compose-hint { flex-basis: 100%; font-size: 10px; color: var(--ec-muted); line-height: 1.6; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-task,
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-send { position: static; flex: 0 0 auto; width: auto; height: auto; min-height: 40px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 14px; border-radius: var(--ox-radius-sm, 9px); font: inherit; font-size: 12px; line-height: 20px; white-space: nowrap; box-shadow: none; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-send { color: #fff; background: var(--ec-accent); }
+#enterprise-sandbox-studio:has(.enterprise-sandbox-panel--chat) .enterprise-sandbox-topbar { flex-basis: 44px; min-height: 44px; }
+@media (max-width: 680px) {
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-panel__header { padding-inline: 8px; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-work-tabs { padding-inline: 4px; gap: 0; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-work-tab { padding-inline: 3px; gap: 4px; font-size: 11px; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-messages { padding: 14px 10px 56px; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message { gap: 8px; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-message__avatar { flex-basis: 28px; width: 28px; height: 28px; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-input { margin: 0 7px 8px; padding: 7px; gap: 3px; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-compose-tools { gap: 5px; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-task,
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-send { padding-inline: 9px; gap: 5px; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-task i:not(.fa-spin),
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-send i:not(.fa-spin) { display: none; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-taskbar { flex-wrap: wrap; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-taskbar .el-select { min-width: 0; max-width: 100%; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-agent summary { flex-wrap: wrap; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-agent summary span { margin-left: 0; }
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-error { padding: 8px 12px; }
+}
+@container enterprise-sandbox-shell (max-width: 760px) {
+  #enterprise-sandbox-studio .enterprise-sandbox-workbench.is-chat-mode { min-width: 0; padding: 6px; gap: 6px; }
+  #enterprise-sandbox-studio .enterprise-sandbox-workbench.is-chat-mode .enterprise-sandbox-stage { min-width: 0; }
+  #enterprise-sandbox-studio .enterprise-sandbox-workbench.is-chat-mode .enterprise-sandbox-navigator { max-width: 100%; overflow-x: hidden; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #enterprise-sandbox-studio .enterprise-sandbox-panel--chat * { scroll-behavior: auto; transition: none; }
+}

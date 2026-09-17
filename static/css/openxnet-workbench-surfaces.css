@@ -1,0 +1,1424 @@
+/* Shared workbench surfaces. Loaded after the legacy module styles. */
+body.openxnet-ui-redesign-body {
+  --ox-workspace-panel: var(--ox-skin-panel, var(--ox-bg-surface, #fff));
+  --ox-workspace-inset: color-mix(in srgb, var(--ox-bg-surface-hover) 72%, var(--ox-workspace-panel));
+  --ox-workspace-line: var(--ox-border, #e2e5e8);
+  --ox-vite-shadow-card: var(--ox-shadow-card);
+  --ox-vite-shadow-panel: var(--ox-shadow-md);
+  --ox-runtime-panel-gradient: var(--ox-bg-surface, #fff);
+  --ox-runtime-hero-gradient: var(--ox-bg-surface, #fff);
+}
+
+/* Give the content room to breathe without adding another outer card. */
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-shell, .ox-vite-skills-shell, .ox-vite-ops-shell,
+  .ox-kb, .ox-kernel-prototype, .ox-dev, .ox-about
+) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-image: none !important;
+  letter-spacing: 0 !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-shell, .ox-vite-skills-shell, .ox-vite-ops-shell
+) {
+  padding: calc(20px * var(--ox-density, 1)) calc(24px * var(--ox-density, 1)) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-header, .ox-vite-skills-header, .ox-vite-ops-header,
+  .ox-kb__header, .ox-kernel-prototype__header, .ox-dev__header,
+  .enterprise-module-head, .enterprise-skill-page__header,
+  .enterprise-team-page__header, .oxd-page-header, .sys-form__header
+) {
+  min-height: 36px;
+  flex-shrink: 0;
+  gap: calc(12px * var(--ox-density, 1)) !important;
+  padding: 0 0 calc(16px * var(--ox-density, 1)) !important;
+  margin: 0 !important;
+  align-items: center !important;
+  flex-wrap: wrap;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-header h1, .ox-vite-skills-header h1, .ox-vite-ops-header h1,
+  .ox-kb__title, .ox-kernel-prototype__title, .ox-dev__title,
+  .enterprise-module-title, .enterprise-skill-page__header h1,
+  .enterprise-team-page__header h1, .enterprise-team-page__header h2,
+  .oxd-page-header__copy h1, .sys-form__title
+) {
+  margin: 0 !important;
+  font-size: 22px !important;
+  line-height: 1.4 !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+  color: var(--ox-text-primary, #242b33) !important;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-header > div > p, .ox-vite-skills-header > div > p,
+  .ox-vite-ops-header > div > p, .ox-vite-ops-header__kicker,
+  .ox-kb__subtitle, .ox-kernel-prototype__subtitle, .ox-dev__subtitle,
+  .oxd-page-header__copy p, .sys-form__subtitle
+) {
+  margin: calc(5px * var(--ox-density, 1)) 0 0 !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  color: var(--ox-text-secondary, #67717b) !important;
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-tabs, .ox-vite-skills-tabs, .ox-vite-role-tabs,
+  .ox-kb__tabs, .ox-kernel-prototype__tabs, .ox-dev-subnav, .oxd-tabs
+) {
+  display: flex;
+  width: 100%;
+  gap: calc(6px * var(--ox-density, 1)) !important;
+  box-sizing: border-box;
+  padding: calc(5px * var(--ox-density, 1)) !important;
+  margin: 0 0 calc(16px * var(--ox-density, 1)) !important;
+  border: 1px solid var(--ox-workspace-line) !important;
+  border-radius: var(--ox-radius-md) !important;
+  background: var(--ox-workspace-panel) !important;
+  box-shadow: none !important;
+  flex-wrap: wrap;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-tab, .ox-vite-skills-tab, .ox-vite-role-tab,
+  .ox-kb-tab, .ox-kernel-tab, .ox-dev-subnav__tab, .oxd-tab
+) {
+  min-height: 36px;
+  padding: calc(8px * var(--ox-density, 1)) calc(12px * var(--ox-density, 1)) !important;
+  margin-bottom: 0;
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: var(--ox-radius-sm) !important;
+  background: transparent !important;
+  color: var(--ox-text-secondary, #67717b) !important;
+  box-shadow: none !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  transform: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-tab, .ox-vite-skills-tab, .ox-vite-role-tab,
+  .ox-kb-tab, .ox-kernel-tab, .ox-dev-subnav__tab, .oxd-tab
+):is(.active, .is-active, .ox-dev-subnav__tab--active) {
+  color: var(--ox-accent, #007cae) !important;
+  border-bottom-color: transparent !important;
+  background: var(--ox-accent-soft) !important;
+  font-weight: 650 !important;
+}
+
+/* Only layout containers and inner form groups remain unframed. */
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-settings-section, .ox-vite-role-editor,
+  .ox-vite-role-sidebar, .ox-vite-role-avatar-panel,
+  .ox-vite-role-vrm-section, .ox-vite-role-settings-grid, .sys-section
+) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Each working region has one frame; its controls stay inside that frame. */
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-panel-card, .ox-vite-summary-card, .ox-vite-task-column,
+  .ox-vite-task-detail, .ox-vite-side-tabs, .ox-vite-model-slot-panel,
+  .ox-vite-role-panel, .ox-vite-role-content--memory,
+  .ox-vite-skills-preview, .ox-vite-skills-transform-card,
+  .ox-vite-skills-crystal-main, .ox-vite-skills-crystal-preview,
+  .ox-kb-builtin-card, .ox-kb-settings-card, .ox-kb-events,
+  .ox-kernel-status-card, .ox-kernel-table-card, .ox-kernel-plan-current,
+  .ox-dev-table-card, .ox-dev-workbench-card, .ox-dev-session-card,
+  .ox-dev-search-results, .oxt-config-panel, .oxt-detail,
+  .sys-form, .oxd-card, .ox-about-info
+) {
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--ox-workspace-line) !important;
+  border-radius: var(--ox-radius-card) !important;
+  background: var(--ox-workspace-panel) !important;
+  background-image: none !important;
+  box-shadow: var(--ox-shadow-xs, var(--ox-shadow-sm)) !important;
+  backdrop-filter: none !important;
+}
+
+/* Enterprise workspaces own their framing in the enterprise stylesheet. */
+body.openxnet-ui-redesign-body :is(
+  .enterprise-team-list, .enterprise-team-editor,
+  .enterprise-locked-card--hero, .enterprise-locked-sandbox-panel,
+  .enterprise-locked-summary-panel
+) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-panel-card, .ox-vite-summary-card,
+  .ox-vite-model-slot-panel, .ox-vite-role-panel, .ox-kb-settings-card,
+  .ox-kb-builtin-card, .ox-kb-events, .ox-kernel-status-card,
+  .ox-kernel-plan-current, .ox-dev-workbench-card, .oxd-card,
+  .ox-vite-skills-transform-card, .ox-vite-skills-crystal-main, .sys-form
+) {
+  padding: calc(18px * var(--ox-density, 1)) !important;
+}
+
+body.openxnet-ui-redesign-body :is(.ox-vite-settings-section, .sys-section) {
+  padding: calc(14px * var(--ox-density, 1)) 0 !important;
+  border-bottom: 1px solid var(--ox-workspace-line) !important;
+}
+
+body.openxnet-ui-redesign-body :is(.ox-vite-settings-section, .sys-section):last-child {
+  border-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-settings-section__label, .sys-section__label,
+  .ox-vite-role-panel > h2
+) {
+  color: var(--ox-text-primary) !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  line-height: 1.5;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-task-detail, .ox-vite-skills-preview, .ox-vite-skills-crystal-preview,
+  .ox-vite-role-editor
+) {
+  padding: calc(16px * var(--ox-density, 1)) calc(20px * var(--ox-density, 1)) !important;
+}
+
+body.openxnet-ui-redesign-body :is(.ox-vite-role-editor, .enterprise-team-editor) {
+  border-left: 1px solid var(--ox-workspace-line) !important;
+}
+
+body.openxnet-ui-redesign-body .enterprise-team-editor {
+  padding: calc(16px * var(--ox-density, 1)) calc(20px * var(--ox-density, 1)) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-panel-card__head, .ox-vite-task-detail__head,
+  .ox-kb-settings-card__head, .ox-dev-section-header,
+  .ox-vite-role-section-header, .ox-vite-role-editor__header,
+  .ox-vite-skills-preview__head, .ox-vite-skills-transform-card__head,
+  .ox-vite-skills-crystal-head, .ox-vite-model-slot-header,
+  .oxt-config-panel__head
+) {
+  padding-bottom: calc(12px * var(--ox-density, 1)) !important;
+  margin-bottom: calc(12px * var(--ox-density, 1)) !important;
+  border-bottom: 1px solid var(--ox-workspace-line) !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-panel-card__head h2, .ox-vite-summary-card h2,
+  .ox-vite-role-section-header h2, .ox-vite-role-editor__header h2,
+  .ox-vite-skills-preview__head h2, .ox-vite-skills-transform-card__head h2,
+  .ox-vite-skills-crystal-head h2, .ox-kb-builtin-card__head h3,
+  .ox-vite-model-slot-header h2, .oxt-config-panel__head h2
+) {
+  font-size: 16px !important;
+  line-height: 1.5 !important;
+  letter-spacing: 0 !important;
+}
+
+/* One soft surface per repeated object keeps lists easy to scan. */
+body.openxnet-ui-redesign-body :is(
+  .oxm-provider-card, .oxm-vendor-card, .oxt-card,
+  .ox-vite-skills-card, .ox-vite-task-card, .ox-vite-theme-card,
+  .ox-vite-workspace-card, .ox-vite-project-card, .ox-vite-kb-card,
+  .ox-vite-role-provider-card, .ox-vite-role-avatar-card,
+  .ox-vite-info-card, .ox-vite-link-card, .ox-vite-deploy-platform-card,
+  .ox-kb-card, .ox-kernel-trace-card, .ox-dev-ext-card,
+  .ox-about-feature,
+  .enterprise-skill-card, .enterprise-team-item, .enterprise-preview-card,
+  .provider-card, .staff-role-card, .workspace-card, .oxd-im-card
+) {
+  border: 1px solid var(--ox-border, #e2e5e8) !important;
+  border-radius: var(--ox-radius-card) !important;
+  background: var(--ox-workspace-panel) !important;
+  background-image: none !important;
+  box-shadow: var(--ox-shadow-xs, var(--ox-shadow-sm)) !important;
+  transform: none !important;
+  backdrop-filter: none !important;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .oxm-provider-card, .oxm-vendor-card, .oxt-card, .ox-vite-skills-card,
+  .ox-vite-task-card, .ox-vite-theme-card, .ox-vite-workspace-card,
+  .ox-vite-project-card, .ox-vite-kb-card, .ox-kb-card, .ox-kernel-trace-card,
+  .ox-dev-ext-card, .enterprise-skill-card, .enterprise-team-item,
+  .provider-card, .staff-role-card, .workspace-card, .oxd-im-card,
+  .ox-about-feature
+):hover {
+  border-color: var(--ox-border-hover, #bfc8cf) !important;
+  box-shadow: var(--ox-shadow-card) !important;
+  transform: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .oxm-provider-card, .oxm-vendor-card, .oxt-card, .ox-vite-theme-card,
+  .ox-vite-role-provider-card, .ox-vite-workspace-card
+):is(.is-current-main, .is-selected, .active, .is-active) {
+  border-color: var(--ox-accent, #007cae) !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .oxt-card, .ox-vite-skills-card, .ox-kb-card, .ox-dev-ext-card,
+  .ox-vite-info-card, .ox-vite-deploy-platform-card, .enterprise-skill-card
+) {
+  padding: calc(16px * var(--ox-density, 1)) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-list-row, .ox-vite-fact-row, .ox-vite-role-card,
+  .ox-vite-role-behavior-card, .ox-vite-vrm-row,
+  .ox-kb-search-result, .ox-kb-detail__file-item,
+  .ox-dev-script-item, .ox-dev-search-result, .enterprise-team-role-row
+) {
+  border: 0 !important;
+  border-bottom: 1px solid var(--ox-border, #e2e5e8) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-list-row, .ox-vite-fact-row, .ox-vite-role-card,
+  .ox-vite-role-behavior-card, .ox-vite-vrm-row,
+  .ox-kb-search-result, .ox-kb-detail__file-item,
+  .ox-dev-script-item, .ox-dev-search-result
+) {
+  padding: calc(11px * var(--ox-density, 1)) calc(12px * var(--ox-density, 1)) !important;
+  border-radius: var(--ox-radius-sm) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-role-card, .ox-vite-vrm-row, .ox-kb-search-result,
+  .ox-dev-script-item, .ox-dev-search-result
+):hover {
+  background: var(--ox-workspace-inset) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-role-card, .ox-vite-vrm-row, .enterprise-team-role-row
+):is(.active, .is-active, .is-selected) {
+  background: var(--ox-accent-soft, #e5f5fc) !important;
+  color: var(--ox-text-primary, #242b33) !important;
+}
+
+body.openxnet-ui-redesign-body :is(.ox-vite-role-card, .ox-vite-vrm-row):is(.active, .is-active, .is-selected) {
+  box-shadow: inset 3px 0 0 var(--ox-accent) !important;
+}
+
+/* Compact metrics remain distinct from the working panels below them. */
+body.openxnet-ui-redesign-body :is(
+  .ox-kb-metrics, .ox-kernel-metrics, .ox-kernel-world-stats,
+  .ox-vite-vrm-statgrid, .ox-vite-skills-crystal-stats, .ox-vite-stat-grid
+) {
+  gap: calc(10px * var(--ox-density, 1)) !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .enterprise-metric-grid, .enterprise-locked-metric-grid
+) {
+  gap: 0 !important;
+  padding: calc(4px * var(--ox-density, 1)) 0 calc(16px * var(--ox-density, 1));
+  border-bottom: 1px solid var(--ox-border, #e2e5e8);
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-kb-metric, .ox-kernel-metric, .ox-kernel-world-stat,
+  .ox-vite-stat-card, .ox-vite-skills-crystal-stat
+) {
+  min-width: 0;
+  box-sizing: border-box;
+  padding: calc(13px * var(--ox-density, 1)) calc(16px * var(--ox-density, 1)) !important;
+  border: 1px solid var(--ox-workspace-line) !important;
+  border-radius: var(--ox-radius-md) !important;
+  background: var(--ox-workspace-panel) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-stat-card.emphasis {
+  border-color: var(--ox-border-hover) !important;
+  border-inline-start: 3px solid var(--ox-accent) !important;
+}
+
+/* Nested metadata uses one inset strip instead of a second set of cards. */
+body.openxnet-ui-redesign-body :is(
+  .ox-kb-builtin-card__meta, .ox-vite-skills-crystal-stats
+) {
+  gap: 0 !important;
+  border: 1px solid var(--ox-workspace-line) !important;
+  border-radius: var(--ox-radius-sm) !important;
+  background: var(--ox-workspace-inset) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .enterprise-metric-card, .enterprise-locked-metric-card,
+  .ox-vite-workspace-card__stat, .ox-kb-builtin-meta-item,
+  .ox-vite-task-detail__trace-item
+) {
+  padding: calc(10px * var(--ox-density, 1)) calc(16px * var(--ox-density, 1)) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-crystal-stats > .ox-vite-skills-crystal-stat {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-kb-metric__label, .ox-kernel-metric__label,
+  .ox-vite-settings-section__label, .oxt-categories__title,
+  .oxm-provider-card__main-tag, .ox-vite-skills-card__version
+) {
+  letter-spacing: 0 !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-kb-metric__value, .ox-kernel-metric__value,
+  .ox-kernel-world-stat__value, .ox-vite-stat-card strong,
+  .enterprise-locked-metric-value
+) {
+  font-size: 24px !important;
+  line-height: 1.3 !important;
+  font-variant-numeric: tabular-nums;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-metric__value {
+  overflow-wrap: anywhere;
+}
+
+body.openxnet-ui-redesign-body .ox-kb-metric:has(.fa-microchip) .ox-kb-metric__value {
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  font-weight: 600;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-kb-metric__icon, .ox-kb-card__icon, .oxt-card__icon,
+  .oxt-config-panel__icon, .oxt-detail__icon, .ox-vite-skills-card__icon,
+  .ox-vite-skills-preview__icon, .ox-vite-info-card__icon,
+  .ox-vite-role-behavior-card__icon, .ox-dev-ext-card__icon,
+  .enterprise-skill-card__icon, .enterprise-team-page__icon,
+  .enterprise-locked-metric-icon, .enterprise-preview-icon, .oxd-card__icon,
+  .oxd-im-card__icon
+) {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px;
+  flex: 0 0 30px;
+  border: 0 !important;
+  border-radius: var(--ox-radius-sm) !important;
+  font-size: 17px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-kb-metric__icon, .ox-kb-card__icon, .oxt-card__icon,
+  .oxt-config-panel__icon, .oxt-detail__icon, .ox-vite-skills-card__icon,
+  .ox-vite-skills-preview__icon, .ox-vite-info-card__icon,
+  .ox-vite-role-behavior-card__icon, .ox-dev-ext-card__icon,
+  .ox-about-feature__icon
+) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px;
+  flex: 0 0 34px;
+  color: var(--ox-accent) !important;
+  background: var(--ox-accent-soft) !important;
+  border-radius: var(--ox-radius-sm) !important;
+}
+
+/* Quiet commands and controls; semantic danger states remain distinct. */
+body.openxnet-ui-redesign-body :is(
+  .ox-btn, .el-button, .oxm-primary-btn, .oxm-secondary-btn,
+  .ox-vite-model-primary-btn, .ox-vite-model-secondary-btn,
+  .ox-vite-model-danger-btn, .ox-vite-skills-primary-btn,
+  .ox-vite-skills-secondary-btn, .ox-vite-role-primary-btn,
+  .ox-vite-role-secondary-btn, .ox-vite-role-danger-btn,
+  .ox-vite-ops-primary-btn, .ox-vite-ops-secondary-btn, .oxd-btn
+) {
+  min-height: 32px;
+  border-radius: var(--ox-radius-sm) !important;
+  font-size: 13px !important;
+  letter-spacing: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  background-image: none !important;
+}
+
+body.openxnet-ui-redesign-body .el-button.is-circle {
+  border-radius: 50% !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-btn--primary, .oxm-primary-btn, .ox-vite-model-primary-btn,
+  .ox-vite-skills-primary-btn, .ox-vite-role-primary-btn,
+  .ox-vite-ops-primary-btn, .oxd-btn--primary
+) {
+  background: var(--ox-accent, #007cae) !important;
+  border-color: var(--ox-accent, #007cae) !important;
+  color: var(--ox-on-accent, #fff) !important;
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"], [data-theme="neon"], [data-theme="ink"]) body.openxnet-ui-redesign-body :is(
+  .ox-btn--primary, .el-button--primary, .oxm-primary-btn,
+  .ox-vite-model-primary-btn, .ox-vite-skills-primary-btn,
+  .ox-vite-role-primary-btn, .ox-vite-ops-primary-btn, .oxd-btn--primary
+) {
+  color: var(--ox-on-accent, #102330) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-btn--secondary, .oxm-secondary-btn, .ox-vite-model-secondary-btn,
+  .ox-vite-skills-secondary-btn, .ox-vite-role-secondary-btn,
+  .ox-vite-ops-secondary-btn:not(.is-danger)
+) {
+  background: var(--ox-bg-surface, #fff) !important;
+  border: 1px solid var(--ox-border, #e2e5e8) !important;
+  color: var(--ox-text-primary, #242b33) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-field, .ox-vite-skills-field, .ox-vite-role-field,
+  .ox-vite-field, .oxm-field, .oxd-field
+) :is(input:not([type="checkbox"]):not([type="range"]), select, textarea),
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-select, .ox-dev-input, .ox-dev-select, .ox-dev-textarea,
+  .oxt-search__input, .ox-vite-skills-search, .ox-vite-role-search,
+  .ox-dev-search > input, .oxd-textarea
+) {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--ox-border, #e2e5e8) !important;
+  border-radius: var(--ox-radius-sm) !important;
+  color: var(--ox-text-primary, #242b33) !important;
+  background: var(--ox-bg-surface, #fff) !important;
+  box-shadow: none !important;
+  font-size: 13px !important;
+}
+
+body.openxnet-ui-redesign-body :is(.ox-dev-input, .ox-dev-select, .ox-dev-textarea) {
+  box-sizing: border-box !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-field, .ox-vite-skills-field, .ox-vite-role-field,
+  .ox-vite-field, .oxm-field, .oxd-field
+) :is(input:not([type="checkbox"]):not([type="range"]), select) {
+  height: 36px !important;
+  padding-block: calc(7px * var(--ox-density, 1)) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-model-field, .ox-vite-skills-field, .ox-vite-role-field,
+  .ox-vite-field, .oxm-field, .oxd-field
+) :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--ox-accent, #007cae) !important;
+  outline-offset: 2px;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .el-input__wrapper, .el-select__wrapper, .el-textarea__inner
+) {
+  border-radius: var(--ox-radius-sm) !important;
+  background: var(--ox-bg-surface, #fff) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-skills-chip, .ox-vite-model-chip, .ox-vite-role-chip,
+  .ox-vite-role-tag, .ox-vite-detail-chip, .ox-kb-builtin-card__badge,
+  .ox-dev-lang-tag, .oxm-provider-card__main-tag
+) {
+  border-radius: var(--ox-radius-sm) !important;
+  box-shadow: none !important;
+  letter-spacing: 0 !important;
+  font-size: 11px !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-segmented, .ox-vite-skills-filter-pills, .oxm-dialog__filter-tabs
+) {
+  border-radius: var(--ox-radius-sm) !important;
+  background: var(--ox-bg-surface-hover, #f0f2f3) !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-segmented button, .ox-vite-skills-filter-pill,
+  .oxm-dialog__filter-tabs button, .ox-vite-side-tab
+) {
+  border-radius: var(--ox-radius-sm) !important;
+  box-shadow: none !important;
+  font-size: 13px !important;
+  letter-spacing: 0 !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-skills-filter-pill, .ox-vite-side-tab,
+  .oxm-dialog__filter-tabs button
+):is(.active, .is-active) {
+  color: var(--ox-accent, #007cae) !important;
+  background: var(--ox-accent-soft, #e5f5fc) !important;
+}
+
+/* Tables use one header band and row separators. */
+body.openxnet-ui-redesign-body :is(
+  .ox-kernel-table, .ox-dev-table, .ox-vite-role-table
+) {
+  border-collapse: collapse;
+  color: var(--ox-text-primary, #242b33) !important;
+  background: transparent !important;
+  font-size: 13px !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-kernel-table, .ox-dev-table, .ox-vite-role-table
+) th {
+  padding: calc(10px * var(--ox-density, 1)) calc(12px * var(--ox-density, 1)) !important;
+  background: var(--ox-bg-surface-hover, #f0f2f3) !important;
+  color: var(--ox-text-secondary, #67717b) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-kernel-table, .ox-dev-table, .ox-vite-role-table
+) td {
+  padding: calc(11px * var(--ox-density, 1)) calc(12px * var(--ox-density, 1)) !important;
+  border-bottom-color: var(--ox-border, #e2e5e8) !important;
+}
+
+body.openxnet-ui-redesign-body .el-table {
+  --el-table-header-bg-color: var(--ox-bg-surface-hover, #f0f2f3);
+  --el-table-tr-bg-color: var(--ox-bg-surface, #fff);
+  --el-table-row-hover-bg-color: var(--ox-bg-surface-hover, #f0f2f3);
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(.el-dialog, .el-message-box, .oxm-dialog-shell) {
+  border: 1px solid var(--ox-border, #e2e5e8) !important;
+  border-radius: var(--ox-radius-lg) !important;
+  background: var(--ox-bg-surface, #fff) !important;
+  box-shadow: var(--ox-shadow-md) !important;
+  backdrop-filter: none !important;
+}
+
+/* Configuration windows use the viewport; only their content area scrolls. */
+body.openxnet-ui-redesign-body .el-dialog:not(.is-fullscreen) {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px) !important;
+  display: flex !important;
+  flex-direction: column;
+  margin: 0 !important;
+  top: auto !important;
+  min-height: 0;
+  overflow: hidden;
+}
+body.openxnet-ui-redesign-body .el-overlay-dialog:has(> .el-dialog:not(.is-fullscreen)) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+  box-sizing: border-box;
+  overflow: hidden !important;
+}
+body.openxnet-ui-redesign-body .el-dialog:not(.is-fullscreen) > .el-dialog__body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+}
+body.openxnet-ui-redesign-body .el-dialog > :is(.el-dialog__header, .el-dialog__footer) {
+  flex: 0 0 auto;
+}
+body.openxnet-ui-redesign-body .el-dialog__footer .dialog-footer {
+  flex-wrap: wrap;
+}
+body.openxnet-ui-redesign-body .el-overlay-dialog:has(> .toolkit-config-dialog) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: hidden;
+}
+body.openxnet-ui-redesign-body .el-dialog.toolkit-config-dialog {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
+}
+body.openxnet-ui-redesign-body .toolkit-config-dialog > :is(.el-dialog__header, .el-dialog__footer) {
+  flex: 0 0 auto;
+}
+body.openxnet-ui-redesign-body .toolkit-config-dialog > .el-dialog__body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+}
+body.openxnet-ui-redesign-body .toolkit-config-section {
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+body.openxnet-ui-redesign-body .toolkit-config-content :is(.el-input, .el-select, .el-form, .compact-file-list) {
+  max-width: 100%;
+}
+body.openxnet-ui-redesign-body .toolkit-config-dialog .market-link-banner {
+  margin: 0 0 16px;
+  border: 1px solid var(--ox-border);
+  border-radius: var(--ox-radius-md);
+  background: var(--ox-bg-surface-hover);
+  box-shadow: none;
+  transform: none;
+}
+body.openxnet-ui-redesign-body .toolkit-config-dialog .banner-accent-bar { display: none; }
+body.openxnet-ui-redesign-body .toolkit-config-dialog .banner-main { padding: 12px 14px; gap: 12px; }
+body.openxnet-ui-redesign-body .toolkit-config-dialog .banner-icon-box {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  flex: 0 0 auto;
+  color: var(--ox-accent);
+  background: var(--ox-accent-soft);
+  border: 0;
+  border-radius: var(--ox-radius-sm);
+  box-shadow: none;
+}
+body.openxnet-ui-redesign-body .toolkit-config-dialog .banner-text h3 { margin: 0; font-size: 15px; }
+body.openxnet-ui-redesign-body .toolkit-config-dialog .banner-text p { margin: 3px 0 0; font-size: 12px; }
+body.openxnet-ui-redesign-body .toolkit-config-dialog .plugin-header {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0;
+  margin: 0 0 16px;
+  border: 0;
+  box-shadow: none;
+}
+body.openxnet-ui-redesign-body .toolkit-config-dialog .plugin-button-group { display: flex; flex-wrap: wrap; gap: 8px; }
+body.openxnet-ui-redesign-body .toolkit-config-dialog .provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 14px;
+}
+body.openxnet-ui-redesign-body .toolkit-config-dialog .provider-grid > .add-tile {
+  min-height: 140px !important;
+  height: 140px !important;
+  padding: 20px;
+}
+@media (max-width: 720px) {
+  body.openxnet-ui-redesign-body .el-overlay-dialog:has(> .toolkit-config-dialog) { padding: 12px; }
+  body.openxnet-ui-redesign-body .el-dialog.toolkit-config-dialog { max-height: calc(100dvh - 24px); }
+  body.openxnet-ui-redesign-body .toolkit-config-dialog > .el-dialog__body { padding: 14px; }
+}
+
+body.openxnet-ui-redesign-body :is(.el-dialog__header, .el-message-box__header, .oxm-dialog__head) {
+  background: transparent !important;
+  border-bottom: 1px solid var(--ox-border, #e2e5e8) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body :is(.el-dialog__title, .el-message-box__title, .oxm-dialog__head h2) {
+  font-size: 17px !important;
+  letter-spacing: 0 !important;
+}
+
+/* Module-specific density adjustments preserve each existing workflow. */
+body.openxnet-ui-redesign-body .oxm-service-grid {
+  gap: calc(16px * var(--ox-density, 1)) !important;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)) !important;
+}
+
+body.openxnet-ui-redesign-body .oxm-service-empty {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(10px * var(--ox-density, 1));
+  padding: calc(24px * var(--ox-density, 1));
+  border: 1px dashed var(--ox-border-hover);
+  border-radius: var(--ox-radius-card);
+  background: var(--ox-workspace-inset);
+  text-align: left;
+}
+
+body.openxnet-ui-redesign-body .oxm-service-empty i {
+  font-size: 20px;
+  color: var(--ox-accent);
+}
+
+body.openxnet-ui-redesign-body .oxm-service-empty strong {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--ox-text-primary, #242b33);
+}
+
+body.openxnet-ui-redesign-body .oxm-service-empty p {
+  margin: 0;
+  max-width: 720px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+body.openxnet-ui-redesign-body .oxm-provider-card__head {
+  padding: calc(14px * var(--ox-density, 1)) calc(16px * var(--ox-density, 1)) !important;
+  background: var(--ox-workspace-inset) !important;
+  border-bottom: 1px solid var(--ox-border, #e2e5e8) !important;
+}
+
+body.openxnet-ui-redesign-body .oxm-provider-card__form {
+  gap: calc(12px * var(--ox-density, 1)) !important;
+  padding: calc(14px * var(--ox-density, 1)) calc(16px * var(--ox-density, 1)) !important;
+}
+
+body.openxnet-ui-redesign-body .oxm-provider-card__logo {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: var(--ox-radius-sm) !important;
+}
+
+body.openxnet-ui-redesign-body .oxm-provider-card.is-success {
+  border-left: 2px solid var(--ox-success, #259578) !important;
+}
+
+body.openxnet-ui-redesign-body .oxm-provider-card.is-warning {
+  border-left: 2px solid var(--ox-warning, #b8842f) !important;
+}
+
+body.openxnet-ui-redesign-body .oxm-provider-card:is(.is-error, .is-blocked) {
+  border-left: 2px solid var(--ox-danger, #c05252) !important;
+}
+
+body.openxnet-ui-redesign-body .oxm-provider-card--add {
+  min-height: 120px !important;
+  border-style: dashed !important;
+  background: transparent !important;
+}
+
+body.openxnet-ui-redesign-body .oxt-categories {
+  width: 184px;
+  background: var(--ox-workspace-inset) !important;
+  border-right: 1px solid var(--ox-workspace-line) !important;
+  padding-top: calc(12px * var(--ox-density, 1));
+}
+
+body.openxnet-ui-redesign-body .oxt-cat-item {
+  width: calc(100% - 20px);
+  min-height: 34px;
+  padding: calc(8px * var(--ox-density, 1)) calc(12px * var(--ox-density, 1));
+  border-radius: var(--ox-radius-sm) !important;
+  margin: calc(2px * var(--ox-density, 1)) calc(10px * var(--ox-density, 1));
+  font-size: 13px;
+}
+
+body.openxnet-ui-redesign-body .oxt-cat-item.is-active {
+  background: var(--ox-accent-soft, #e5f5fc) !important;
+  color: var(--ox-accent, #007cae) !important;
+}
+
+body.openxnet-ui-redesign-body .oxt-list__header {
+  padding: calc(12px * var(--ox-density, 1)) calc(20px * var(--ox-density, 1)) !important;
+  margin-bottom: calc(14px * var(--ox-density, 1));
+  border-bottom: 1px solid var(--ox-workspace-line) !important;
+  background: var(--ox-workspace-panel) !important;
+}
+
+body.openxnet-ui-redesign-body .oxt-grid-wrapper {
+  padding: 0 calc(20px * var(--ox-density, 1)) calc(20px * var(--ox-density, 1)) !important;
+}
+
+body.openxnet-ui-redesign-body .oxt-grid {
+  gap: calc(12px * var(--ox-density, 1));
+}
+
+body.openxnet-ui-redesign-body .oxt-card__name {
+  font-size: 14px !important;
+}
+
+body.openxnet-ui-redesign-body .oxt-detail {
+  border-left: 1px solid var(--ox-border, #e2e5e8) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-library-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 32%);
+  gap: calc(20px * var(--ox-density, 1));
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-skills-library-layout, .ox-vite-skills-crystal-layout,
+  .ox-vite-skills-transform-grid
+) {
+  padding-inline: 0 !important;
+}
+
+/* Filters and search belong to an action band above the result area. */
+body.openxnet-ui-redesign-body :is(
+  .ox-vite-skills-library-toolbar, .ox-kb-list-toolbar,
+  .ox-kernel-filter-bar
+) {
+  min-width: 0;
+  box-sizing: border-box;
+  gap: calc(12px * var(--ox-density, 1)) !important;
+  padding: calc(10px * var(--ox-density, 1)) calc(12px * var(--ox-density, 1)) !important;
+  border: 1px solid var(--ox-workspace-line) !important;
+  border-radius: var(--ox-radius-md) !important;
+  background: var(--ox-workspace-panel) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-preview__empty {
+  padding: calc(12px * var(--ox-density, 1)) 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-search input {
+  border: 0 !important;
+  border-radius: var(--ox-radius-sm) !important;
+  background: transparent !important;
+  color: var(--ox-text-primary, #242b33) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-grid {
+  gap: calc(12px * var(--ox-density, 1));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 245px), 1fr));
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-card__name {
+  font-size: 14px !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-card__footer {
+  padding-top: calc(12px * var(--ox-density, 1)) !important;
+  margin-top: calc(12px * var(--ox-density, 1)) !important;
+  background: transparent !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-skills-card__desc {
+  font-size: 12px !important;
+  line-height: 1.6 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-settings-row {
+  gap: calc(20px * var(--ox-density, 1));
+  padding: calc(14px * var(--ox-density, 1)) 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-system-layout {
+  gap: calc(24px * var(--ox-density, 1)) !important;
+}
+
+body.openxnet-ui-redesign-body .surface-system .ox-vite-stat-grid {
+  gap: calc(12px * var(--ox-density, 1));
+}
+
+body.openxnet-ui-redesign-body .surface-system .ox-vite-panel-card__head p {
+  margin: calc(5px * var(--ox-density, 1)) 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-segmented {
+  width: fit-content;
+  max-width: 100%;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-ops-main {
+  padding: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .sys-vtabs {
+  border: 1px solid var(--ox-workspace-line) !important;
+  border-radius: var(--ox-radius-md) !important;
+  background: var(--ox-workspace-panel) !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .sys-vtab {
+  border-radius: var(--ox-radius-sm) !important;
+  font-size: 13px !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+body.openxnet-ui-redesign-body .sys-vtab--active {
+  color: var(--ox-accent, #007cae) !important;
+  background: var(--ox-accent-soft, #e5f5fc) !important;
+}
+
+body.openxnet-ui-redesign-body .sys-pill-group {
+  border-radius: var(--ox-radius-sm) !important;
+  background: var(--ox-bg-surface-hover, #f0f2f3) !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .sys-pill-group .ox-tab {
+  border-radius: var(--ox-radius-sm) !important;
+  box-shadow: none !important;
+}
+
+body.openxnet-ui-redesign-body .sys-section__label {
+  font-size: 12px !important;
+  letter-spacing: 0 !important;
+}
+
+body.openxnet-ui-redesign-body .oxd-page {
+  --oxd-bg: var(--ox-bg-base, #f6f7f8);
+  --oxd-surface: var(--ox-bg-surface, #fff);
+  --oxd-input: var(--ox-bg-surface, #fff);
+  --oxd-text: var(--ox-text-primary, #242b33);
+  --oxd-text-2: var(--ox-text-secondary, #67717b);
+  --oxd-text-3: var(--ox-text-muted, #7e8790);
+  --oxd-border: var(--ox-border, #e2e5e8);
+  --oxd-shadow-1: none;
+  --oxd-shadow-2: none;
+  --oxd-shadow-3: none;
+  --oxd-radius-sm: var(--ox-radius-sm);
+  --oxd-radius-md: var(--ox-radius-md);
+  --oxd-radius-lg: var(--ox-radius-lg);
+}
+
+body.openxnet-ui-redesign-body .oxd-card__head {
+  padding: 0 0 calc(14px * var(--ox-density, 1)) !important;
+  background: transparent !important;
+}
+
+body.openxnet-ui-redesign-body .oxd-card__body {
+  padding: calc(14px * var(--ox-density, 1)) 0 0 !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-side-tabs {
+  padding: calc(8px * var(--ox-density, 1)) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-side-tab {
+  border: 0 !important;
+  background: transparent !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-task-column {
+  padding: calc(12px * var(--ox-density, 1)) !important;
+  background: var(--ox-workspace-inset) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-vite-task-column__head {
+  padding: calc(8px * var(--ox-density, 1)) 0 calc(12px * var(--ox-density, 1)) !important;
+  margin-bottom: calc(8px * var(--ox-density, 1));
+  border-bottom: 1px solid var(--ox-workspace-line);
+}
+
+body.openxnet-ui-redesign-body :is(.ox-vite-empty-state, .ox-vite-task-empty) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* The about page uses capability tiles and a compact information sheet. */
+body.openxnet-ui-redesign-body .ox-about-features {
+  gap: calc(12px * var(--ox-density, 1));
+}
+
+body.openxnet-ui-redesign-body .ox-about-feature {
+  padding: calc(16px * var(--ox-density, 1));
+}
+
+body.openxnet-ui-redesign-body :is(.ox-about-name, .ox-about-feature__name, .ox-about-info__value) {
+  color: var(--ox-text-primary) !important;
+}
+
+body.openxnet-ui-redesign-body :is(
+  .ox-about-tagline, .ox-about-subtitle, .ox-about-feature__desc, .ox-about-info__label
+) {
+  color: var(--ox-text-secondary) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-about-version {
+  border: 1px solid var(--ox-workspace-line) !important;
+  border-radius: var(--ox-radius-sm) !important;
+  color: var(--ox-accent) !important;
+  background: var(--ox-accent-soft) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-about-info__row {
+  padding: calc(12px * var(--ox-density, 1)) calc(16px * var(--ox-density, 1));
+  border-bottom-color: var(--ox-workspace-line) !important;
+}
+
+body.openxnet-ui-redesign-body .ox-about-info__row:nth-child(odd) {
+  background: var(--ox-workspace-inset);
+}
+
+body.openxnet-ui-redesign-body .ox-about-info__value a {
+  color: var(--ox-accent) !important;
+}
+
+@media (max-width: 1280px) {
+  body.openxnet-ui-redesign-body .ox-vite-ops-shell.surface-task {
+    overflow-y: auto;
+  }
+
+  body.openxnet-ui-redesign-body :is(.ox-vite-task-shell, .ox-vite-task-board) {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    height: auto;
+    min-height: min-content;
+    gap: calc(20px * var(--ox-density, 1));
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-task-shell {
+    padding: 0 0 calc(20px * var(--ox-density, 1));
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-task-column {
+    flex: 0 0 auto;
+    min-height: min-content;
+    padding: calc(14px * var(--ox-density, 1)) !important;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-task-column > * {
+    flex-shrink: 0;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-task-empty {
+    min-height: 100px;
+    padding: calc(16px * var(--ox-density, 1)) 0;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-task-detail {
+    flex: 0 0 auto;
+    padding: calc(16px * var(--ox-density, 1)) !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  body.openxnet-ui-redesign-body .ox-vite-skills-library-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-skills-preview {
+    padding: calc(16px * var(--ox-density, 1)) !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  body.openxnet-ui-redesign-body .ox-vite-role-shell {
+    overflow-y: auto;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-role-content--memory {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-role-shell .ox-vite-role-sidebar {
+    flex: 0 0 auto;
+    height: 310px;
+    min-height: 310px;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-role-shell .ox-vite-role-sidebar__header {
+    padding: calc(12px * var(--ox-density, 1)) calc(16px * var(--ox-density, 1)) !important;
+    gap: calc(8px * var(--ox-density, 1)) !important;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-role-shell .ox-vite-role-list {
+    min-height: 190px;
+    padding: calc(8px * var(--ox-density, 1)) !important;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-role-editor {
+    flex: 0 0 auto;
+    min-height: min-content;
+    overflow: visible;
+    border-left: 0 !important;
+    border-top: 1px solid var(--ox-border, #e2e5e8) !important;
+    padding: calc(20px * var(--ox-density, 1)) !important;
+  }
+}
+
+@media (max-width: 980px) {
+  body.openxnet-ui-redesign-body .ox-vite-vrm-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 260px;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-vrm-config {
+    padding: 0 0 calc(16px * var(--ox-density, 1));
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-vrm-preview {
+    height: 260px;
+    min-height: 260px;
+    max-height: 260px;
+    padding: calc(12px * var(--ox-density, 1)) 0;
+    gap: calc(8px * var(--ox-density, 1));
+    border-left: 0;
+    overflow-y: auto;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-vrm-preview__stage {
+    min-height: 100px;
+    border-radius: var(--ox-radius-sm);
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-vrm-preview__placeholder {
+    padding: calc(12px * var(--ox-density, 1));
+    gap: calc(4px * var(--ox-density, 1));
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-vrm-preview__hero {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--ox-radius-sm);
+    background: transparent;
+    color: var(--ox-accent, #007cae);
+    box-shadow: none;
+    font-size: 24px;
+  }
+}
+
+@media (max-width: 900px) {
+  body.openxnet-ui-redesign-body .ox-vite-toolkit-shell {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  body.openxnet-ui-redesign-body :is(.oxt-list, .oxt-grid-wrapper, .oxt-detail) {
+    flex: 0 0 auto;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  body.openxnet-ui-redesign-body .oxt-categories {
+    width: 100%;
+    height: 84px;
+    min-height: 84px;
+    max-height: 84px;
+    flex-direction: row;
+    gap: calc(12px * var(--ox-density, 1));
+    padding: calc(4px * var(--ox-density, 1)) calc(16px * var(--ox-density, 1)) calc(8px * var(--ox-density, 1));
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+
+  body.openxnet-ui-redesign-body .oxt-categories__title {
+    padding: calc(8px * var(--ox-density, 1)) 0;
+    align-self: flex-end;
+    flex: 0 0 auto;
+  }
+
+  body.openxnet-ui-redesign-body .oxt-section {
+    flex: 0 0 auto;
+    margin: 0;
+  }
+
+  body.openxnet-ui-redesign-body .oxt-section__header {
+    height: 26px;
+    padding: calc(4px * var(--ox-density, 1)) calc(8px * var(--ox-density, 1));
+    letter-spacing: 0;
+  }
+
+  body.openxnet-ui-redesign-body .oxt-section__body {
+    flex-direction: row;
+  }
+
+  body.openxnet-ui-redesign-body .oxt-cat-item {
+    width: auto;
+    flex: 0 0 auto;
+    margin: 0 calc(2px * var(--ox-density, 1));
+    padding: calc(8px * var(--ox-density, 1));
+    gap: calc(6px * var(--ox-density, 1));
+  }
+
+  body.openxnet-ui-redesign-body .oxt-cat-item--overview {
+    align-self: flex-end;
+    margin-bottom: calc(8px * var(--ox-density, 1));
+  }
+
+  body.openxnet-ui-redesign-body .oxt-detail {
+    border-radius: var(--ox-radius-card) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  body.openxnet-ui-redesign-body :is(
+    .ox-vite-model-shell, .ox-vite-skills-shell, .ox-vite-ops-shell
+  ) {
+    padding: calc(16px * var(--ox-density, 1)) !important;
+  }
+
+  body.openxnet-ui-redesign-body :is(
+    .ox-vite-model-tabs, .ox-vite-skills-tabs, .ox-vite-role-tabs,
+    .ox-kb__tabs, .ox-kernel-prototype__tabs, .ox-dev-subnav, .oxd-tabs
+  ) {
+    gap: calc(6px * var(--ox-density, 1)) !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  body.openxnet-ui-redesign-body :is(
+    .ox-vite-model-tab, .ox-vite-skills-tab, .ox-vite-role-tab,
+    .ox-kb-tab, .ox-kernel-tab, .ox-dev-subnav__tab, .oxd-tab
+  ) {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  body.openxnet-ui-redesign-body :is(
+    .ox-vite-task-detail, .ox-vite-role-editor,
+    .ox-vite-skills-crystal-preview
+  ) {
+    padding: calc(16px * var(--ox-density, 1)) !important;
+  }
+
+  body.openxnet-ui-redesign-body .enterprise-team-editor {
+    border-left: 0 !important;
+    border-top: 1px solid var(--ox-border, #e2e5e8) !important;
+    padding: calc(16px * var(--ox-density, 1)) 0 !important;
+  }
+
+  body.openxnet-ui-redesign-body :is(
+    .ox-kb-metrics, .ox-kernel-metrics, .ox-kernel-world-stats,
+    .enterprise-metric-grid, .enterprise-locked-metric-grid
+  ) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  body.openxnet-ui-redesign-body .ox-kb-metric {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: calc(8px * var(--ox-density, 1));
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-settings-row {
+    flex-wrap: wrap;
+  }
+
+  body.openxnet-ui-redesign-body .surface-system .ox-vite-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: calc(8px * var(--ox-density, 1));
+  }
+
+  body.openxnet-ui-redesign-body .surface-system .ox-vite-stat-card {
+    padding: calc(10px * var(--ox-density, 1)) calc(12px * var(--ox-density, 1)) !important;
+  }
+
+  body.openxnet-ui-redesign-body .surface-system .ox-vite-stat-card strong {
+    font-size: 18px !important;
+    overflow-wrap: anywhere;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-system-layout {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    gap: calc(16px * var(--ox-density, 1)) !important;
+    overflow: hidden;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-side-tabs {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: calc(6px * var(--ox-density, 1)) !important;
+    max-height: 50px !important;
+    padding: calc(6px * var(--ox-density, 1)) !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-side-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 0 calc(8px * var(--ox-density, 1));
+  }
+
+  body.openxnet-ui-redesign-body :is(
+    .ox-vite-model-header, .ox-vite-skills-header, .ox-vite-ops-header
+  ) {
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    text-align: left !important;
+  }
+
+  body.openxnet-ui-redesign-body :is(
+    .ox-vite-skills-header__actions, .ox-vite-ops-header__actions
+  ) {
+    flex-wrap: wrap;
+    max-width: 100%;
+    gap: calc(6px * var(--ox-density, 1));
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-skills-filter-pills {
+    gap: calc(3px * var(--ox-density, 1));
+    flex-wrap: nowrap;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-skills-filter-pill {
+    padding: calc(6px * var(--ox-density, 1)) calc(10px * var(--ox-density, 1)) !important;
+    white-space: nowrap;
+  }
+
+  body.openxnet-ui-redesign-body .ox-vite-settings-row > :last-child {
+    max-width: 100%;
+  }
+
+  body.openxnet-ui-redesign-body .oxm-service-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

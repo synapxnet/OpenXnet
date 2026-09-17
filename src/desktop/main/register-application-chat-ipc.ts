@@ -11,7 +11,7 @@ export interface RegisterApplicationChatIpcOptions {
   readonly ipcMain: IpcMainLike;
   readonly chat: Pick<
     ApplicationChatService,
-    "startStream" | "complete" | "listModels" | "abort" | "executeTool" | "resolveApproval" | "subscribe"
+    "startStream" | "complete" | "listModels" | "abort" | "getRecoveryStatus" | "executeTool" | "resolveApproval" | "subscribe"
   >;
   readonly authorizeEvent: (event: unknown) => void;
   readonly getWebContents: () => readonly WebContentsLike[];
@@ -45,6 +45,12 @@ export function registerApplicationChatIpc(options: RegisterApplicationChatIpcOp
     return chat.abort(request);
   }
 
+  /** 仅读取可信主窗口指定会话的恢复状态。 / Read recovery status only for a conversation requested by the trusted main window. */
+  function handleRecoveryStatus(event: unknown, request: unknown): Promise<ApplicationChatResponse> {
+    authorizeEvent(event);
+    return chat.getRecoveryStatus(request);
+  }
+
   /** Execute one authorized manually approved tool. */
   function handleExecuteTool(event: unknown, request: unknown): Promise<ApplicationChatResponse> {
     authorizeEvent(event);
@@ -62,6 +68,7 @@ export function registerApplicationChatIpc(options: RegisterApplicationChatIpcOp
     APPLICATION_CHAT_CHANNELS.complete,
     APPLICATION_CHAT_CHANNELS.listModels,
     APPLICATION_CHAT_CHANNELS.abort,
+    APPLICATION_CHAT_CHANNELS.recoveryStatus,
     APPLICATION_CHAT_CHANNELS.executeTool,
     APPLICATION_CHAT_CHANNELS.resolveApproval,
   ];
@@ -70,6 +77,7 @@ export function registerApplicationChatIpc(options: RegisterApplicationChatIpcOp
   ipcMain.handle(APPLICATION_CHAT_CHANNELS.complete, handleComplete);
   ipcMain.handle(APPLICATION_CHAT_CHANNELS.listModels, handleListModels);
   ipcMain.handle(APPLICATION_CHAT_CHANNELS.abort, handleAbort);
+  ipcMain.handle(APPLICATION_CHAT_CHANNELS.recoveryStatus, handleRecoveryStatus);
   ipcMain.handle(APPLICATION_CHAT_CHANNELS.executeTool, handleExecuteTool);
   ipcMain.handle(APPLICATION_CHAT_CHANNELS.resolveApproval, handleResolveApproval);
 

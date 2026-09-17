@@ -188,8 +188,24 @@ test*
 tests/*
 !tests/test_*.py
 !tests/renderer_startup_bootstrap.test.cjs
+!tests/openxnet_skins.test.cjs
+!tests/openxnet_skin_workbench.test.cjs
+!tests/openxnet_memory_document.test.cjs
+!tests/openxnet_context_workspace.test.cjs
+!tests/openxnet_conversation_app.test.cjs
+!tests/openxnet_conversation_components.test.cjs
+!tests/openxnet_conversation_model.test.cjs
+!tests/conversation_runtime_receipts.test.cjs
+!tests/conversation_file_changes_runtime.test.cjs
+!tests/employee_experience.test.cjs
+!tests/enterprise_conversation_experience.test.cjs
+!tests/enterprise_spatial_scene.test.cjs
+!tests/enterprise_spatial_preferences.test.cjs
+!tests/openxnet_model_dialog.test.cjs
+!tests/openxnet_auth_ui.test.cjs
 !tests/packaged_runtime_dependencies.test.cjs
 !tests/desktop_chat_transport.test.cjs
+!tests/desktop_window_navigation.test.cjs
 !tests/desktop_cold_start_report.test.cjs
 !tests/application_agent_runtime_renderer.test.cjs
 !tests/application_goai_competition_renderer.test.cjs
@@ -213,11 +229,15 @@ vrm/asr/
 /build/
 /build-ts/
 /dist/
-/artifacts/feature-packs/
+# Local build packages, isolated user data, recordings, and verification output.
+/artifacts/
+# Third-party local avatar metadata prohibits redistribution.
+/vrm/vrm/Eku_VRM_v1_0_0/
 runtime/
 data/generated_scenes/
 
 # Local development and verification output
+/.sandbox-preview/
 /.agent/*
 !/.agent/skills/
 /.agent/skills/*
@@ -248,3 +268,20 @@ nodejs/
 *.pem
 *.key
 release-secrets/
+!tests/chat_activity_disclosure.test.cjs
+!tests/conversation_crash_recovery.test.cjs
+!tests/conversation_connection_feedback.test.cjs
+!tests/goai_workspace_initialization.test.cjs
+!tests/goai_staging_certification.test.cjs
+!tests/companion_completion_events.test.cjs
+!tests/conversation_completion_events.test.cjs
+!tests/competition_connection_http.test.cjs
+!tests/conversation_live_guidance.test.cjs
+!tests/application_competition_live_connection_renderer.test.cjs
+!tests/application_employee_skill_host_behavior.test.cjs
+!tests/application_enterprise_services_renderer.test.cjs
+!tests/competition_memory_acl.test.cjs
+!tests/competition_operation_projection.test.cjs
+!tests/packaged_npm_resources.test.cjs
+!services/openxnet-agentteams-adapter/test/
+!services/openxnet-agentteams-adapter/test/*.test.js

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any
+from py.conversation_automation import automation_delivery_allowed
 
 
 DEFAULT_DELIVERY_MAX_ATTEMPTS = 3
@@ -37,6 +38,8 @@ def collect_terminal_delivery_decisions(
     bounded_max_attempts = max(1, min(int(max_attempts), 10))
     decisions: list[TerminalDeliveryDecision] = []
     for task in tasks:
+        if not automation_delivery_allowed(task.get("context", {})):
+            continue
         status = str(task.get("status") or "").strip().lower()
         task_id = str(task.get("task_id") or task.get("legacy_task_id") or "").strip()
         if status not in TERMINAL_TASK_STATUSES or not task_id:

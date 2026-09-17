@@ -37,14 +37,17 @@ def create_provider_client(
     config_node: Mapping[str, Any] | None = None,
     http_client: httpx.AsyncClient | None = None,
 ):
-    """Construct one provider client from the selected bounded configuration node."""
+    """Construct a configured provider client, or defer it until credentials exist."""
 
     settings = configuration or {}
     target = config_node or settings
+    api_key = target.get("api_key") or settings.get("api_key", "")
+    if not str(api_key or "").strip():
+        return None
     provider_id = target.get("selectedProvider", settings.get("selectedProvider"))
     client_class = get_provider_client_class(settings, provider_id)
     arguments = {
-        "api_key": target.get("api_key") or settings.get("api_key", ""),
+        "api_key": api_key,
         "base_url": (
             target.get("base_url")
             or settings.get("base_url")

@@ -37,7 +37,7 @@ class TestIpcMain implements IpcMainLike {
   }
 }
 
-test("registerApplicationChatIpc authorizes commands, broadcasts streams, and cleans up", async () => {
+test("registerApplicationChatIpc authorizes commands, broadcasts streams, and cleans up", /** 所有命令含恢复查询均验证调用方并可清理。 / All commands including recovery queries authorize callers and clean up. */ async () => {
   const ipcMain = new TestIpcMain();
   const authorizedEvent = { sender: "main" };
   let listener: ((event: ApplicationChatStreamEvent) => void) | null = null;
@@ -57,6 +57,8 @@ test("registerApplicationChatIpc authorizes commands, broadcasts streams, and cl
     complete: async (value: unknown) => { calls.push({ name: "complete", value }); return response; },
     listModels: async () => { calls.push({ name: "listModels", value: undefined }); return response; },
     abort: async (value: unknown) => { calls.push({ name: "abort", value }); return response; },
+    /** 记录实际恢复查询边界。 / Record the actual recovery-query boundary. */
+    getRecoveryStatus: async (value: unknown) => { calls.push({ name: "getRecoveryStatus", value }); return response; },
     executeTool: async (value: unknown) => { calls.push({ name: "executeTool", value }); return response; },
     resolveApproval: async (value: unknown) => { calls.push({ name: "resolveApproval", value }); return response; },
     subscribe: (nextListener: (event: ApplicationChatStreamEvent) => void) => {
@@ -84,6 +86,8 @@ test("registerApplicationChatIpc authorizes commands, broadcasts streams, and cl
     await ipcMain.invoke(APPLICATION_CHAT_CHANNELS.complete, authorizedEvent, { mode: "chat" });
     await ipcMain.invoke(APPLICATION_CHAT_CHANNELS.listModels, authorizedEvent);
     await ipcMain.invoke(APPLICATION_CHAT_CHANNELS.abort, authorizedEvent, { streamId: "stream-0001" });
+    await ipcMain.invoke(APPLICATION_CHAT_CHANNELS.recoveryStatus, authorizedEvent, { conversationId: "conversation-1" });
+    await assert.rejects(ipcMain.invoke(APPLICATION_CHAT_CHANNELS.recoveryStatus, {}, { conversationId: "conversation-1" }), /not authorized/);
     await ipcMain.invoke(APPLICATION_CHAT_CHANNELS.executeTool, authorizedEvent, { toolName: "search" });
     await ipcMain.invoke(APPLICATION_CHAT_CHANNELS.resolveApproval, authorizedEvent, { approvalId: "approval-1" });
     await assert.rejects(
@@ -91,7 +95,7 @@ test("registerApplicationChatIpc authorizes commands, broadcasts streams, and cl
       /not authorized/,
     );
     assert.deepEqual(calls.map((call) => call.name), [
-      "startStream", "complete", "listModels", "abort", "executeTool", "resolveApproval",
+      "startStream", "complete", "listModels", "abort", "getRecoveryStatus", "executeTool", "resolveApproval",
     ]);
 
     const streamEvent: ApplicationChatStreamEvent = {

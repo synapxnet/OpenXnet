@@ -4,6 +4,7 @@ const assert = require("node:assert/strict")
 const { createHash } = require("node:crypto")
 const path = require("node:path")
 const { readFile, writeFile } = require("node:fs/promises")
+const { version: releaseVersion } = require("../package.json")
 
 const RECEIPT_ID_PATTERN = /^otlp_[a-f0-9]{32}$/u
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u
@@ -160,7 +161,7 @@ async function main() {
   }
   const receiptManifest = {
     schema: "openxnet.goai-otlp-delivery-manifest.v1",
-    version: "1.2.0",
+    version: releaseVersion,
     environmentClaim: "staging",
     backend: {
       protocol: "OTLP/HTTP JSON",

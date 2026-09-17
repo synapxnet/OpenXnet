@@ -28,7 +28,7 @@ export interface RegisterApplicationCompetitionRuntimeIpcOptions {
     | "setAdapterMode"
   >;
   readonly authorizeEvent: (event: unknown) => void;
-  readonly readUiProfile: () => ApplicationCompetitionUiProfile;
+  readonly readUiProfile: () => ApplicationCompetitionUiProfile | Promise<ApplicationCompetitionUiProfile>;
   readonly resolveActorId: (
     role: "investigator" | "approver" | "operator" | "verifier",
   ) => string;
@@ -57,8 +57,8 @@ export function registerApplicationCompetitionRuntimeIpc(
     return runtime.getSnapshot();
   }
 
-  /** 读取事件中心发布配置；输入 IPC 事件，鉴权后返回不含凭据的只读能力。 */
-  function handleGetUiProfile(event: unknown): ApplicationCompetitionUiProfile {
+  /** 鉴权后读取实际运行模式的安全配置。 / Read safe configuration for the actual execution mode after authorization. */
+  function handleGetUiProfile(event: unknown): ApplicationCompetitionUiProfile | Promise<ApplicationCompetitionUiProfile> {
     authorizeEvent(event);
     return readUiProfile();
   }

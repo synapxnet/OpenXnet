@@ -98,6 +98,31 @@ test("LegacyRendererStateService rejects request drift and unbounded compatibili
   }
 });
 
+test("LegacyRendererStateService reloads partial conversation checkpoints and original receipts from disk", /** 真实SQLite重读保留未完成正文、恢复身份和执行回执，不模拟应用崩溃。 / Reload actual SQLite checkpoints with partial text, recovery identity, and execution receipts without crashing an app. */ () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "openxnet-legacy-renderer-state-"));
+  try {
+    const partial = {
+      id: "original-conversation", targetAgentId: "original-agent", model: "original-model", systemPrompt: "Original saved context",
+      recovery: { schema: "openxnet.conversation-recovery.v1", requestId: "original-request", startedAt: 1000, state: "streaming", assistantMessageId: "partial-assistant", targetAgentId: "original-agent", targetAgentName: "Actual agent", workspacePath: "E:/Review/workspace", checkpointAt: 2000 },
+      messages: [{ id: "actual-user", role: "user", content: "Continue this actual task", fileLinks: ["selected-reference.md"] }, {
+        id: "partial-assistant", role: "assistant", content: "Partial visible result 中文🙂", backend_content: "Original backend context", generationFinished: false,
+        activityLog: [{ id: "actual-tool", kind: "tool", toolCallId: "actual-call", toolName: "edit_file", status: "done", input: { path: "actual-file.md" }, output: "Confirmed tool receipt", fileChanges: [{ id: "actual-change", path: "actual-file.md", operation: "modify", confirmed: true, status: "done", before: "before", after: "after" }] }],
+        taskRefs: [{ taskId: "actual-child", status: "running" }], memoryContext: [{ id: "actual-memory-receipt", status: "injected", count: 1 }],
+      }],
+    };
+    new LegacyRendererStateService({ userDataDirectory: directory }).saveConversations({ conversations: [partial] });
+    const restored = new LegacyRendererStateService({ userDataDirectory: directory }).getSnapshot();
+    assert.deepEqual(restored.conversations, [partial]);
+    assert.deepEqual(readLegacyDocument(path.join(directory, "conversations.db")), { conversations: [partial] });
+    const canceled = { ...partial, recovery: { ...partial.recovery, state: "canceled", checkpointAt: 3000 } };
+    new LegacyRendererStateService({ userDataDirectory: directory }).saveConversations({ conversations: [canceled] });
+    assert.deepEqual(new LegacyRendererStateService({ userDataDirectory: directory }).getSnapshot().conversations, [canceled]);
+  } finally {
+    assert.equal(path.dirname(directory), os.tmpdir()); assert.match(path.basename(directory), /^openxnet-legacy-renderer-state-/);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("LegacyRendererStateService persists only normalized provider-safe settings", () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "openxnet-legacy-provider-redaction-"));
   const settingsPath = path.join(directory, "super_agent_party.db");

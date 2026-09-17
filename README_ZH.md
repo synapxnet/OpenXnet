@@ -4,13 +4,13 @@
 
 OpenXnet 是 SynapXnet 企业 AI 工作空间，用于组织 AI 员工、运行 AgentTeams 协同、执行受治理的 Skill/MCP、独立验证、审计取证并沉淀可复用组织经验。
 
-GOAI Agent Infra 复赛实现与可复现 Demo 请查看：[docs/GOAI-SEMIFINAL-RUNBOOK.md](docs/GOAI-SEMIFINAL-RUNBOOK.md)。
+GOAI Agent Infra 决赛 v1.3.0 实现与可复现 Demo 请查看：[docs/GOAI-FINALS-DEMO-RUNBOOK.md](docs/GOAI-FINALS-DEMO-RUNBOOK.md)。历史复赛材料保留在 [docs/GOAI-SEMIFINAL-RUNBOOK.md](docs/GOAI-SEMIFINAL-RUNBOOK.md)。
 
 ## 当前源码基线
 
-- 当前版本：`v1.2.0`
+- 当前版本：`v1.3.0`
 - 当前仓库角色：桌面集成主基线与正式发布源
-- 桌面正式发布包：只从 `openxnet-desktop` 构建，并且必须在全部升级与验证完成后再构建
+- 桌面正式发布包：完成验证后从当前 `openxnet-source` 源码构建，产物放入兄弟目录 `openxnet-desktop`，保留此前版本的安装包
 - 后端独立服务包：从兄弟仓库 `openxnet-server` 执行 `pyinstaller server.spec --clean --noconfirm`
 - 当前升级周期内，如果目标是桌面正式版，不要从 `openxnet-server` 仓库发起打包
 

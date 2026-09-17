@@ -67,6 +67,31 @@ class ExecutionEngineRuntimeTests(unittest.TestCase):
             "base_url": "https://reasoner.example/v1",
         })
 
+    def test_defers_provider_creation_without_configured_credentials(self) -> None:
+        """Let a fresh desktop profile start before the user configures a provider."""
+
+        for configuration in (None, {}, {"api_key": ""}, {"api_key": "   "}):
+            with self.subTest(configuration=configuration), patch(
+                "py.execution_provider_runtime.get_provider_client_class"
+            ) as resolve_client:
+                self.assertIsNone(create_provider_client(configuration))
+                resolve_client.assert_not_called()
+
+    def test_creates_client_after_credentials_are_added(self) -> None:
+        """Use the real configuration and shared pool once setup is complete."""
+
+        configuration = {"api_key": "", "selectedProvider": "main"}
+        self.assertIsNone(create_provider_client(configuration))
+        configuration["api_key"] = "configured-key"
+        shared_pool = object()
+        with patch(
+            "py.execution_provider_runtime.get_provider_client_class",
+            return_value=_RecordingClient,
+        ):
+            client = create_provider_client(configuration, http_client=shared_pool)
+        self.assertEqual(client.arguments["api_key"], "configured-key")
+        self.assertIs(client.arguments["http_client"], shared_pool)
+
     def test_rejects_unowned_extra_tool_hooks_before_importing_tools(self) -> None:
         """Prevent callers from extending the provider registry with arbitrary names."""
 

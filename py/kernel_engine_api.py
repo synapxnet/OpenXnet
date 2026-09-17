@@ -47,6 +47,8 @@ KernelOperation = Literal[
     "skill-transition",
     "guidance-list",
     "guidance-add",
+    "guidance-edit",
+    "guidance-cancel",
     "config-intent",
     "config-apply",
 ]
@@ -250,19 +252,37 @@ class SkillSelectPayload(StrictRequest):
 
 
 class GuidanceListPayload(StrictRequest):
-    """约束指导列表使用的可选会话 ID。"""
+    """约束精确会话与可选先前实例。 / Bound an exact conversation and an optional previous runtime."""
 
-    conversationId: str = Field(max_length=256)
+    conversationId: str = Field(min_length=1, max_length=512)
+    runtimeId: str = Field(default="", max_length=512)
 
 
 class GuidanceAddPayload(GuidanceListPayload):
-    """约束新增实时指导的文本、关联 ID、模式和优先级。"""
+    """约束引导内容和实例内幂等身份。 / Bound guidance content and runtime-scoped idempotency identities."""
 
-    text: str = Field(max_length=16000)
-    turnId: str = Field(max_length=256)
-    traceId: str = Field(max_length=256)
+    runtimeId: str = Field(min_length=1, max_length=512)
+    requestId: str = Field(min_length=1, max_length=512)
+    text: str = Field(min_length=1, max_length=16000)
+    turnId: str = Field(max_length=512)
+    traceId: str = Field(max_length=512)
     mode: str = Field(max_length=32)
-    priority: int = Field(ge=-100, le=100)
+    priority: int = Field(ge=-100, le=100, strict=True)
+
+
+class GuidanceCancelPayload(GuidanceListPayload):
+    """约束撤回所需的准确身份与修订。 / Bound the exact identities and revision required for cancellation."""
+    runtimeId: str = Field(min_length=1, max_length=512)
+    requestId: str = Field(min_length=1, max_length=512)
+    guidanceId: str = Field(min_length=1, max_length=512)
+    expectedRevision: int = Field(ge=1, le=9_007_199_254_740_991, strict=True)
+
+
+class GuidanceEditPayload(GuidanceCancelPayload):
+    """约束待接收引导的完整替换内容。 / Bound complete replacement content for pending guidance."""
+    text: str = Field(min_length=1, max_length=16000)
+    mode: str = Field(max_length=32)
+    priority: int = Field(ge=-100, le=100, strict=True)
 
 
 class ConfigIntentPayload(StrictRequest):
@@ -312,6 +332,8 @@ PAYLOAD_MODELS: Dict[str, Type[BaseModel]] = {
     "skill-transition": SkillTransitionPayload,
     "guidance-list": GuidanceListPayload,
     "guidance-add": GuidanceAddPayload,
+    "guidance-edit": GuidanceEditPayload,
+    "guidance-cancel": GuidanceCancelPayload,
     "config-intent": ConfigIntentPayload,
     "config-apply": ConfigApplyPayload,
 }
@@ -343,7 +365,13 @@ class KernelEngineApi:
                 status_code=422,
                 detail="Kernel operation payload is invalid.",
             ) from error
-        data = await self._dispatch(request.operation, payload_model)
+        try:
+            data = await self._dispatch(request.operation, payload_model)
+        except HTTPException as error:
+            # 将引导领域冲突保留为传输成功中的明确失败。 / Preserve guidance domain conflicts as explicit failures inside successful transport.
+            if not request.operation.startswith("guidance-") or not isinstance(error.detail, dict) or error.detail.get("ok") is not False:
+                raise
+            data = error.detail
         return {
             "schema": KERNEL_RUNTIME_SCHEMA,
             "success": True,
@@ -516,7 +544,7 @@ class KernelEngineApi:
                 ),
             )
         if operation == "guidance-list":
-            return await kernel_routes.list_live_guidance(conversation_id=values["conversationId"])
+            return await kernel_routes.list_live_guidance(conversation_id=values["conversationId"], runtime_id=values["runtimeId"])
         if operation == "guidance-add":
             return await kernel_routes.add_live_guidance(kernel_routes.GuidanceRequest(
                 text=values["text"],
@@ -525,7 +553,16 @@ class KernelEngineApi:
                 trace_id=values["traceId"],
                 mode=values["mode"],
                 priority=values["priority"],
+                runtimeId=values["runtimeId"],
+                requestId=values["requestId"],
             ))
+        if operation in {"guidance-edit", "guidance-cancel"}:
+            common = {"conversation_id": values["conversationId"], "runtimeId": values["runtimeId"],
+                      "requestId": values["requestId"], "guidanceId": values["guidanceId"], "expectedRevision": values["expectedRevision"]}
+            if operation == "guidance-edit":
+                return await kernel_routes.edit_live_guidance(kernel_routes.GuidanceEditRequest(
+                    **common, text=values["text"], mode=values["mode"], priority=values["priority"]))
+            return await kernel_routes.cancel_live_guidance(kernel_routes.GuidanceCancelRequest(**common))
         if operation == "config-intent":
             return await kernel_routes.create_config_intent(kernel_routes.ConfigIntentRequest(text=values["text"]))
         if operation == "config-apply":

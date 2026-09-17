@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -14,6 +15,7 @@ import {
   type ApplicationCompetitionEnterpriseTaskConversationInput,
   type ApplicationCompetitionResolvedMemoryPublicationRequest,
   type ApplicationCompetitionRetrospectiveSkillPublicationRequest,
+  type ApplicationCompetitionEnterpriseSkillResolution,
 } from "./application-competition-runtime";
 import { ApplicationEnterpriseRuntimeService } from "../enterprise/application-enterprise-runtime";
 import { ApplicationSkillRuntimeService } from "../skills/application-skill-runtime";
@@ -22,10 +24,14 @@ import type {
   CompetitionAgentTeamsTaskInput,
   CompetitionAgentTeamsTaskResult,
 } from "./competition-agentteams-adapter";
+import { HttpCompetitionAgentTeamsAdapter } from "./competition-agentteams-adapter";
 import type {
   ApplicationCompetitionKnowledgeProjectionRequest,
   ApplicationCompetitionKnowledgePurgeRequest,
 } from "../contracts/application-competition-knowledge";
+import { getCompetitionScenarioProfile } from "./competition-scenario-registry";
+import { getCompetitionToolDescriptor } from "./competition-tool-registry";
+import { resolveIndependentVerification } from "./competition-verification";
 
 /** 创建完整竞赛演示请求；输入 Workspace 和操作者，返回固定跨域场景。 */
 function createIncidentRequest(workspaceId = "ws_goai_demo", actorId = "incident-commander") {
@@ -53,6 +59,100 @@ function createIncidentRequest(workspaceId = "ws_goai_demo", actorId = "incident
   };
 }
 
+test("Live access preflight rejects denied scopes before traces or platform work and releases its lock",
+  /** 前置授权失败不产生假运行，也不锁死后续配置。 / Preflight authorization failures create no false run and do not leave configuration locked. */
+  async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-live-preflight-"));
+    try {
+      const fixture = new FixtureCompetitionToolAdapter();
+      let platformCalls = 0;
+      let guardCalls = 0;
+      let reason = "WORKSPACE_MISMATCH";
+      const runtime = new ApplicationCompetitionRuntimeService({ userDataDirectory: directory, fixtureAdapter: fixture,
+        liveAdapter: {
+          /** 任何到达平台的请求都必须被记录。 / Record any request reaching a platform. */
+          async invoke(request) { platformCalls++; return fixture.invoke(request); },
+        },
+        /** 模拟 Main 的工作空间、场景和运行方式授权。 / Simulate Main authorization of workspace, scenario and team runtime. */
+        async requireLiveAccess(scope) {
+          guardCalls++;
+          assert.deepEqual(scope, { workspaceId: "workspace-live", scenario: "feature-drift", teamRuntime: "builtin" });
+          await Promise.resolve();
+          throw new Error(reason);
+        },
+      });
+      await runtime.setAdapterMode({ mode: "live" });
+      const created = await runtime.createIncident(createIncidentRequest("workspace-live"));
+      const before = await runtime.getSnapshot();
+      for (reason of ["WORKSPACE_MISMATCH", "SCENARIO_FORBIDDEN", "AGENTTEAMS_REQUIRED", "ACCESS_EXPIRED", "ACCOUNT_CHANGED"]) {
+        await assert.rejects(runtime.runInvestigation({ incidentId: created.incidentId, actorId: "worker", teamRuntime: "builtin" }), new RegExp(reason));
+        const after = await runtime.getSnapshot();
+        assert.equal(after.incidents[0]?.status, "OPEN");
+        assert.equal(after.incidents[0]?.activeTraceId, null);
+        assert.deepEqual(after.traces, before.traces);
+        assert.deepEqual(after.invocations, before.invocations);
+        assert.deepEqual(after.approvals, before.approvals);
+        assert.equal((await runtime.readCollaborationConfigurationContext()).canChange, true);
+      }
+      assert.equal(guardCalls, 5);
+      assert.equal(platformCalls, 0);
+      await runtime.setAdapterMode({ mode: "fixture" });
+      const result = await runtime.runInvestigation({ incidentId: created.incidentId, actorId: "worker", teamRuntime: "builtin" });
+      assert.equal(result.snapshot.incidents[0]?.status, "AWAITING_APPROVAL");
+      assert.equal(guardCalls, 5);
+      assert.equal(platformCalls, 0);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
+/** 构造后加载的开关在团队准备和任务派发两处都生效，且不会降级为内置流程。 / Enablement loaded after construction controls both team preparation and dispatch without builtin fallback. */
+test("AgentTeams enablement follows runtime configuration changes after construction", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-agentteams-enable-"));
+  try {
+    const enterprise = new ApplicationEnterpriseRuntimeService({ userDataDirectory: directory });
+    const members = [];
+    for (const teamRole of ["leader", "worker", "verifier"] as const) {
+      const saved = await enterprise.saveRoleCard({ mode: "create", roleCard: { name: teamRole } });
+      members.push({ roleCardId: saved.card.id, teamRole });
+    }
+    const saved = await enterprise.saveTeamTemplate({ mode: "create", teamTemplate: { name: "动态开关验收", workspaceId: "ws_goai_demo", members } });
+    let enabled = false;
+    let disableOnPrepare = false;
+    let prepareCalls = 0;
+    let dispatchCalls = 0;
+    const fixture = new FixtureCompetitionToolAdapter();
+    const runtime = new ApplicationCompetitionRuntimeService({ userDataDirectory: directory, fixtureAdapter: fixture, liveAdapter: fixture,
+      agentTeamsIsolatedServiceEnabled: false,
+      /** 每次门控读取同一实际配置值。 / Read the same current setting for every gate. */
+      isAgentTeamsIsolatedServiceEnabled: () => enabled,
+      /** 使用真实企业模板解析。 / Resolve the actual enterprise template. */
+      resolveTeamTemplate: (id) => enterprise.resolveTeamTemplate(id),
+      /** 记录准备动作，可模拟准备期间关闭配置。 / Record preparation and optionally disable configuration during preparation. */
+      prepareAgentTeam: async () => { prepareCalls += 1; if (disableOnPrepare) enabled = false; return { teamName: "runtime-configuration-test", status: "READY" }; },
+      /** 记录通过门控的任务并生成隔离回执。 / Record gated tasks and return isolated receipts. */
+      dispatchAgentTeamTask: async (input) => { dispatchCalls += 1; return createAgentTeamsTaskResult(input); },
+    });
+    const created = await runtime.createIncident(createIncidentRequest());
+    const request = { incidentId: created.incidentId, actorId: "incident-commander", teamRuntime: "agentteams", teamTemplateId: saved.teamTemplate.id };
+    await assert.rejects(runtime.runInvestigation(request), /未就绪/);
+    assert.equal(prepareCalls, 0);
+    enabled = true;
+    const result = await runtime.runInvestigation(request);
+    assert.equal(result.snapshot.incidents[0]?.status, "AWAITING_APPROVAL");
+    assert.equal(prepareCalls, 1);
+    assert.equal(dispatchCalls, 2);
+    disableOnPrepare = true;
+    const next = await runtime.createIncident(createIncidentRequest());
+    await assert.rejects(runtime.runInvestigation({ ...request, incidentId: next.incidentId }), /未就绪/);
+    assert.equal(prepareCalls, 2);
+    assert.equal(dispatchCalls, 2);
+    const stopped = await runtime.createIncident(createIncidentRequest());
+    await assert.rejects(runtime.runInvestigation({ ...request, incidentId: stopped.incidentId }), /未就绪/);
+    assert.equal(prepareCalls, 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 /** 创建隔离 Runtime；输入临时目录，返回使用确定性 ID 和 Fixture Adapter 的服务。 */
 function createRuntime(
   userDataDirectory: string,
@@ -65,12 +165,8 @@ function createRuntime(
     readonly resolveEnabledEnterpriseSkill?: (
       workspaceId: string,
       skillId: string,
-    ) => Promise<{
-      readonly sourceIncidentId: string | null;
-      readonly lifecycleStatus: "candidate" | "verified" | "active" | "deprecated" | "retired" | "legacy";
-      readonly environmentScope: "synthetic" | "simulation" | "staging" | "shadow" | "canary" | "production" | "legacy";
-      readonly productionEligible: boolean;
-    } | null>;
+    ) => Promise<ApplicationCompetitionEnterpriseSkillResolution | null>;
+    readonly resolveCurrentEnvironmentFingerprint?: () => Promise<string | null>;
     readonly retrieveCompetitionKnowledge?: (
       workspaceId: string,
       query: string,
@@ -93,10 +189,23 @@ function createRuntime(
   const fixture = new FixtureCompetitionToolAdapter({
     now: () => new Date("2026-08-03T02:00:00.000Z"),
   });
+  // 仅为 Live 分支单元测试提供合同样本，不连接真实平台。 / Contract samples for Live-branch unit tests only; no real platform connection.
+  const testVersions: Record<string, Record<string, string>> = {};
+  const profile = getCompetitionScenarioProfile({ ...createIncidentRequest().scenario, scenarioType: "feature-drift" });
+  for (const step of [...profile.executionPlan.steps, ...profile.executionPlan.compensationSteps]) {
+    (testVersions[getCompetitionToolDescriptor(step.toolName).platform] ??= {})[step.resourceId] = "42";
+  }
+  const liveContractAdapter: CompetitionToolAdapter = {
+    /** 装饰测试响应以满足版本合同，不构造真实联调证据。 / Decorate test responses for the version contract, never as real integration evidence. */
+    async invoke(request) {
+      const response = await fixture.invoke(request);
+      return { ...response, data: { ...response.data, resourceVersions: testVersions[response.meta.platform] ?? {} } };
+    },
+  };
   return new ApplicationCompetitionRuntimeService({
     userDataDirectory,
     fixtureAdapter: fixture,
-    liveAdapter: fixture,
+    liveAdapter: liveContractAdapter,
     now: () => new Date("2026-08-03T02:00:00.000Z"),
     createId: () => `test${++sequence}`,
     ...knowledge,
@@ -214,6 +323,10 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
     assert.equal(taskGraph?.nodes.find((item) => item.nodeId === "fuse-cross-platform-evidence")?.status, "SUCCEEDED");
     assert.equal(taskGraph?.nodes.find((item) => item.lane === "EVIDENCE")?.assignedAgentName, "Evidence Agent");
     assert.equal(taskGraph?.nodes.find((item) => item.lane === "EXECUTION")?.assignedAgentName, "OpenXnet Controlled Executor");
+    assert.equal(taskGraph?.nodes.find((item) => item.nodeId === "retrieve-enterprise-skill")?.title, "本地 Skill 目录候选筛选");
+    assert.equal(taskGraph?.nodes.find((item) => item.nodeId === "retrieve-enterprise-skill")?.status, "SUCCEEDED");
+    assert.equal(taskGraph?.nodes.find((item) => item.nodeId === "crystallize-retrospective-skill")?.title, "结晶候选 Skill（待认证与启用）");
+    assert.equal(taskGraph?.nodes.filter((item) => item.lane === "VERIFICATION").every((item) => item.status === "PENDING" && item.evidenceIds.length === 0), true);
     const approvalId = assertNonNull(investigated.approvalId);
     const traceId = assertNonNull(investigated.snapshot.traces[0]?.traceId ?? null);
     const traceResource = await runtime.readResource({
@@ -274,6 +387,9 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
     assert.equal(executed.snapshot.actions[0]?.compensationSteps.length, 2);
     assert.equal(executed.snapshot.auditReceipts.length, 7);
     assert.equal(executed.snapshot.auditReceipts.every((receipt) => receipt.outcome === "SUCCEEDED"), true);
+    const executedFusion = executed.snapshot.taskGraphs[0]?.nodes.find((item) => item.nodeId === "fuse-cross-platform-evidence");
+    assert.equal(executedFusion?.status, "SUCCEEDED");
+    assert.deepEqual(executedFusion?.evidenceIds, taskGraph?.nodes.find((item) => item.nodeId === "fuse-cross-platform-evidence")?.evidenceIds);
 
     const replayed = await runtime.executeRollback({
       approvalId,
@@ -294,13 +410,35 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
     assert.equal(verified.snapshot.incidents[0]?.status, "RESOLVED");
     assert.equal(verified.snapshot.actions[0]?.status, "SUCCEEDED");
     assert.equal(verified.snapshot.actions[0]?.verificationEvidenceIds.length, 5);
+    const verifiedFusion = verified.snapshot.taskGraphs[0]?.nodes.find((item) => item.nodeId === "fuse-cross-platform-evidence");
+    assert.equal(verifiedFusion?.status, "SUCCEEDED");
+    assert.deepEqual(verifiedFusion?.evidenceIds, executedFusion?.evidenceIds);
     assert.equal(verified.snapshot.auditReceipts.at(-1)?.outcome, "SUCCEEDED");
+    assert.equal(verified.snapshot.agentDecisions.length, 0);
+    assert.deepEqual(verified.snapshot.auditReceipts.at(-1)?.verification, {
+      runtime: "builtin", actionId, decision: "CLOSE", evidenceIds: verified.snapshot.actions[0]?.verificationEvidenceIds, errorCode: null,
+    });
+    assert.equal(resolveIndependentVerification(verified.snapshot, verified.snapshot.incidents[0]!).status, "PASSED");
+    // 缺失真实回执、错空间、执行人自验和缺少证据都不能因RESOLVED通过。 / Missing receipts, cross-scope records, self-verification and missing evidence cannot pass because an incident is RESOLVED.
+    for (const mutate of [
+      (snapshot: typeof verified.snapshot) => ({ ...snapshot, auditReceipts: snapshot.auditReceipts.filter((receipt) => !receipt.verification) }),
+      (snapshot: typeof verified.snapshot) => ({ ...snapshot, auditReceipts: snapshot.auditReceipts.map((receipt) => receipt.verification ? { ...receipt, workspaceId: "another-space" } : receipt) }),
+      (snapshot: typeof verified.snapshot) => ({ ...snapshot, auditReceipts: snapshot.auditReceipts.map((receipt) => receipt.verification ? { ...receipt, actorId: "deployment-operator" } : receipt) }),
+      (snapshot: typeof verified.snapshot) => ({ ...snapshot, auditReceipts: snapshot.auditReceipts.map((receipt) => receipt.verification ? { ...receipt, actorId: "" } : receipt) }),
+      (snapshot: typeof verified.snapshot) => ({ ...snapshot, evidence: snapshot.evidence.filter((item) => item.evidenceId !== snapshot.actions[0]?.verificationEvidenceIds[0]) }),
+      (snapshot: typeof verified.snapshot) => ({ ...snapshot, actions: snapshot.actions.map((item) => ({ ...item, verificationEvidenceIds: item.verificationEvidenceIds.map((_id, index) => item.verificationEvidenceIds[index === 0 ? 1 : index]!) })) }),
+      (snapshot: typeof verified.snapshot) => ({ ...snapshot, incidents: snapshot.incidents.map((item) => ({ ...item, activeActionId: "another-action" })) }),
+    ]) {
+      const invalid = mutate(verified.snapshot);
+      assert.equal(resolveIndependentVerification(invalid, invalid.incidents[0]!).status, "PENDING");
+    }
     assert.equal(resolvedMemories.length, 1);
     assert.equal(resolvedMemories[0]?.incidentId, created.incidentId);
     assert.equal(resolvedMemories[0]?.traceId, traceId);
     assert.equal(resolvedMemories[0]?.scenarioType, "feature-drift");
     assert.equal(resolvedMemories[0]?.verificationEvidenceIds.length, 5);
     assert.equal(resolvedMemories[0]?.evidenceIds.length, 30);
+    assert.equal(resolvedMemories[0]?.memoryAccess, null);
     assert.equal(await runtime.reconcileResolvedMemories(), 1);
     assert.equal(resolvedMemories.length, 2);
 
@@ -320,8 +458,9 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
     assert.equal(retrospective.retrospectiveSkillId, "synapxnet-feature-drift-recovery");
     assert.equal(retrospective.snapshot.taskGraphs[0]?.status, "SUCCEEDED");
     assert.equal(retrospective.snapshot.taskGraphs[0]?.nodes.find((item) => item.nodeId === "crystallize-retrospective-skill")?.status, "SUCCEEDED");
+    assert.equal(retrospective.snapshot.taskGraphs[0]?.nodes.find((item) => item.nodeId === "crystallize-retrospective-skill")?.title, "结晶候选 Skill（待认证与启用）");
     const builtinEvolution = retrospective.snapshot.skillEvolutionRuns[0];
-    assert.equal(builtinEvolution?.status, "CANDIDATE");
+    assert.equal(builtinEvolution?.status, "READY_FOR_CERTIFICATION");
     assert.deepEqual(builtinEvolution?.rounds.map((round) => round.stage), [
       "PROBLEM_REPRODUCTION",
       "STRATEGY_COMPARISON",
@@ -335,7 +474,7 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
       "VERIFIER",
     ]);
     assert.equal(builtinEvolution?.rounds.slice(0, 3).every((round) => round.outcome === "PASSED"), true);
-    assert.equal(builtinEvolution?.rounds[3]?.outcome, "FAILED");
+    assert.equal(builtinEvolution?.rounds[3]?.outcome, "PASSED");
     assert.equal(builtinEvolution?.rounds.every((round) => /^[a-f0-9]{64}$/u.test(round.outputDigest)), true);
     assert.equal(publications[0]?.workspaceId, "ws_goai_demo");
     assert.equal(publications[0]?.sourceEventIds.includes(created.incidentId), true);
@@ -344,6 +483,9 @@ test("competition runtime completes evidence, approval, full recovery plan, veri
     const persisted = await restarted.getSnapshot();
     assert.equal(persisted.incidents[0]?.status, "RESOLVED");
     assert.equal(persisted.evidence.length, 30);
+    assert.deepEqual(persisted.auditReceipts, retrospective.snapshot.auditReceipts);
+    assert.equal(resolveIndependentVerification(persisted, persisted.incidents[0]!).status, "PASSED");
+    assert.equal(persisted.skillEvolutionRuns[0]?.rounds[3]?.outcome, "PASSED");
 
     await assert.rejects(
       runtime.resetDemoData({ confirmation: "WRONG_CONFIRMATION" }),
@@ -404,6 +546,7 @@ test("competition runtime records Workspace-scoped online graph retrieval in neu
     });
     const selection = investigated.snapshot.reasoningDecisions.find((item) => item.decisionType === "SKILL_SELECTION");
     assert.equal(selection?.retrievalMode, "ONLINE_HYBRID_RAG_KG");
+    assert.equal(investigated.snapshot.taskGraphs[0]?.nodes.find((item) => item.nodeId === "retrieve-enterprise-skill")?.title, "在线 RAG 与知识图谱辅助筛选");
     assert.equal(selection?.knowledgeRefs.length, 2);
     assert.equal(selection?.candidates[0]?.skillId, "synapxnet-feature-drift-recovery");
     assert.equal(selection?.candidates[0]?.graphScore, 1);
@@ -411,6 +554,73 @@ test("competition runtime records Workspace-scoped online graph retrieval in neu
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+/** 在线失败回落仍完成目录筛选，历史标签投影不能修改状态和证据。 / Failed online lookup still completes catalog selection; historical label projection cannot change state or evidence. */
+test("task graph labels reflect fallback and correct legacy text without rewriting persisted evidence", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-graph-labels-"));
+  try {
+    const runtime = createRuntime(directory, {
+      /** 明确模拟只读检索失败，不产生在线成功结果。 / Simulate read-only retrieval failure without producing online success. */
+      retrieveCompetitionKnowledge: async () => { throw new Error("Lookup unavailable"); },
+    });
+    const created = await runtime.createIncident(createIncidentRequest());
+    const result = await runtime.runInvestigation({ incidentId: created.incidentId, actorId: "incident-commander", teamRuntime: "builtin" });
+    assert.equal(result.snapshot.reasoningDecisions.find((item) => item.decisionType === "SKILL_SELECTION")?.retrievalMode, "CATALOG_FALLBACK");
+    const retrieval = result.snapshot.taskGraphs[0]?.nodes.find((item) => item.nodeId === "retrieve-enterprise-skill");
+    assert.equal(retrieval?.title, "本地 Skill 目录候选筛选"); assert.equal(retrieval?.status, "SUCCEEDED");
+    const storedPath = path.join(directory, "competition", "control-plane.v1.json");
+    const stored = JSON.parse(await readFile(storedPath, "utf8"));
+    for (const node of stored.taskGraphs[0].nodes) {
+      if (node.nodeId === "retrieve-enterprise-skill") node.title = "在线 RAG 与知识图谱检索";
+      if (node.nodeId === "crystallize-retrospective-skill") node.title = "结晶并启用企业 Skill";
+    }
+    const legacyBytes = JSON.stringify(stored); await writeFile(storedPath, legacyBytes);
+    const projected = await runtime.getSnapshot();
+    assert.equal(projected.taskGraphs[0]?.nodes.find((item) => item.nodeId === "retrieve-enterprise-skill")?.title, "本地 Skill 目录候选筛选");
+    assert.equal(projected.taskGraphs[0]?.nodes.find((item) => item.nodeId === "crystallize-retrospective-skill")?.title, "结晶候选 Skill（待认证与启用）");
+    assert.deepEqual(projected.invocations, stored.invocations); assert.deepEqual(projected.evidence, stored.evidence); assert.deepEqual(projected.approvals, stored.approvals);
+    assert.equal(await readFile(storedPath, "utf8"), legacyBytes);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+/** 必需调查依赖逐项核验，重复或跨范围调用无法补齐缺失项。 / Required investigation dependencies are checked individually; duplicate or cross-scope calls cannot fill a missing dependency. */
+test("evidence fusion requires every original scoped dependency despite duplicate and later calls", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-fusion-"));
+  try {
+    const runtime = createRuntime(directory);
+    const created = await runtime.createIncident(createIncidentRequest());
+    const investigated = await runtime.runInvestigation({ incidentId: created.incidentId, actorId: "incident-commander", teamRuntime: "builtin" });
+    const storedPath = path.join(directory, "competition", "control-plane.v1.json");
+    const originalBytes = await readFile(storedPath, "utf8");
+    for (const variant of ["missing-invocation", "missing-evidence", "foreign-evidence", "foreign-invocation", "old-trace", "execution-call", "missing-node", "duplicate-dependency", "required-failure", "extra-success", "extra-failure"]) {
+      const stored = JSON.parse(originalBytes);
+      const missing = stored.invocations[0]; const duplicate = stored.invocations[1];
+      const originalEvidence = stored.evidence.find((item: { evidenceId: string }) => item.evidenceId === missing.evidenceId);
+      if (variant === "missing-invocation") {
+        stored.invocations = stored.invocations.filter((item: { invocationId: string }) => item.invocationId !== missing.invocationId);
+        stored.invocations.push({ ...duplicate, invocationId: "duplicate-other-tool" }, { ...missing, invocationId: "later-same-tool", evidenceId: "later-evidence" });
+        stored.evidence.push({ ...originalEvidence, evidenceId: "later-evidence" });
+      }
+      if (variant === "missing-evidence") stored.evidence = stored.evidence.filter((item: { evidenceId: string }) => item.evidenceId !== missing.evidenceId);
+      if (variant === "foreign-evidence") originalEvidence.workspaceId = "foreign-workspace";
+      if (variant === "foreign-invocation") missing.workspaceId = "foreign-workspace";
+      if (variant === "old-trace") missing.traceId = "old-trace";
+      if (variant === "execution-call") missing.actionId = "unrelated-action";
+      if (variant === "required-failure") missing.status = "FAILED";
+      if (variant === "missing-node") stored.taskGraphs[0].nodes = stored.taskGraphs[0].nodes.filter((node: { toolName: string; lane: string }) => node.lane !== "EVIDENCE" || node.toolName !== missing.toolName);
+      if (variant === "duplicate-dependency") {
+        const fusion = stored.taskGraphs[0].nodes.find((node: { nodeId: string }) => node.nodeId === "fuse-cross-platform-evidence");
+        fusion.dependsOn[0] = fusion.dependsOn[1];
+      }
+      if (variant.startsWith("extra-")) stored.invocations.push({ ...duplicate, invocationId: "unrelated-later-read", evidenceId: null, status: variant === "extra-success" ? "SUCCEEDED" : "FAILED" });
+      await writeFile(storedPath, JSON.stringify(stored));
+      const reconciled = await runtime.decideApproval({ approvalId: investigated.approvalId, actorId: "independent-reviewer", decision: "REJECTED", reason: "Isolated dependency regression only." });
+      const fusion = reconciled.snapshot.taskGraphs[0]?.nodes.find((node) => node.nodeId === "fuse-cross-platform-evidence");
+      assert.equal(fusion?.status, variant.startsWith("extra-") ? "SUCCEEDED" : variant === "required-failure" ? "FAILED" : "PENDING", variant);
+      assert.equal(fusion?.evidenceIds.includes("later-evidence"), false, variant);
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test("competition runtime completes recommendation capacity and quantitative iteration scenarios", async () => {
@@ -773,6 +983,8 @@ test("competition runtime keeps a rejected approval closed to execution", async 
       }),
       (error: unknown) => hasRuntimeCode(error, "APPROVAL_INVALID"),
     );
+    // 拒绝已结束当前事件，历史待批Trace不能永久阻止换模式。 / Rejection ends the current incident; a historical pending trace cannot permanently block mode switching.
+    assert.equal((await runtime.setAdapterMode({ mode: "live" })).adapterMode, "live");
     assert.equal((await runtime.getSnapshot()).actions.length, 0);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -829,6 +1041,16 @@ test("competition runtime fails the action when independent verification does no
     assert.equal(failed.actions[0]?.compensationSteps.every((step) => step.status === "SUCCEEDED"), true);
     assert.equal(failed.evidence.length, 25);
     assert.equal(resolvedMemories.length, 0);
+    const failedVerification = failed.auditReceipts.find((receipt) => receipt.toolName === "openxnet.remediation.verify");
+    assert.equal(failedVerification?.outcome, "FAILED");
+    assert.equal(failedVerification?.verification?.decision, "ROLLBACK_REQUIRED");
+    assert.equal(failedVerification?.verification?.errorCode, "VERIFICATION_FAILED");
+    assert.equal(failedVerification?.actorId, "independent-verifier");
+    assert.equal(resolveIndependentVerification(failed, failed.incidents[0]!).status, "FAILED");
+    assert.equal(failed.taskGraphs[0]?.nodes.find((item) => item.nodeId === "verifier-conclusion")?.status, "FAILED");
+    const restartedFailure = await createRuntime(directory).getSnapshot();
+    assert.deepEqual(restartedFailure.auditReceipts, failed.auditReceipts);
+    assert.equal(resolveIndependentVerification(restartedFailure, restartedFailure.incidents[0]!).status, "FAILED");
     const exported = await runtime.exportEvaluation({ incidentId: created.incidentId });
     const report = JSON.parse(await readFile(exported.reportPath, "utf8")) as {
       readonly failurePath: { readonly compensationStatus: string };
@@ -926,6 +1148,12 @@ test("competition runtime persists immutable enterprise team-template role snaps
     let enabledPrepareCalls = 0;
     const projectedConversationStages: string[] = [];
     const projectedOperationEvents: string[] = [];
+    const dispatchedStages: CompetitionAgentTeamsTaskInput[] = [];
+    const serviceContract = require(path.resolve(__dirname, "../../../services/openxnet-agentteams-adapter/src/contracts.js")) as {
+      parseTaskRequest: (input: unknown, now: Date) => { context: { residentContexts: unknown } };
+    };
+    const teamMemories: ApplicationCompetitionResolvedMemoryPublicationRequest[] = [];
+    const teamSkillMemories: ApplicationCompetitionRetrospectiveSkillPublicationRequest[] = [];
     const enabledRuntime = new ApplicationCompetitionRuntimeService({
       userDataDirectory: directory,
       fixtureAdapter: fixture,
@@ -939,7 +1167,29 @@ test("competition runtime persists immutable enterprise team-template role snaps
         assert.equal(resolved.teamTemplate.id, template.id);
         return { teamName: "goai-isolated-ready", status: "READY" };
       },
-      dispatchAgentTeamTask: createAgentTeamsTaskResult,
+      /** 用实际桌面HTTP序列化和服务端严格解析联验三阶段，回执仅为隔离测试替身。 / Exercise real desktop HTTP serialization and strict service parsing for all stages; receipts remain isolated test doubles. */
+      dispatchAgentTeamTask: async (input) => {
+        dispatchedStages.push(structuredClone(input));
+        const expected = await createAgentTeamsTaskResult(input);
+        const transport = new HttpCompetitionAgentTeamsAdapter({
+          /** 使用不可联网测试地址。 / Use a non-networked test address. */
+          resolveEndpoint: async () => "https://agentteams.example.test/adapter/",
+          /** 提供无真实权限的隔离委托占位符。 / Supply an isolated delegation placeholder with no real authority. */
+          resolveDelegationToken: async () => "isolated-test-placeholder-never-a-real-credential".repeat(2),
+          /** 在网络边界读取实际请求交由维护中的服务端契约解析。 / Parse the actual outgoing request with the maintained service contract at the network boundary. */
+          fetchResource: async (_url, init) => {
+            const wire = JSON.parse(String(init?.body)) as Record<string, unknown>;
+            const parsed = serviceContract.parseTaskRequest(wire, new Date("2026-08-03T02:00:00.000Z"));
+            assert.deepEqual(parsed.context.residentContexts, input.residentContexts);
+            return new Response(JSON.stringify({ ...wire, ...expected, schema: "openxnet.agentteams.task-result.v1", success: true, status: "COMPLETED" }));
+          },
+        });
+        return transport.dispatch(input);
+      },
+      /** 捕获真实运行时生成的身份化记忆发布。 / Capture identity-bound publications generated by the actual runtime. */
+      persistResolvedIncidentMemory: async (request) => { teamMemories.push(request); },
+      /** 捕获同一团队的 Skill 发布授权。 / Capture Skill publication authorization for the same team. */
+      publishRetrospectiveSkill: async (request) => { teamSkillMemories.push(request); return { skillId: request.skillId }; },
       recordAgentTeamConversation: async (_input, task) => {
         projectedConversationStages.push(task.stage);
       },
@@ -983,7 +1233,24 @@ test("competition runtime persists immutable enterprise team-template role snaps
       actionId: agentActionId,
       actorId: "human-verification-supervisor",
     });
+    assert.deepEqual(dispatchedStages.map((item) => item.residentContexts?.map((context) => context.contextVersion)), [
+      ["ctx-1", "ctx-1", "ctx-1"], ["ctx-2", "ctx-2", "ctx-2"], ["ctx-3", "ctx-3", "ctx-3"],
+    ]);
+    const verificationInput = dispatchedStages[2]!;
+    assert.equal(verificationInput.evidence.length, 5);
+    assert.equal(verificationInput.residentContexts?.flatMap((context) => context.evidenceRefs).length, 5);
+    assert.deepEqual(agentVerified.snapshot.residentEvents.filter((item) => item.traceId === ready.traceId),
+      ready.snapshot.residentEvents.filter((item) => item.traceId === ready.traceId));
+    const verifiedTeamIncident = agentVerified.snapshot.incidents.find((item) => item.incidentId === enabledIncident.incidentId)!;
+    assert.equal(resolveIndependentVerification(agentVerified.snapshot, verifiedTeamIncident).status, "PASSED");
+    assert.equal(resolveIndependentVerification({ ...agentVerified.snapshot, agentDecisions: [] }, verifiedTeamIncident).status, "PENDING");
     assert.equal(agentVerified.snapshot.incidents.find((item) => item.incidentId === enabledIncident.incidentId)?.status, "RESOLVED");
+    assert.equal(teamMemories.length, 1);
+    assert.deepEqual(teamMemories[0]?.memoryAccess?.memberRoles.map(/** 核对实际角色 ID。 / Check actual role IDs. */ item => item.roleCardId), [leader.id, worker.id, verifier.id]);
+    assert.deepEqual(teamMemories[0]?.agentDecisions.map(/** 核对已验证决策身份。 / Check verified decision identities. */ item => item.roleCardId), [worker.id, leader.id, verifier.id]);
+    assert.equal(teamMemories[0]?.memoryAccess?.bindingId, agentVerified.snapshot.teamBindings.at(-1)?.bindingId);
+    assert.equal(await enabledRuntime.reconcileResolvedMemories(), 1);
+    assert.deepEqual(teamMemories[1]?.memoryAccess, teamMemories[0]?.memoryAccess);
     assert.deepEqual(
       agentVerified.snapshot.agentDecisions
         .filter((item) => item.incidentId === enabledIncident.incidentId)
@@ -1005,6 +1272,9 @@ test("competition runtime persists immutable enterprise team-template role snaps
     assert.equal(completedGraph?.events.some((item) => item.eventType === "CHECKPOINT_SAVED"), true);
     assert.equal(completedGraph?.events.every((item) => /^[a-f0-9]{64}$/u.test(item.checkpointDigest)), true);
     const crystallized = await enabledRuntime.exportRetrospective({ incidentId: enabledIncident.incidentId });
+    assert.equal(teamSkillMemories.length, 1);
+    assert.deepEqual(teamSkillMemories[0]?.memoryAccess, teamMemories[0]?.memoryAccess);
+    assert.equal(teamSkillMemories[0]?.traceId, teamMemories[0]?.traceId);
     const agentTeamsEvolution = crystallized.snapshot.skillEvolutionRuns.find((item) => (
       item.incidentId === enabledIncident.incidentId
     ));
@@ -1401,15 +1671,21 @@ test("live mode rejects a simulation-only enterprise Skill", async () => {
   }
 });
 
-test("live mode reuses a verified staging enterprise Skill", async () => {
+/** 仅允许当前环境认证与实际包摘要同时匹配的 Live 复用。 / Allow Live reuse only when current environment certification and actual artifact digests match. */
+test("live mode reuses a verified staging enterprise Skill with current artifact and environment proof", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-skill-live-reuse-"));
   try {
+    const digest = createHash("sha256").update("runtime contract test artifact").digest("hex");
     const runtime = createRuntime(directory, {
+      resolveCurrentEnvironmentFingerprint: async () => "goai-staging@150.109.52.248:agentteams-v1.2.0",
       resolveEnabledEnterpriseSkill: async () => ({
         sourceIncidentId: "inc_staging_source",
         lifecycleStatus: "verified",
         environmentScope: "staging",
         productionEligible: false,
+        environmentFingerprint: "goai-staging@150.109.52.248:agentteams-v1.2.0",
+        artifactDigest: digest,
+        currentArtifactDigest: digest,
       }),
     });
     await runtime.setAdapterMode({ mode: "live" });
@@ -1426,6 +1702,43 @@ test("live mode reuses a verified staging enterprise Skill", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+/** 每项反例都经过真实 Runtime 的取证入口，保留审批门。 / Exercise each negative case through the real Runtime investigation entry with approval gates intact. */
+for (const mismatch of ["legacy-fields", "missing-current-environment", "old-environment", "missing-certified-digest", "changed-artifact", "invalid-digest", "missing-source", "self-source"] as const) {
+  /** 缺证明或跨环境制品只能进入基线，不声明复用。 / Missing proof or cross-environment artifacts must remain BASELINE. */
+  test(`live Skill reuse stays BASELINE for ${mismatch}`, async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-skill-proof-rejection-"));
+    try {
+      const digest = createHash("sha256").update("runtime contract test artifact").digest("hex");
+      let currentIncidentId: string | null = null;
+      const runtime = createRuntime(directory, {
+        resolveCurrentEnvironmentFingerprint: async () => mismatch === "missing-current-environment" ? null : "goai-staging@150.109.52.248:agentteams-v1.2.0",
+        resolveEnabledEnterpriseSkill: async () => ({
+          sourceIncidentId: mismatch === "missing-source" ? null : mismatch === "self-source" ? currentIncidentId : "inc_certified_source",
+          lifecycleStatus: "verified",
+          environmentScope: "staging",
+          productionEligible: false,
+          ...(mismatch === "legacy-fields" ? {} : {
+            environmentFingerprint: mismatch === "old-environment" ? "goai-staging@101.32.9.231:agentteams-v1.2.0" : "goai-staging@150.109.52.248:agentteams-v1.2.0",
+            artifactDigest: mismatch === "missing-certified-digest" ? null : mismatch === "invalid-digest" ? "not-a-digest" : digest,
+            currentArtifactDigest: mismatch === "changed-artifact" ? createHash("sha256").update("changed bytes").digest("hex") : mismatch === "invalid-digest" ? "not-a-digest" : digest,
+          }),
+        }),
+      });
+      await runtime.setAdapterMode({ mode: "live" });
+      const created = await runtime.createIncident(createIncidentRequest());
+      currentIncidentId = created.incidentId;
+      const investigated = await runtime.runInvestigation({ incidentId: created.incidentId, actorId: "incident-commander", teamRuntime: "builtin" });
+      const usage = investigated.snapshot.skillUsages.find((item) => item.incidentId === created.incidentId);
+      assert.equal(usage?.status, "BASELINE");
+      assert.equal(usage.sourceIncidentId, null);
+      assert.equal(investigated.snapshot.incidents[0]?.status, "AWAITING_APPROVAL");
+      assert.equal(investigated.snapshot.actions.length, 0);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
 
 /** 要求可空字符串存在；输入字符串，返回非空值，空值时让测试失败。 */
 function assertNonNull(value: string | null): string {

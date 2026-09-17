@@ -1,0 +1,17 @@
+# -*- coding: utf-8 -*-
+# Copyright (C) 2026 Synapxnet. All rights reserved.
+# SPDX-License-Identifier: AGPL-3.0-only
+# 构建内容白名单 / Build-context allowlist.
+# Author: maoyo (maintenance) | Department: 研发部 | Date: 2026-09-16
+# Version: 1.3.0-contract.2 | Security Level: INTERNAL
+# __maintainer__: maoyo | __email__: synapxnet@gmail.com
+# Existing LICENSE and third-party notices are retained in the base image.
+**
+!Dockerfile
+!.dockerignore
+!package.json
+!src/
+!src/*.js
+
+!skill-bundles/
+!skill-bundles/**

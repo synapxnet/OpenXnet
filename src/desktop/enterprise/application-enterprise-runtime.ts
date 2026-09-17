@@ -85,9 +85,11 @@ const AGENT_COLORS = Object.freeze([
 /** Enterprise Runtime 的最小网络响应。 */
 export interface ApplicationEnterpriseFetchResponse {
   readonly status: number;
+  /** 只读有界产品标识响应。 / Read only a bounded product-identity response. */
+  text?: () => Promise<string>;
 }
 
-/** Enterprise Runtime 注入的无响应体健康检查 fetch。 */
+/** Enterprise Runtime 注入的产品身份检查 fetch。 / Injectable fetch for product identity checks. */
 export type ApplicationEnterpriseFetch = (
   url: string,
   options: { readonly method: "GET"; readonly redirect: "manual"; readonly signal: AbortSignal },
@@ -140,9 +142,52 @@ interface EnterpriseSandboxDocument {
   readonly scene: Readonly<Record<string, unknown>>;
 }
 
-/** 创建默认健康检查 fetch；无输入，返回禁止自动重定向且不读取响应体的网络函数。 */
+/** 限量读取产品标识，不下载无限响应或跟随重定向。 / Read bounded product identity without unbounded downloads or redirects. */
 function createDefaultFetch(): ApplicationEnterpriseFetch {
-  return async (url, options) => fetch(url, options);
+  return async (url, options) => {
+    const response = await fetch(url, options);
+    return {
+      status: response.status,
+      /** 只读取最多 64 KiB 页面头部用于产品核对。 / Read at most 64 KiB of the page for product matching. */
+      text: async () => {
+        const reader = response.body?.getReader();
+        if (!reader) return "";
+        const chunks: Uint8Array[] = [];
+        let length = 0;
+        try {
+          while (length < 65_536) {
+            const part = await reader.read();
+            if (part.done) break;
+            const chunk = part.value.subarray(0, 65_536 - length);
+            chunks.push(chunk);
+            length += chunk.byteLength;
+          }
+        } finally {
+          await reader.cancel();
+        }
+        return Buffer.concat(chunks).toString("utf8");
+      },
+    };
+  };
+}
+
+/** 解析公开产品标识；页面标题只证明页面归属，不代表授权或模型健康。 / Parse public product identity, never treating a title as authorization or model health. */
+function readXnetProductIdentity(text: string): {
+  platform: ApplicationEnterpriseXnetServiceKey | null;
+  source: "page-title" | "manifest" | null;
+} {
+  try {
+    const manifest: unknown = JSON.parse(text);
+    if (isPlainRecord(manifest) && typeof manifest.platform === "string" && XNET_SERVICE_KEYS.has(manifest.platform as ApplicationEnterpriseXnetServiceKey)
+      && typeof (manifest.agentVersion ?? manifest.version) === "string") {
+      return { platform: manifest.platform as ApplicationEnterpriseXnetServiceKey, source: "manifest" };
+    }
+  } catch {
+    // 页面不是 JSON 时仅核对标题。 / When the page is not JSON, match only its title.
+  }
+  const title = /<title(?:\s[^>]*)?>([^<]*)<\/title>/iu.exec(text)?.[1]?.trim() || "";
+  const platform = /^Xnet(AIOps|DataOps|MLOps)(?:\s*(?:[-|·]|—).*)?$/iu.exec(title)?.[1]?.toLowerCase();
+  return platform ? { platform: platform as ApplicationEnterpriseXnetServiceKey, source: "page-title" } : { platform: null, source: null };
 }
 
 /** 深度克隆有界 JSON；输入值、预算和标签，返回独立值，不可序列化或超限时抛错。 */
@@ -465,6 +510,20 @@ export class ApplicationEnterpriseRuntimeService {
       success: true,
       workspaces: await this.readWorkspaces(),
     };
+  }
+
+  /** 在企业存储中解析真实空间，拒绝模糊演示别名和已删除空间。 / Resolve a real enterprise workspace and reject ambiguous demo aliases or deleted workspaces. */
+  public async resolveWorkspaceId(workspaceId: string): Promise<string> {
+    const requested = requireEnterpriseId(workspaceId, "Workspace id");
+    const workspaces = await this.readWorkspaces();
+    if (requested !== "ws_goai_demo") {
+      if (!workspaces.some((workspace) => workspace.id === requested)) throw new Error("工作空间不存在，请重新选择工作空间。 / Workspace no longer exists; select a workspace.");
+      return requested;
+    }
+    const named = workspaces.filter((workspace) => workspace.name.trim() === "GOAI Competition Demo");
+    const resolved = named.length === 1 ? named[0] : named.length === 0 && workspaces.length === 1 ? workspaces[0] : undefined;
+    if (!resolved) throw new Error("请明确选择演示工作空间，无法自动确定演示别名。 / Select a demo workspace explicitly; its alias is ambiguous.");
+    return resolved.id;
   }
 
   /** 创建或更新企业环境元数据；输入结构化草稿，返回记录，不执行 Docker/SSH，未知 ID 时拒绝。 */
@@ -790,6 +849,10 @@ export class ApplicationEnterpriseRuntimeService {
         auto_connect: parsed.autoConnect as boolean,
         status: url === previous.url && url ? previous.status : "offline",
         last_check: url === previous.url && url ? previous.last_check : "",
+        connectionStatus: url === previous.url && url ? previous.connectionStatus || "unchecked" : "unchecked",
+        identityStatus: url === previous.url && url ? previous.identityStatus || "pending" : "pending",
+        identityPlatform: url === previous.url && url ? previous.identityPlatform || null : null,
+        identitySource: url === previous.url && url ? previous.identitySource || null : null,
       };
       services[serviceKey] = service;
       await this.writeJsonFile(this.xnetServicesPath, services, "Xnet services");
@@ -809,29 +872,29 @@ export class ApplicationEnterpriseRuntimeService {
     });
   }
 
-  /** 批量检查已保存 Xnet 服务；输入 autoOnly 标志，返回完整三项状态，空 URL 和非自动项不会访问网络。 */
+  /** 并行检查固定三平台并统一保存；空 URL 和非自动项不访问网络。 / Probe the fixed three platforms concurrently and persist once, skipping empty or nonautomatic entries. */
   public checkAllXnetServices(request: unknown): Promise<ApplicationEnterpriseXnetServiceListResult> {
     const parsed = requireExactRecord(request, ["autoOnly"], "Xnet health-check request");
     if (typeof parsed.autoOnly !== "boolean") throw new Error("Xnet auto-only flag is invalid.");
     return this.enqueueOperation(async () => {
       const services = { ...await this.readXnetServices() };
-      for (const serviceKey of ["dataops", "mlops", "aiops"] as const) {
+      await Promise.all((["dataops", "mlops", "aiops"] as const).map(/** 三个探测独立失败，不让单个平台串行阻塞其他平台。 / Probe independently so one platform cannot serially block the others. */ async (serviceKey) => {
         const service = services[serviceKey];
-        if (!service.url || (parsed.autoOnly && !service.auto_connect)) continue;
+        if (!service.url || (parsed.autoOnly && !service.auto_connect)) return;
         services[serviceKey] = await this.checkService(serviceKey, service);
-      }
+      }));
       await this.writeJsonFile(this.xnetServicesPath, services, "Xnet services");
       return { schema: APPLICATION_ENTERPRISE_RUNTIME_SCHEMA, success: true, services };
     });
   }
 
-  /** 解析角色卡草稿；输入未知值，返回所有字段完整的有界记录，未知字段或非法数组时抛错。 */
+  /** 解析完整有界角色草稿并拒绝不受控头像。 Parse a complete bounded role draft and reject uncontrolled portraits. */
   private parseRoleCardDraft(value: unknown): Omit<ApplicationEnterpriseRoleCard, "created_at" | "updated_at"> {
     const fields = [
       "id", "name", "description", "system_prompt", "permissions", "tools", "enabled", "department", "icon",
       "skills", "skill_ids", "assignedWorkspace", "projectId", "templateId", "category", "categoryZh", "categoryEn",
       "summaryZh", "summaryEn", "accent", "runtime_system_prompt", "agent_name", "role_scope", "syncSource",
-      "bodyType", "position3D", "created_at", "updated_at",
+      "bodyType", "position3D", "avatarUrl", "created_at", "updated_at",
     ];
     const draft = requireExactRecord(value, fields, "enterprise role card");
     if (draft.enabled !== undefined && typeof draft.enabled !== "boolean") throw new Error("Role card enabled flag is invalid.");
@@ -847,6 +910,10 @@ export class ApplicationEnterpriseRuntimeService {
       };
     }
     const id = draft.id === undefined || draft.id === "" ? "" : requireEnterpriseId(draft.id, "Role card id");
+    const avatarUrl = requireText(draft.avatarUrl, "Role card avatar", 240);
+    if (avatarUrl && (avatarUrl.includes("..") || !/^\/uploaded_files\/[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:png|jpe?g|webp|gif)$/i.test(avatarUrl))) {
+      throw new Error("Role card avatar must reference a controlled image artifact.");
+    }
     return {
       id,
       name: requireText(draft.name, "Role card name", 160, true),
@@ -857,6 +924,7 @@ export class ApplicationEnterpriseRuntimeService {
       enabled: draft.enabled !== false,
       department: requireText(draft.department, "Role card department", 160),
       icon: requireText(draft.icon, "Role card icon", 160),
+      avatarUrl,
       skills: requireTextList(draft.skills, "Role card skills"),
       skill_ids: requireTextList(draft.skill_ids, "Role card skill ids"),
       assignedWorkspace: requireText(draft.assignedWorkspace, "Role card workspace", 128),
@@ -1140,7 +1208,7 @@ export class ApplicationEnterpriseRuntimeService {
           "id", "name", "description", "system_prompt", "permissions", "tools", "enabled", "department", "icon",
           "skills", "skill_ids", "assignedWorkspace", "projectId", "templateId", "category", "categoryZh", "categoryEn",
           "summaryZh", "summaryEn", "accent", "runtime_system_prompt", "agent_name", "role_scope", "syncSource",
-          "bodyType", "position3D", "created_at", "updated_at",
+          "bodyType", "position3D", "avatarUrl", "created_at", "updated_at",
         ]);
         const draft = this.parseRoleCardDraft(compatible);
         return [{
@@ -1460,38 +1528,67 @@ export class ApplicationEnterpriseRuntimeService {
       } catch {
         // 非法旧 URL 不进入 Renderer 或网络边界。
       }
+      const connectionStatus = !url ? "unchecked"
+        : value.connectionStatus === "reachable" || value.connectionStatus === "unreachable" ? value.connectionStatus : "unchecked";
+      let identityStatus: NonNullable<ApplicationEnterpriseXnetService["identityStatus"]> = url && ["verified", "mismatch", "unverified", "unavailable"].includes(String(value.identityStatus))
+        ? value.identityStatus as NonNullable<ApplicationEnterpriseXnetService["identityStatus"]> : "pending";
+      let identityPlatform = url && typeof value.identityPlatform === "string" && XNET_SERVICE_KEYS.has(value.identityPlatform as ApplicationEnterpriseXnetServiceKey)
+        ? value.identityPlatform as ApplicationEnterpriseXnetServiceKey : null;
+      let identitySource: "page-title" | "manifest" | null = url && (value.identitySource === "page-title" || value.identitySource === "manifest") ? value.identitySource : null;
+      if (identityStatus === "verified" && (connectionStatus !== "reachable" || identityPlatform !== serviceKey || !identitySource)) {
+        identityStatus = connectionStatus === "unchecked" ? "pending" : connectionStatus === "unreachable" ? "unavailable"
+          : identityPlatform && identityPlatform !== serviceKey ? "mismatch" : "unverified";
+      }
+      if (identityStatus !== "verified" && identityStatus !== "mismatch") {
+        identityPlatform = null;
+        identitySource = null;
+      }
       result[serviceKey] = {
         name: names[serviceKey],
         url,
-        status: value.status === "online" && url ? "online" : "offline",
+        status: value.status === "online" && identityStatus === "verified" && connectionStatus === "reachable" ? "online" : "offline",
         last_check: url ? readTimestamp(value.last_check, "") : "",
         auto_connect: value.auto_connect === true,
+        connectionStatus,
+        identityStatus,
+        identityPlatform,
+        identitySource,
       };
     }
     return result;
   }
 
-  /** 对单个 Xnet 服务执行 5 秒健康检查；输入键和保存配置，返回新状态，不跟随重定向或读取响应体。 */
+  /** 在 5 秒内分别核对连接和有界产品标识，不跟随重定向。 / Check reachability and bounded product identity within five seconds without redirects. */
   private async checkService(
     serviceKey: ApplicationEnterpriseXnetServiceKey,
     service: ApplicationEnterpriseXnetService,
   ): Promise<ApplicationEnterpriseXnetService> {
-    if (!service.url) return { ...service, status: "offline", last_check: "" };
+    if (!service.url) return { ...service, status: "offline", last_check: "", connectionStatus: "unchecked", identityStatus: "pending", identityPlatform: null, identitySource: null };
     const url = this.requireXnetUrl(service.url);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5_000);
     let status: "online" | "offline" = "offline";
+    let connectionStatus: "reachable" | "unreachable" = "unreachable";
+    let identityStatus: NonNullable<ApplicationEnterpriseXnetService["identityStatus"]> = "unavailable";
+    let identityPlatform: ApplicationEnterpriseXnetServiceKey | null = null;
+    let identitySource: "page-title" | "manifest" | null = null;
     try {
       const response = await this.fetchResource(url, { method: "GET", redirect: "manual", signal: controller.signal });
-      status = response.status >= 200 && response.status < 500 && !(response.status >= 300 && response.status < 400)
-        ? "online"
-        : "offline";
+      connectionStatus = "reachable";
+      const text = response.text ? (await response.text()).slice(0, 65_536) : "";
+      if (response.status >= 200 && response.status < 300) {
+        const identity = readXnetProductIdentity(text);
+        identityPlatform = identity.platform;
+        identitySource = identity.source;
+        identityStatus = identity.platform === serviceKey ? "verified" : identity.platform ? "mismatch" : "unverified";
+        if (identityStatus === "verified") status = "online";
+      }
     } catch (error) {
       this.logger.warn(`Xnet health check failed for ${serviceKey}.`, error);
     } finally {
       clearTimeout(timeout);
     }
-    return { ...service, status, last_check: this.now().toISOString() };
+    return { ...service, status, connectionStatus, identityStatus, identityPlatform, identitySource, last_check: this.now().toISOString() };
   }
 
   /** 校验 Xnet URL；输入未知值，返回规范 URL，空值允许，非 HTTPS 或非回环 HTTP、凭据、查询和片段时抛错。 */

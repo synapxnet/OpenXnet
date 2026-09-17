@@ -4,6 +4,7 @@ export const APPLICATION_CHAT_CHANNELS = {
   complete: "openxnet:application-chat:complete",
   listModels: "openxnet:application-chat:list-models",
   abort: "openxnet:application-chat:abort",
+  recoveryStatus: "openxnet:application-chat:recovery-status",
   executeTool: "openxnet:application-chat:execute-tool",
   resolveApproval: "openxnet:application-chat:resolve-approval",
   streamEvent: "openxnet:application-chat:stream-event",
@@ -93,6 +94,11 @@ export interface AbortApplicationChatRequest {
   readonly conversationId?: string;
 }
 
+/** 核对指定会话是否仍在执行的只读请求。 / Read-only request to check whether the specified conversation is still executing. */
+export interface GetApplicationChatRecoveryStatusRequest {
+  readonly conversationId: string;
+}
+
 /** Exact manual tool execution request accepted from Renderer. */
 export interface ExecuteApplicationChatToolRequest {
   readonly toolName: string;
@@ -100,6 +106,7 @@ export interface ExecuteApplicationChatToolRequest {
   readonly approvalType?: string;
   readonly approvalId?: string;
   readonly traceId?: string;
+  readonly conversationId?: string;
 }
 
 /** Exact approval-only resolution request accepted from Renderer. */

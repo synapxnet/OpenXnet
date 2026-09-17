@@ -31,7 +31,7 @@ html[data-theme="ink"] .oxe-rebuilt {
 .page.tools-container.ox-prototype-section-page:has(.oxe-rebuilt--full) {
   padding: 0 !important;
   background: transparent !important;
-  display: flex !important;
+  display: flex;
   flex-direction: column !important;
   height: 100% !important;
   min-height: 0 !important;

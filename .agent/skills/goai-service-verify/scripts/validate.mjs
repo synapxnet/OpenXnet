@@ -112,11 +112,12 @@ function validateVerificationAction(value) {
   }
 }
 
-/** 校验 Skill 输入包络；输入未知 JSON 和规则，无返回。 */
+/** 校验输入包络与必需审批。 / Validate the input envelope and mandatory approval boundary. */
 function validateInput(value, rule) {
   if (!isRecord(value)) throw new Error("Skill input must be an object.");
   requireExactFields(value, rule.inputFields, "Skill input");
   if (value.schema !== rule.inputSchema) throw new Error("Skill input schema is invalid.");
+  if ("approvalRequired" in value && value.approvalRequired !== true) throw new Error("approvalRequired must be true.");
   requireText(value.incidentId, "incidentId", 128);
   requireText(value.traceId, "traceId", 128);
   if ("evidence" in value) {

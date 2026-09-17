@@ -1,0 +1,16 @@
+{
+  "name": "openxnet-agentteams-adapter",
+  "version": "1.3.0-live.4",
+  "private": true,
+  "description": "OpenXnet isolated AgentTeams login and team adapter service",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "check": "node --check src/contracts.js && node --check src/security.js && node --check src/credential-store.js && node --check src/access-grant-store.js && node --check src/live-access-store.js && node --check src/live-gateway.js && node --check src/live-tool-catalog.js && node --check src/matrix-client.js && node --check src/agentteams-cli.js && node --check src/server.js && node --check src/worker-activity-store.js && node --check src/worker-activity-cli.js && node --check src/worker-activity-client.js && node --check src/worker-lifecycle-cli.js && node --check src/worker-lifecycle-bootstrap.js && node --check src/skill-bundle.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "AGPL-3.0-only"
+}

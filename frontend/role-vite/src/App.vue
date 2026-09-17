@@ -6,6 +6,7 @@ const bridge = createRoleBridge();
 const snapshot = ref(bridge.snapshot());
 const roleListRef = ref(null);
 let refreshTimer = null;
+const voiceEnginePending = ref(false);
 
 function resetRoleListScroll() {
   nextTick(() => {
@@ -78,8 +79,21 @@ function handleTtsField(field, event) {
   refreshSnapshot();
 }
 
-function handlePlaySample() {
-  bridge.playVoiceSample();
+async function handleVoiceEngine(engine) {
+  if (voiceEnginePending.value) return;
+  voiceEnginePending.value = true;
+  try {
+    await bridge.selectVoiceEngine(engine);
+  } catch (error) {
+    window.showNotification?.(error?.message || (isZh.value ? '语音引擎切换失败' : 'Could not change the voice engine'), 'error');
+  } finally {
+    voiceEnginePending.value = false;
+    refreshSnapshot();
+  }
+}
+
+function handlePlaySample(voiceId = 'default') {
+  bridge.playVoiceSample(voiceId);
 }
 
 function handleOpenVrmUpload() {
@@ -369,13 +383,16 @@ onBeforeUnmount(() => {
             type="button"
             class="ox-vite-role-provider-card"
             :class="{ active: provider.active }"
+            :aria-pressed="provider.active"
+            :disabled="voiceEnginePending"
+            @click="handleVoiceEngine(provider.id)"
           >
             <i class="fa-solid fa-waveform-lines"></i>
             <span>{{ provider.label }}</span>
           </button>
         </div>
 
-        <h2>{{ isZh ? '角色语音分配' : 'Role Voice Mapping' }}</h2>
+        <h2>{{ isZh ? '已保存的角色语音' : 'Saved Role Voices' }}</h2>
         <div class="ox-vite-role-table-wrap">
           <table class="ox-vite-role-table">
             <thead>
@@ -395,19 +412,21 @@ onBeforeUnmount(() => {
                 <td>{{ row.tone }}</td>
                 <td>{{ row.speed }}</td>
                 <td>{{ row.pitch }}</td>
-                <td><button type="button" class="ox-vite-role-play-btn" @click="handlePlaySample"><i class="fa-solid fa-play"></i></button></td>
+                <td><button type="button" class="ox-vite-role-play-btn" :aria-label="(isZh ? '试听 ' : 'Preview ') + row.name" @click="handlePlaySample(row.id)"><i class="fa-solid fa-play"></i></button></td>
               </tr>
+              <tr v-if="!voice.rows.length"><td colspan="6">{{ isZh ? '尚未保存角色语音，可先使用下方的默认语音。' : 'No saved role voices. Use the default voice below.' }}</td></tr>
             </tbody>
           </table>
         </div>
 
         <h2>{{ isZh ? '全局设置' : 'Global Settings' }}</h2>
+        <button type="button" class="ox-vite-role-secondary-btn" @click="handlePlaySample('default')"><i class="fa-solid fa-play"></i>{{ isZh ? '试听默认语音' : 'Preview default voice' }}</button>
         <div class="ox-vite-role-panel-grid ox-vite-role-panel-grid--voice">
-          <label class="ox-vite-role-field">
+          <label v-if="voice.engine === 'edgetts'" class="ox-vite-role-field">
             <span>{{ isZh ? '语言' : 'Language' }}</span>
             <input :value="voice.selectedLanguage" type="text" @input="handleTtsField('edgettsLanguage', $event)" />
           </label>
-          <label class="ox-vite-role-field">
+          <label v-if="voice.engine === 'edgetts'" class="ox-vite-role-field">
             <span>{{ isZh ? '性别' : 'Gender' }}</span>
             <select :value="voice.selectedGender" @change="handleTtsField('edgettsGender', $event)">
               <option value="Female">{{ isZh ? '女声' : 'Female' }}</option>
@@ -416,13 +435,14 @@ onBeforeUnmount(() => {
           </label>
           <label class="ox-vite-role-field">
             <span>{{ isZh ? '默认音色' : 'Default Voice' }}</span>
-            <select :value="voice.selectedVoice" @change="handleTtsField('edgettsVoice', $event)">
+            <select :value="voice.selectedVoice" @change="handleTtsField(voice.voiceField, $event)">
+              <option v-if="!voice.voiceOptions.length" value="">{{ isZh ? '暂无可用音色' : 'No voices available' }}</option>
               <option v-for="option in voice.voiceOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
           </label>
           <label class="ox-vite-role-field">
             <span>{{ isZh ? '默认语速' : 'Default Rate' }}</span>
-            <input :value="voice.selectedRate" type="number" min="0.5" max="2" step="0.1" @input="handleTtsField('edgettsRate', $event)" />
+            <input :value="voice.selectedRate" type="number" :min="voice.rateMin" :max="voice.rateMax" :step="voice.rateStep" @input="handleTtsField(voice.rateField, $event)" />
           </label>
           <label class="ox-vite-role-field ox-vite-role-field--full">
             <span>{{ isZh ? '试听文本' : 'Sample Text' }}</span>

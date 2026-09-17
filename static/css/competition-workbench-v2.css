@@ -45,6 +45,45 @@
   margin-top: 1px;
 }
 
+/* 演练配置独立于当前事件，宽屏并排、窄屏换行。 / Rehearsal drafts stay separate from the active incident and wrap on narrow screens. */
+.competition-rehearsal-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px 16px; min-width: 0; }
+.competition-rehearsal-panel__identity { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.competition-rehearsal-panel__identity > div { min-width: 0; }
+.competition-rehearsal-panel__identity strong, .competition-rehearsal-panel__identity small { display: block; overflow-wrap: anywhere; }
+.competition-rehearsal-panel__identity strong { font-size: 12px; }
+.competition-rehearsal-panel__identity small { margin-top: 3px; color: var(--ox-text-secondary); font-size: 11px; line-height: 1.5; }
+.competition-rehearsal-panel__controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+.competition-rehearsal-panel__controls .competition-segmented { display: inline-grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 0 1 auto; width: auto; min-width: 0; }
+.competition-rehearsal-panel__controls .competition-icon-button { flex: 0 0 36px; }
+.competition-new-incident-draft { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; align-items: start; gap: 12px; min-width: 0; padding-top: 10px; border-top: 1px solid var(--ox-border); }
+.competition-new-incident-draft:focus-visible { outline: 2px solid var(--ox-accent); outline-offset: 4px; }
+.competition-new-incident-draft .competition-scenario-control { width: 100%; min-width: 0; }
+.competition-new-incident-draft .competition-segmented { height: auto; min-height: 36px; min-width: 0; }
+.competition-new-incident-draft .competition-segmented button { min-height: 30px; padding: 5px 7px; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
+.competition-new-incident-draft__submit { display: grid; gap: 7px; min-width: 0; align-content: start; }
+.competition-new-incident-draft__submit .ox-btn { white-space: nowrap; word-break: normal; }
+.competition-new-incident-draft__submit .competition-schema-tag { white-space: normal; overflow-wrap: anywhere; max-width: 190px; }
+.competition-action-row > .competition-new-incident-button { grid-column: 1 / -1; white-space: normal; word-break: normal; }
+@container competition-host (max-width: 800px) {
+  .competition-rehearsal-panel { grid-template-columns: minmax(0, 1fr); }
+  .competition-rehearsal-panel__controls { justify-content: flex-start; }
+  .competition-new-incident-draft { grid-template-columns: minmax(0, 1fr); }
+  .competition-new-incident-draft__submit { justify-items: start; }
+}
+@media (max-width: 800px) {
+  .competition-rehearsal-panel { grid-template-columns: minmax(0, 1fr); }
+  .competition-rehearsal-panel__controls { justify-content: flex-start; }
+  .competition-new-incident-draft { grid-template-columns: minmax(0, 1fr); }
+  .competition-new-incident-draft__submit { justify-items: start; }
+}
+
+/* 显式选择真实事件，窄屏换行并沿用皮肤颜色。 / Select a real incident explicitly with narrow-screen wrapping and skin colors. */
+.competition-commandbar__actions { flex-wrap: wrap; min-width: 0; }
+.competition-incident-selector { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; max-width: 100%; color: var(--ox-text-secondary); font-size: 11px; }
+.competition-incident-selector select { min-width: 0; width: 260px; max-width: 100%; min-height: 36px; padding: 6px 8px; border: 1px solid var(--ox-border); border-radius: var(--competition-radius); background: var(--ox-bg-surface); color: var(--ox-text-primary); font: inherit; text-overflow: ellipsis; }
+.competition-incident-selector select:focus-visible { outline: 2px solid var(--ox-accent); outline-offset: 2px; }
+.enterprise-sandbox-incident-picker { flex-wrap: wrap; }
+
 .competition-schema-tag,
 .competition-status,
 .competition-platform {
@@ -195,6 +234,29 @@
   background: var(--ox-bg-base);
 }
 
+.competition-resident-strip {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.7fr) minmax(0, 2fr);
+  gap: 18px;
+  align-items: center;
+  margin: 14px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--ox-border, #d8dee9) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ox-surface, #fff) 90%, var(--ox-primary, #2f6fed) 10%);
+}
+
+.competition-resident-strip__heading { display: grid; gap: 4px; }
+.competition-resident-strip__heading small { color: var(--ox-muted, #687386); line-height: 1.35; }
+.competition-resident-strip__agents { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.competition-resident-agent { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 9px 10px; border-radius: 9px; background: color-mix(in srgb, var(--ox-surface, #fff) 78%, var(--ox-primary, #2f6fed) 22%); }
+.competition-resident-agent__icon { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border-radius: 8px; color: var(--ox-primary, #2f6fed); background: color-mix(in srgb, var(--ox-primary, #2f6fed) 14%, transparent); }
+.competition-resident-agent__copy { display: grid; min-width: 0; gap: 2px; }
+.competition-resident-agent__copy strong, .competition-resident-agent__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.competition-resident-agent__copy small, .competition-resident-agent__evidence { color: var(--ox-muted, #687386); font-size: 11px; }
+.competition-resident-agent__evidence { margin-left: auto; white-space: nowrap; }
+@media (max-width: 900px) { .competition-resident-strip { grid-template-columns: 1fr; } .competition-resident-strip__agents { grid-template-columns: 1fr; } }
+
 .competition-stage {
   position: relative;
   display: grid;
@@ -273,6 +335,17 @@
 
 .competition-stage.is-current .competition-stage__node {
   box-shadow: none;
+}
+
+.competition-stage.is-failed {
+  color: var(--ox-error);
+  background: var(--ox-error-soft);
+}
+
+.competition-stage.is-failed::before,
+.competition-stage.is-failed .competition-stage__node {
+  color: var(--ox-text-inverse, #fff);
+  background: var(--ox-error);
 }
 
 .competition-primary-grid {
@@ -1678,6 +1751,25 @@
   }
 }
 
+/* 审批前按需查看原授权摘要，使用当前主题与单列窄屏布局。 / Review original authorization summaries before approval using the active theme and a narrow single-column layout. */
+.competition-approval-plan { margin: 12px 0; min-width: 0; padding: 10px 12px; border: 1px solid var(--ox-border); border-radius: var(--ox-radius-sm, 8px); background: var(--ox-bg-surface); }
+.competition-approval-plan > summary { cursor: pointer; color: var(--ox-text-primary); font-size: 12px; line-height: 1.7; }
+.competition-approval-plan > summary > span { display: block; color: var(--ox-text-secondary); font-size: 11px; margin-top: 3px; }
+.competition-approval-plan > summary:focus-visible { outline: 2px solid var(--ox-accent); outline-offset: 4px; }
+.competition-approval-plan__hint { margin: 9px 0; color: var(--ox-text-secondary); font-size: 11px; line-height: 1.65; }
+.competition-approval-plan__scopes { list-style: none; margin: 12px 0 0; padding: 0; }
+.competition-approval-plan__scopes > li { padding: 10px 0; border-top: 1px solid var(--ox-border); }
+.competition-approval-plan__scopes > li > header { display: flex; flex-wrap: wrap; gap: 5px 8px; align-items: baseline; font-size: 12px; color: var(--ox-text-primary); }
+.competition-approval-plan__scopes > li > header > strong { min-width: 0; overflow-wrap: anywhere; }
+.competition-approval-plan__scopes > li > header > span { color: var(--ox-accent); font-size: 10px; }
+.competition-approval-plan__scopes > li.is-compensation > header > span { color: var(--ox-warning, #ad6d28); }
+.competition-approval-plan__metadata { display: grid; gap: 7px; margin: 9px 0 0; font-size: 11px; }
+.competition-approval-plan__metadata > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 0; }
+.competition-approval-plan__metadata dt { color: var(--ox-text-secondary); font-weight: 400; }
+.competition-approval-plan__metadata dd { margin: 0; min-width: 0; color: var(--ox-text-primary); overflow-wrap: anywhere; white-space: normal; line-height: 1.6; }
+.competition-approval-plan__metadata code { color: inherit; white-space: normal; overflow-wrap: anywhere; font-size: 10px; }
+.competition-approval-plan__dependency { display: block; }
+
 @media (prefers-reduced-motion: reduce) {
   .competition-workbench *,
   .competition-workbench *::before,
@@ -1687,3 +1779,144 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+/* Operations control keeps production oversight separate from the GOAI launcher. */
+/* 正式指挥台沿用皮肤、完整文本和单主滚动。 / Operations uses skin tokens, complete labels and one primary scroll. */
+/* 总览满宽网格与控件把内边距计入宽度，避免右栏被父级裁切。 / Include padding in overview widths so full-width grids and controls cannot clip the right column. */
+.ops-control-workbench, .ops-control-workbench *, .ops-control-workbench *::before, .ops-control-workbench *::after { box-sizing: border-box; }
+.ops-control-workbench { --ops-accent: var(--ox-accent); display: flex; flex-direction: column; gap: 0; border-radius: var(--ox-radius-lg, 12px); overflow: hidden; }
+.ops-control-workbench .competition-commandbar { flex-wrap: wrap; gap: 12px; padding: 18px 20px; }
+.ops-control-workbench .competition-commandbar h2 { font-size: 20px; line-height: 1.4; }
+.ops-control-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--ox-border); background: var(--ox-bg-surface); }
+.ops-control-toolbar label { display: grid; gap: 6px; min-width: 0; flex: 1 1 160px; font-size: 12px; color: var(--ox-text-secondary); }
+.ops-control-toolbar label.ops-control-search { flex: 2 1 240px; }
+.ops-control-toolbar input, .ops-control-toolbar select { min-width: 0; width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--ox-border); border-radius: var(--ox-radius-sm, 8px); background: var(--ox-bg-surface); color: var(--ox-text-primary); font: inherit; }
+.ops-control-toolbar select:focus, .ops-control-toolbar input:focus { border-color: var(--ox-accent); outline: 2px solid color-mix(in srgb, var(--ox-accent) 20%, transparent); }
+.ops-control-setup { min-width: 0; padding: 16px 20px; background: var(--ox-bg-surface-hover); border-bottom: 1px solid var(--ox-border); }
+.ops-control-setup .competition-section-heading p { color: var(--ox-text-secondary); font-size: 12px; margin: 6px 0 0; }
+.ops-control-stepper { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; width: 100%; min-width: 0; margin-top: 14px; }
+.ops-control-step { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 64px; padding: 10px; border: 1px solid var(--ox-border); border-radius: var(--ox-radius-sm, 8px); background: var(--ox-bg-surface); color: var(--ox-text-secondary); text-align: left; cursor: pointer; }
+.ops-control-step.is-current { border-color: var(--ox-accent); color: var(--ox-text-primary); background: color-mix(in srgb, var(--ox-accent) 7%, var(--ox-bg-surface)); }
+.ops-control-step.is-complete .ops-control-step__node { color: var(--ox-accent); background: color-mix(in srgb, var(--ox-accent) 12%, transparent); }
+.ops-control-step__node { display: grid; place-items: center; flex: 0 0 24px; height: 24px; border-radius: 50%; background: var(--ox-bg-surface-hover); }
+.ops-control-step__copy { display: grid; gap: 5px; flex: 1; min-width: 0; }
+.ops-control-step__copy strong, .ops-control-step__copy small { white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+.ops-control-step__copy strong { font-size: 12px; color: var(--ox-text-primary); }
+.ops-control-step__copy small { font-size: 11px; }
+.ops-control-step > i { font-size: 10px; opacity: .55; }
+.ops-control-grid { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1.75fr) minmax(250px, 1fr); align-items: start; gap: 20px; width: 100%; min-width: 0; padding: 20px; }
+.ops-control-panel { min-width: 0; border: 0; box-shadow: none; padding: 0; background: transparent; }
+.ops-control-panel--wide { min-height: 230px; }
+.ops-control-aside { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; min-width: 0; padding-left: 20px; border-left: 1px solid var(--ox-border); }
+.ops-control-panel .competition-section-heading { min-width: 0; max-width: 100%; }
+.ops-control-panel .competition-section-heading > div { min-width: 0; overflow-wrap: anywhere; }
+.ops-control-panel .competition-section-heading > .competition-status, .ops-control-panel .competition-section-heading > .competition-schema-tag { flex: 0 0 auto; }
+.ops-control-runs { display: grid; gap: 8px; min-width: 0; }
+.ops-control-run, .ops-control-approval { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 14px 12px; border: 1px solid var(--ox-border); border-radius: var(--ox-radius-sm, 8px); background: var(--ox-bg-surface); color: var(--ox-text-primary); text-align: left; cursor: pointer; transition: border-color .18s ease, background .18s ease, box-shadow .18s ease; }
+.ops-control-run:hover, .ops-control-run.is-selected, .ops-control-approval:hover { border-color: var(--ox-accent); background: color-mix(in srgb, var(--ox-accent) 6%, var(--ox-bg-surface)); box-shadow: inset 3px 0 0 var(--ox-accent); }
+.ops-control-run:focus-visible, .ops-control-approval:focus-visible, .ops-control-step:focus-visible { outline: 2px solid var(--ox-accent); outline-offset: 2px; }
+.ops-control-run__status { color: var(--ox-text-secondary); flex: 0 0 auto; font-size: 12px; }
+.ops-control-run__status.is-success { color: var(--ox-success, #309c75); }
+.ops-control-run__status.is-danger { color: var(--ox-danger, #dd5969); }
+.ops-control-run__status.is-warning { color: var(--ox-warning, #ba8736); }
+.ops-control-run__status.is-running { color: var(--ox-accent); }
+.ops-control-run__copy { min-width: 0; flex: 1; display: grid; gap: 5px; }
+.ops-control-run__copy strong { font-size: 13px; font-weight: 650; }
+.ops-control-run__copy strong, .ops-control-run__copy small, .ops-control-run__copy > span { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
+.ops-control-run__copy small, .ops-control-run__copy > span { color: var(--ox-text-secondary); font-size: 11px; }
+.ops-control-run > .competition-status { flex: 0 0 auto; max-width: 96px; white-space: normal; text-align: center; }
+.ops-control-run > i { font-size: 11px; color: var(--ox-text-secondary); }
+.ops-control-approval { border-color: color-mix(in srgb, var(--ox-warning, #ba8736) 36%, var(--ox-border)); }
+.ops-control-approval .ops-control-run__copy > span { color: var(--ox-accent); }
+.ops-control-help { color: var(--ox-text-secondary); line-height: 1.6; font-size: 12px; margin: 0 0 12px; }
+.ops-control-callout { display: flex; gap: 8px; align-items: center; padding: 16px 12px; border: 1px dashed var(--ox-border); border-radius: var(--ox-radius-sm, 8px); color: var(--ox-text-secondary); font-size: 12px; }
+.ops-control-platforms { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 12px; }
+.ops-control-platform { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; min-width: 0; padding-bottom: 12px; border-bottom: 1px solid var(--ox-border); }
+.ops-control-platform:last-child { border-bottom: 0; padding-bottom: 0; }
+.ops-control-platform button { min-width: 0; max-width: 100%; width: 100%; min-height: 36px; appearance: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--ox-border); border-radius: var(--ox-radius-sm, 8px); background: var(--ox-bg-surface); color: var(--ox-text-primary); font: inherit; font-size: 12px; font-weight: 600; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; text-align: left; transition: background-color 160ms ease, border-color 160ms ease; }
+.ops-control-platform button:hover { background: var(--ox-accent-soft); border-color: var(--ox-accent); }
+.ops-control-platform button:focus-visible { outline: 2px solid var(--ox-accent); outline-offset: 2px; }
+.ops-control-platform button > i { flex: 0 0 auto; color: var(--ox-text-secondary); font-size: 10px; }
+.ops-control-platform small { color: var(--ox-text-secondary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.ops-run-identifiers { margin-top: 12px; }
+.ops-run-identifiers > summary { cursor: pointer; color: var(--ox-text-secondary); font-size: 11px; padding: 8px 0; }
+.ops-demo-launcher { grid-template-columns: minmax(0, 1fr); }
+.ops-demo-launcher .competition-commandbar { display: flex; flex-wrap: wrap; gap: 16px; }
+.ops-demo-launcher .competition-rehearsal-panel { width: 100%; }
+.ops-demo-launcher .competition-new-incident-draft { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(190px, 1fr); }
+.ops-demo-launcher .competition-rehearsal-empty { min-height: 160px; padding: 24px; }
+.competition-resident-agent__copy strong { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+.competition-resident-agent { min-width: 0; }
+.competition-prerequisite-warning { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--ox-warning, #ba8736) 55%, var(--ox-border)); border-radius: var(--ox-radius-sm, 8px); background: color-mix(in srgb, var(--ox-warning, #ba8736) 8%, var(--ox-bg-surface)); color: var(--ox-text-primary); font-size: 12px; }
+.competition-prerequisite-warning > div { display: grid; flex: 1 1 160px; min-width: 0; gap: 3px; }
+.competition-prerequisite-warning span { line-height: 1.6; }
+@container competition-host (max-width: 850px) {
+  .ops-control-grid { grid-template-columns: minmax(0, 1fr); }
+  .ops-control-aside { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--ox-border); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ops-control-stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ops-demo-launcher .competition-new-incident-draft { grid-template-columns: minmax(0, 1fr); }
+}
+@container competition-host (max-width: 520px) {
+  .ops-control-toolbar, .ops-control-grid, .ops-control-setup { padding: 12px; }
+  .ops-control-aside { grid-template-columns: minmax(0, 1fr); }
+  .ops-control-stepper { grid-template-columns: minmax(0, 1fr); }
+  .ops-control-run { flex-wrap: wrap; }
+  .ops-control-run__copy { flex-basis: calc(100% - 34px); }
+  .ops-control-run > .competition-status { margin-left: 24px; }
+}
+@media (max-width: 700px) {
+  .ops-control-grid, .ops-control-aside { grid-template-columns: minmax(0, 1fr); }
+  .ops-control-aside { padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--ox-border); }
+  .ops-control-stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ops-demo-launcher .competition-new-incident-draft { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 演练检查只展示配置状态，不替代人工审批。 / Rehearsal checks show configuration and never replace human approval. */
+.ops-demo-preflight { grid-column: 1 / -1; display: grid; min-width: 0; gap: 12px; padding-top: 14px; border-top: 1px solid var(--ox-border); }
+.ops-demo-preflight__checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.ops-demo-preflight__checks > div { display: flex; align-items: start; gap: 7px; padding: 10px; background: var(--ox-bg-surface-hover); border-radius: var(--ox-radius-sm, 8px); min-width: 0; }
+.ops-demo-preflight__checks i { color: var(--ox-text-secondary); padding-top: 2px; }
+.ops-demo-preflight__checks .is-ready i { color: var(--ox-accent); }
+.ops-demo-preflight__checks span { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.ops-demo-preflight__checks strong, .ops-demo-preflight__checks small { font-size: 11px; white-space: normal; line-height: 1.5; overflow-wrap: anywhere; }
+.ops-demo-preflight__checks small, .ops-demo-preflight > p { color: var(--ox-text-secondary); }
+.ops-demo-preflight__checks button { font-size: 11px; padding: 0; white-space: nowrap; }
+.ops-demo-preflight > p { font-size: 11px; line-height: 1.6; margin: 0; }
+.competition-kpi__copy > small { display: block; font-size: 10px; line-height: 1.5; color: var(--ox-text-secondary); white-space: normal; overflow-wrap: anywhere; }
+.competition-planning-audit { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--ox-border); border-radius: var(--ox-radius-sm, 8px); background: var(--ox-bg-surface); }
+.competition-planning-audit > summary { cursor: pointer; color: var(--ox-text-secondary); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.competition-planning-audit > summary:focus-visible { outline: 2px solid var(--ox-accent); outline-offset: 3px; }
+.competition-planning-audit > p { color: var(--ox-text-secondary); font-size: 11px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* 运行摘要固定第2行；驻场信息在摘要内部铺满，不挤占工作流既有行。 / Keep summaries in row 2 and residents inside it without displacing workflow rows. */
+.competition-runtime-overview { display: grid; grid-template-columns: minmax(0, 1fr); grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+.competition-runtime-overview > .competition-resident-strip { grid-column: 1 / -1; min-width: 0; margin: 0; border: 0; border-bottom: 1px solid var(--competition-grid-border); border-radius: 0; background: var(--ox-bg-surface); }
+.competition-runtime-overview .competition-resident-agent { background: var(--ox-bg-surface-hover); }
+.competition-runtime-overview .competition-resident-agent__icon { color: var(--ox-accent); background: var(--ox-accent-soft); }
+.competition-runtime-overview .competition-resident-strip__heading small, .competition-runtime-overview .competition-resident-agent__copy small, .competition-runtime-overview .competition-resident-agent__evidence { color: var(--ox-text-secondary); }
+.ops-demo-launcher .competition-segmented--scenarios { grid-template-columns: minmax(0, 1fr); }
+@container competition-host (max-width: 960px) {
+  .competition-runtime-overview > .competition-resident-strip { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+}
+@container competition-host (max-width: 600px) {
+  .competition-runtime-overview .competition-resident-strip__agents { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 选项使用主色实底、边框与勾选三重反馈，保持皮肤与键盘焦点一致。 / Options use accent fill, border and a checkmark with consistent skin and keyboard focus. */
+#app .oxe-rebuilt .competition-workbench .competition-segmented > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; border: 1px solid transparent; color: var(--ox-text-secondary); background: transparent; transition: background .16s ease, border-color .16s ease, color .16s ease; }
+#app .oxe-rebuilt .competition-workbench .competition-segmented > button::before { content: "✓"; visibility: hidden; flex: 0 0 12px; font-size: 12px; line-height: 1; }
+#app .oxe-rebuilt .competition-workbench .competition-segmented > button.is-active { color: var(--ox-text-inverse, #fff); border-color: var(--ox-accent); background: var(--ox-accent); box-shadow: 0 1px 3px color-mix(in srgb, var(--ox-accent) 25%, transparent); font-weight: 650; }
+#app .oxe-rebuilt .competition-workbench .competition-segmented > button.is-active::before { visibility: visible; }
+#app .oxe-rebuilt .competition-workbench .competition-segmented > button:not(.is-active):hover:not(:disabled) { background: var(--ox-accent-soft); color: var(--ox-accent); }
+#app .oxe-rebuilt .competition-workbench .competition-segmented > button:focus-visible { outline: 2px solid var(--ox-accent); outline-offset: 2px; }
+#app .oxe-rebuilt .competition-workbench .competition-segmented > button:disabled:not(.is-active) { color: var(--ox-text-disabled); }
+
+/* 配置按钮放在正文下方；连接与授权长原因单独整行，避免压缩成竖排文字。 / Place configuration actions below text and give long connection or authorization reasons a full row. */
+#app .oxe-rebuilt .ops-demo-preflight__checks { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px; }
+#app .oxe-rebuilt .ops-demo-preflight__checks > div { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; align-content: start; gap: 8px; min-height: 78px; padding: 12px; }
+#app .oxe-rebuilt .ops-demo-preflight__checks > div.is-wide { grid-column: 1 / -1; min-height: 0; }
+#app .oxe-rebuilt .ops-demo-preflight__checks > div > span { grid-column: 2; gap: 6px; }
+#app .oxe-rebuilt .ops-demo-preflight__checks strong { font-size: 12px; line-height: 1.5; }
+#app .oxe-rebuilt .ops-demo-preflight__checks small { font-size: 12px; line-height: 1.7; word-break: normal; overflow-wrap: anywhere; }
+#app .oxe-rebuilt .ops-demo-preflight__checks > div > button { grid-column: 2; justify-self: start; width: auto; min-width: 0; min-height: 28px; padding: 4px 10px; margin-top: 2px; color: var(--ox-accent); font-size: 12px; }
+.competition-commandbar__meta .ops-run-source { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; color: var(--ox-text-primary); background: var(--ox-accent-soft); border-color: color-mix(in srgb, var(--ox-accent) 35%, var(--ox-border)); }

@@ -11,6 +11,7 @@ TASK_HTTP_FAMILY_SERVER = "server_compatibility"
 TASK_HTTP_FAMILY_UNRELATED = "unrelated"
 
 TASK_EXECUTION_BROKER_PATHS = frozenset({
+    "/v1/chat/recovery-status",
     "/v1/tasks/executor/preflight",
     "/v1/tasks/executor/session/turn",
     "/v1/tasks/executor/session/evaluate",

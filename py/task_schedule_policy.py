@@ -9,6 +9,7 @@ import re
 from typing import Any, Iterable, Mapping
 
 from py.task_planning import SCHEDULE_TYPE_ONCE, SCHEDULE_TYPE_RECURRING
+from py.conversation_automation import automation_active
 
 
 WEEKDAY_INDEX = {
@@ -82,6 +83,8 @@ def project_missing_recurring_runs(
     projections: list[ScheduleProjection] = []
     for task in tasks:
         context = _task_context(task)
+        if not automation_active(context):
+            continue
         if str(context.get("schedule_type") or "").strip() != SCHEDULE_TYPE_RECURRING:
             continue
         if str(context.get("next_run_at") or "").strip():
@@ -112,6 +115,8 @@ def collect_due_task_executions(
     decisions: list[DueTaskExecution] = []
     for task in tasks:
         context = _task_context(task)
+        if not automation_active(context):
+            continue
         schedule_type = str(context.get("schedule_type") or "").strip()
         if schedule_type not in {SCHEDULE_TYPE_ONCE, SCHEDULE_TYPE_RECURRING}:
             continue

@@ -19,6 +19,34 @@ const APPLICATION_SETTINGS_CHANNELS = Object.freeze({
   saveSystemSettings: "openxnet:application-settings:save-system-settings",
 });
 
+/** 安装版协同接入通道；访问码仅单向传入。 / Installed connection channels accept access codes in one direction only. */
+const APPLICATION_COMPETITION_CONNECTION_CHANNELS = Object.freeze({
+  get: 'openxnet:application-competition-connection:get',
+  test: 'openxnet:application-competition-connection:test',
+  save: 'openxnet:application-competition-connection:save',
+  clear: 'openxnet:application-competition-connection:clear',
+});
+
+/** Live 授权固定通道，与 Fixture 分开。 / Fixed Live authorization channels remain separate from Fixture. */
+const APPLICATION_COMPETITION_LIVE_CONNECTION_CHANNELS = Object.freeze({
+  get: 'openxnet:application-competition-live-connection:get',
+  test: 'openxnet:application-competition-live-connection:test',
+  save: 'openxnet:application-competition-live-connection:save',
+  clear: 'openxnet:application-competition-live-connection:clear',
+});
+
+const APPEARANCE_PREFERENCES_CHANNELS = Object.freeze({
+  read: 'openxnet:appearance-preferences:read',
+  write: 'openxnet:appearance-preferences:write',
+});
+
+// This device-owned preference file survives the local UI gateway changing port.
+// Only fixed read/write operations are exposed; Renderer code cannot choose paths.
+contextBridge.exposeInMainWorld('openxnetAppearance', Object.freeze({
+  read: () => ipcRenderer.sendSync(APPEARANCE_PREFERENCES_CHANNELS.read),
+  write: serialized => ipcRenderer.sendSync(APPEARANCE_PREFERENCES_CHANNELS.write, serialized),
+}));
+
 const APPLICATION_AUTH_CHANNELS = Object.freeze({
   getSession: "openxnet:application-auth:get-session",
   saveSession: "openxnet:application-auth:save-session",
@@ -177,6 +205,7 @@ const APPLICATION_CHAT_CHANNELS = Object.freeze({
   complete: "openxnet:application-chat:complete",
   listModels: "openxnet:application-chat:list-models",
   abort: "openxnet:application-chat:abort",
+  recoveryStatus: "openxnet:application-chat:recovery-status",
   executeTool: "openxnet:application-chat:execute-tool",
   resolveApproval: "openxnet:application-chat:resolve-approval",
   streamEvent: "openxnet:application-chat:stream-event",
@@ -631,6 +660,18 @@ function exposeDesktopCore() {
     completeApplicationChat: (request) => ipcRenderer.invoke(APPLICATION_CHAT_CHANNELS.complete, request),
     listApplicationChatModels: () => ipcRenderer.invoke(APPLICATION_CHAT_CHANNELS.listModels),
     abortApplicationChat: (request) => ipcRenderer.invoke(APPLICATION_CHAT_CHANNELS.abort, request),
+    /** 只读核对原会话状态，不启动新请求。 / Check original conversation status without starting a new request. */
+    getApplicationChatRecoveryStatus: (request) => ipcRenderer.invoke(APPLICATION_CHAT_CHANNELS.recoveryStatus, request),
+    /** 提交真实完成结果，由Main去重与应用偏好。 / Submit actual results for Main deduplication and preferences. */
+    publishCompletionNotice: (request) => ipcRenderer.invoke('openxnet:completion-notice:publish', request),
+    /** 静默读取有限公开快照。 / Read bounded public snapshots silently. */
+    getCompletionNoticeSnapshot: () => ipcRenderer.invoke('openxnet:completion-notice:snapshot'),
+    /** 只按已验证结果身份打开原位置。 / Open the original location only by verified result identity. */
+    openCompletionNotice: (request) => ipcRenderer.invoke('openxnet:completion-notice:open', request),
+    /** 监听Main公开结果，不暴露原生事件。 / Observe Main public results without exposing native events. */
+    onCompletionNotice: (callback) => onRendererEvent('openxnet:completion-notice:notice', callback),
+    /** 监听用户点击后的原会话或任务导航。 / Observe original conversation or task navigation after user clicks. */
+    onCompletionNoticeNavigate: (callback) => onRendererEvent('openxnet:completion-notice:navigate', callback),
     executeApplicationChatTool: (request) => ipcRenderer.invoke(APPLICATION_CHAT_CHANNELS.executeTool, request),
     resolveApplicationChatApproval: (request) => ipcRenderer.invoke(APPLICATION_CHAT_CHANNELS.resolveApproval, request),
     onApplicationChatStreamEvent: (callback) => onRendererEvent(APPLICATION_CHAT_CHANNELS.streamEvent, callback),
@@ -782,6 +823,22 @@ function exposeDesktopCore() {
     getApplicationCompetitionSnapshot: () => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.getSnapshot),
     /** 读取事件中心发布配置；无输入，返回生产或比赛 staging 的公开界面能力。 */
     getApplicationCompetitionUiProfile: () => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.getUiProfile),
+    /** 读取脱敏接入状态。 / Read redacted connection status. */
+    getApplicationCompetitionConnection: () => ipcRenderer.invoke(APPLICATION_COMPETITION_CONNECTION_CHANNELS.get),
+    /** 检查服务身份与授权。 / Check service identity and authorization. */
+    testApplicationCompetitionConnection: request => ipcRenderer.invoke(APPLICATION_COMPETITION_CONNECTION_CHANNELS.test, request),
+    /** 加密保存接入配置。 / Encrypt and save the connection. */
+    saveApplicationCompetitionConnection: request => ipcRenderer.invoke(APPLICATION_COMPETITION_CONNECTION_CHANNELS.save, request),
+    /** 清除本机接入配置。 / Clear the local connection. */
+    clearApplicationCompetitionConnection: () => ipcRenderer.invoke(APPLICATION_COMPETITION_CONNECTION_CHANNELS.clear),
+    /** 读取脱敏 Live 接入。 / Read redacted Live access. */
+    getApplicationCompetitionLiveConnection: () => ipcRenderer.invoke(APPLICATION_COMPETITION_LIVE_CONNECTION_CHANNELS.get),
+    /** 只读测试 Live 连接。 / Test Live access without writes. */
+    testApplicationCompetitionLiveConnection: request => ipcRenderer.invoke(APPLICATION_COMPETITION_LIVE_CONNECTION_CHANNELS.test, request),
+    /** 在 Main 中加密保存 Live 授权。 / Encrypt Live authorization in Main. */
+    saveApplicationCompetitionLiveConnection: request => ipcRenderer.invoke(APPLICATION_COMPETITION_LIVE_CONNECTION_CHANNELS.save, request),
+    /** 清除当前账号本机 Live 配置。 / Clear the current account's local Live configuration. */
+    clearApplicationCompetitionLiveConnection: () => ipcRenderer.invoke(APPLICATION_COMPETITION_LIVE_CONNECTION_CHANNELS.clear),
     /** 重置竞赛演示数据；输入固定确认标记，仅清除竞赛控制面状态。 */
     resetApplicationCompetitionDemoData: (request) => ipcRenderer.invoke(APPLICATION_COMPETITION_RUNTIME_CHANNELS.resetDemoData, request),
     /** 从企业项目群发起主 Demo；输入固定场景和团队选择，返回待审批状态。 */
@@ -955,6 +1012,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   openImageDialog: () => ipcRenderer.invoke('open-image-dialog'),
   readFile: (filePath) => ipcRenderer.invoke('read-authorized-file', filePath),
+  /** 读取Main工作区或单文件授权下的文本。 / Read text within Main workspace or exact-file authorization. */
+  readConversationFile: (request) => ipcRenderer.invoke('openxnet:conversation-files:read', request),
+  /** 仅读取Main验证归属后的公开子智能体协作记录。 / Read public subagent records only after Main verifies their ownership. */
+  readConversationSubagentTranscript: (request) => ipcRenderer.invoke('openxnet:conversation-subagent:read', request),
+  /** 仅列出实际检测到的编辑器。 / List only editors detected on this computer. */
+  listConversationFileEditors: () => ipcRenderer.invoke('openxnet:conversation-files:editors'),
+  /** 执行显式文件操作且由Main重新校验路径。 / Perform explicit file actions with Main revalidating the path. */
+  actOnConversationFile: (request) => ipcRenderer.invoke('openxnet:conversation-files:act', request),
+  /** 通过原生选择授予精确文件预览权限。 / Grant exact-file preview access through native selection. */
+  selectConversationFile: (request = {}) => ipcRenderer.invoke('openxnet:conversation-files:select', request),
   sendLanguage: (lang) => ipcRenderer.send('set-language', lang),
   // 环境检测
   isElectron: true,

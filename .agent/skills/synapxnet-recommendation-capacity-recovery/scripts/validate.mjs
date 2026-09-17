@@ -18,7 +18,7 @@ const RULES = Object.freeze({
       "aiops.inference.traffic.shift", "aiops.inference.autoscaling.policy.update", "aiops.inference.capacity.converge",
     ]),
     evidenceMinimum: 6,
-    verificationMinimum: 4,
+    verificationMinimum: 5,
   }),
   "synapxnet-quantitative-model-iteration": Object.freeze({
     inputSchema: "synapxnet.skill.quantitative-iteration.input.v1",

@@ -46,6 +46,8 @@ export interface ApplicationEnterpriseRoleCardDraft {
   readonly enabled?: boolean;
   readonly department?: string;
   readonly icon?: string;
+  /** 受控图片产物中的二维头像。 Two-dimensional portrait from a controlled image artifact. */
+  readonly avatarUrl?: string;
   readonly skills?: readonly string[];
   readonly skill_ids?: readonly string[];
   readonly assignedWorkspace?: string;
@@ -444,6 +446,11 @@ export interface ApplicationEnterpriseXnetService {
   readonly status: "online" | "offline";
   readonly last_check: string;
   readonly auto_connect: boolean;
+  /** 地址连通与产品身份分别报告。 / Report address reachability separately from product identity. */
+  readonly connectionStatus?: "unchecked" | "reachable" | "unreachable";
+  readonly identityStatus?: "pending" | "verified" | "mismatch" | "unverified" | "unavailable";
+  readonly identityPlatform?: ApplicationEnterpriseXnetServiceKey | null;
+  readonly identitySource?: "page-title" | "manifest" | null;
 }
 
 /** 保存 Xnet 服务请求。 */

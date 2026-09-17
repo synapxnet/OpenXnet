@@ -1,0 +1,11 @@
+# -*- coding: utf-8 -*-
+# Copyright (C) 2026 Synapxnet. All rights reserved.
+# SPDX-License-Identifier: AGPL-3.0-only
+# 仅覆盖 Adapter 镜像的第四配置层 / Fourth configuration layer overriding only the Adapter image.
+# Author: maoyo (maintenance) | Department: 研发部 | Date: 2026-09-16
+# Version: 1.3.0-contract.2 | Security Level: INTERNAL
+# __maintainer__: maoyo | __email__: synapxnet@gmail.com
+services:
+  openxnet-agentteams-adapter:
+    image: synapxnet/openxnet-agentteams-adapter:1.3.0-live.1
+    pull_policy: never

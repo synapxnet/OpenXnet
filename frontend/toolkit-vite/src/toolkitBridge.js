@@ -824,20 +824,11 @@ async function saveSettings() {
 function openDedicatedConfig(subMenu) {
   const host = getHostApp();
   if (!host) return;
-  host.activeMenu = 'toolkit';
-  host.subMenu = String(subMenu || 'tools');
-  const methodMap = {
-    llmTool: 'switchTollmTools',
-    customHttpTool: 'switchToHttpTools',
-    comfyui: 'switchToComfyui',
-    sticker: 'switchToStickerPacks',
-    mcp: 'switchTomcpServers',
-    a2a: 'switchToa2aServers',
-  };
-  const methodName = methodMap[subMenu];
-  if (methodName && typeof host[methodName] === 'function') {
-    host[methodName]();
+  if (!['llmTool', 'customHttpTool', 'comfyui', 'sticker', 'mcp', 'a2a'].includes(subMenu)) return;
+  if (typeof host.openToolkitConfigDialog === 'function') {
+    return host.openToolkitConfigDialog(subMenu);
   }
+  window.showNotification?.(isCurrentLanguageZh(host) ? '工具配置入口暂时不可用，请重新打开工具箱。' : 'Tool configuration is unavailable. Reopen the toolkit.', 'error');
 }
 
 export function createToolkitBridge() {

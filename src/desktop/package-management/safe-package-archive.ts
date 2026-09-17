@@ -12,7 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { Readable } from "node:stream";
+import { PassThrough, type Readable } from "node:stream";
 
 import yauzl, { type Entry, type ZipFile } from "yauzl";
 
@@ -366,18 +366,54 @@ function openZipFile(zipPath: string): Promise<ZipFile> {
   });
 }
 
-/** 打开单个 ZIP 文件条目流；输入 ZIP 句柄和条目，返回可异步迭代的只读流，打开失败时拒绝。 */
+/** 打开并适配条目流，保留背压和取消清理；Open an iterable entry stream with backpressure and cancellation cleanup. */
 function openZipEntryReadStream(zipFile: ZipFile, entry: Entry): Promise<Readable> {
   return new Promise<Readable>((resolve, reject) => {
     zipFile.openReadStream(entry, (error, stream) => {
-      if (error || !stream) reject(error ?? new Error("ZIP entry could not be opened."));
-      else resolve(stream);
+      if (error || !stream) {
+        reject(error ?? new Error("ZIP entry could not be opened."));
+        return;
+      }
+      if (entry.compressionMethod !== 0) {
+        resolve(stream);
+        return;
+      }
+
+      // 旧fd-slicer在结束前设置destroyed，需经标准流适配；Bridge legacy fd-slicer EOF semantics for async iteration.
+      const source = stream;
+      const normalized = new PassThrough();
+
+      /** 向消费者转发源流错误；Forward source errors to the consumer. */
+      function forwardSourceError(sourceError: Error): void {
+        normalized.destroy(sourceError);
+      }
+
+      /** 拒绝未完成即关闭的源流；Reject a source that closes before EOF. */
+      function handleSourceClose(): void {
+        if (!source.readableEnded) normalized.destroy(new Error("ZIP entry stream closed before completion."));
+      }
+
+      /** 消费结束或取消时解除管道并释放旧式源流；Unpipe and release the legacy source on completion or cancellation. */
+      function releaseSource(): void {
+        source.unpipe(normalized);
+        // 保留错误处理直到destroy返回，旧实现会同步发送错误；Keep the error listener during legacy synchronous destruction.
+        if (!source.destroyed) source.destroy();
+        source.removeListener("error", forwardSourceError);
+        source.removeListener("close", handleSourceClose);
+      }
+
+      source.on("error", forwardSourceError);
+      source.once("close", handleSourceClose);
+      normalized.once("close", releaseSource);
+      source.pipe(normalized);
+      resolve(normalized);
     });
   });
 }
 
 /**
  * 解压已经通过预检的 ZIP，并在写入时再次执行路径、类型与字节预算校验。
+ * Extract a prevalidated ZIP while rechecking paths, entry types, and byte budgets during writes.
  *
  * @param zipPath ZIP 文件路径。
  * @param destination 私有解压根目录。
@@ -407,7 +443,7 @@ async function extractInspectedZipArchive(
       else resolve();
     }
 
-    /** 再次校验并写入单个 ZIP 条目；输入条目，无返回，失败时拒绝整个解压。 */
+    /** 校验并写入条目，失败时释放流与文件；Validate and write an entry, releasing its stream and file on failure. */
     async function extractEntry(entry: Entry): Promise<void> {
       entryCount += 1;
       if (entryCount > budget.maximumEntries) throw new Error("ZIP archive contains too many entries.");
@@ -429,11 +465,12 @@ async function extractInspectedZipArchive(
       }
 
       await mkdir(path.dirname(targetPath), { recursive: true, mode: 0o700 });
-      const stream = await openZipEntryReadStream(zipFile, entry);
       const handle = await open(targetPath, "wx", 0o600);
+      let stream: Readable | undefined;
       let actualEntryBytes = 0;
       let completed = false;
       try {
+        stream = await openZipEntryReadStream(zipFile, entry);
         for await (const chunk of stream) {
           if (!(chunk instanceof Uint8Array)) throw new Error("ZIP entry stream is invalid.");
           actualEntryBytes += chunk.byteLength;
@@ -452,6 +489,7 @@ async function extractInspectedZipArchive(
         if (actualEntryBytes !== entry.uncompressedSize) throw new Error("ZIP entry size is invalid.");
         completed = true;
       } finally {
+        stream?.destroy();
         await handle.close();
         if (!completed) await rm(targetPath, { force: true });
       }

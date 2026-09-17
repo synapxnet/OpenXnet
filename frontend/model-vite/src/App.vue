@@ -5,6 +5,9 @@ import { createModelBridge } from './modelBridge';
 const bridge = createModelBridge();
 const snapshot = ref(bridge.snapshot());
 const serviceDetailRef = ref(null);
+const providerDialogRef = ref(null);
+const dialogSaving = ref(false);
+const dialogError = ref('');
 const actionFeedback = ref({
   visible: false,
   text: '',
@@ -35,6 +38,7 @@ function handleTabSelect(tabId) {
 }
 
 function handlePrepareAddProvider() {
+  dialogError.value = '';
   bridge.openAddDialog();
   refreshSnapshot();
 }
@@ -140,7 +144,10 @@ function handleDialogField(field, event) {
 }
 
 function handleDialogClose() {
+  if (dialogSaving.value) return;
+  providerDialogRef.value?.close();
   bridge.closeAddDialog();
+  dialogError.value = '';
   dialogSearch.value = '';
   dialogFilter.value = 'all';
   dialogPage.value = 1;
@@ -148,13 +155,22 @@ function handleDialogClose() {
 }
 
 async function handleDialogConfirm() {
-  const ok = await bridge.confirmAddDialog();
-  refreshSnapshot();
-  if (ok) {
-    dialogSearch.value = '';
-    dialogFilter.value = 'all';
-    dialogPage.value = 1;
-    showActionFeedback(isZh.value ? '服务商已添加' : 'Provider added');
+  if (dialogSaving.value) return;
+  dialogSaving.value = true;
+  dialogError.value = '';
+  try {
+    const ok = await bridge.confirmAddDialog();
+    if (ok) {
+      dialogSearch.value = '';
+      dialogFilter.value = 'all';
+      dialogPage.value = 1;
+      showActionFeedback(isZh.value ? '服务商已添加' : 'Provider added');
+    }
+  } catch {
+    dialogError.value = isZh.value ? '保存未完成，请检查配置后重试。' : 'Could not finish saving. Check the configuration and try again.';
+  } finally {
+    dialogSaving.value = false;
+    refreshSnapshot();
   }
 }
 
@@ -163,6 +179,13 @@ function handleDialogVendorWebsite() {
 }
 
 const addDialog = computed(() => snapshot.value.addDialog || { visible: false, vendorOptions: [] });
+
+// A native modal stays relative to the window across themes and contains keyboard focus.
+watch([() => addDialog.value.visible, providerDialogRef, dialogSaving], ([visible, dialog, saving]) => {
+  if (!dialog) return;
+  if ((visible || saving) && !dialog.open) dialog.showModal();
+  if (!visible && !saving && dialog.open) dialog.close();
+}, { flush: 'post' });
 
 const filteredVendorOptions = computed(() => {
   const list = addDialog.value.vendorOptions || [];
@@ -286,6 +309,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  providerDialogRef.value?.close();
   if (refreshTimer) {
     window.clearInterval(refreshTimer);
     refreshTimer = null;
@@ -505,161 +529,7 @@ onBeforeUnmount(() => {
       <!-- ╔════════════════════════════════════════════════════════════╗
            Add Provider Dialog —— vendor 网格 + 搜索 + 全部/云端/本地 + 表单
            ╚════════════════════════════════════════════════════════════╝ -->
-      <transition name="oxm-dialog">
-        <div v-if="addDialog.visible" class="oxm-dialog-mask" @click.self="handleDialogClose">
-          <div class="oxm-dialog-shell">
-            <div class="oxm-dialog__head">
-              <h2>{{ isZh ? '添加新供应商' : 'Add New Provider' }}</h2>
-              <button type="button" class="oxm-icon-btn" :title="isZh ? '关闭' : 'Close'" @click="handleDialogClose">
-                <i class="fa-solid fa-xmark"></i>
-              </button>
-            </div>
 
-            <div class="oxm-dialog__body">
-              <div class="oxm-dialog__filter-row">
-                <div class="oxm-dialog__search">
-                  <i class="fa-solid fa-magnifying-glass"></i>
-                  <input
-                    v-model="dialogSearch"
-                    type="text"
-                    :placeholder="isZh ? '搜索供应商' : 'Search providers'"
-                  />
-                </div>
-                <div class="oxm-dialog__filter-tabs">
-                  <button type="button" :class="{ 'is-active': dialogFilter === 'all' }" @click="dialogFilter = 'all'">{{ isZh ? '全部' : 'All' }}</button>
-                  <button type="button" :class="{ 'is-active': dialogFilter === 'cloud' }" @click="dialogFilter = 'cloud'">{{ isZh ? '云端' : 'Cloud' }}</button>
-                  <button type="button" :class="{ 'is-active': dialogFilter === 'local' }" @click="dialogFilter = 'local'">{{ isZh ? '本地' : 'Local' }}</button>
-                </div>
-              </div>
-
-              <div class="oxm-vendor-grid">
-                <button
-                  v-for="item in pagedVendorOptions"
-                  :key="item.value"
-                  type="button"
-                  class="oxm-vendor-card"
-                  :class="{ 'is-selected': item.selected, 'is-custom': item.isCustom }"
-                  @click="handleDialogVendorSelect(item.value)"
-                >
-                  <div class="oxm-vendor-card__logo-wrap">
-                    <img :src="item.logo" :alt="item.label" />
-                  </div>
-                  <span class="oxm-vendor-card__name">{{ item.label }}</span>
-                </button>
-                <div v-if="!filteredVendorOptions.length" class="oxm-vendor-empty">
-                  <i class="fa-solid fa-circle-info"></i>
-                  <span>{{ isZh ? '没有匹配的供应商' : 'No matching providers' }}</span>
-                </div>
-              </div>
-
-              <!-- 分页器（每页 14 个，2 行 × 7 列）-->
-              <div v-if="totalVendorPages > 1" class="oxm-pager">
-                <button
-                  type="button"
-                  class="oxm-pager__btn"
-                  :disabled="safeDialogPage <= 1"
-                  :title="isZh ? '上一页' : 'Previous'"
-                  @click="gotoPage(safeDialogPage - 1)"
-                >
-                  <i class="fa-solid fa-chevron-left"></i>
-                </button>
-                <div class="oxm-pager__pages">
-                  <button
-                    v-for="p in totalVendorPages"
-                    :key="`vendor-page-${p}`"
-                    type="button"
-                    class="oxm-pager__page"
-                    :class="{ 'is-active': safeDialogPage === p }"
-                    @click="gotoPage(p)"
-                  >{{ p }}</button>
-                </div>
-                <button
-                  type="button"
-                  class="oxm-pager__btn"
-                  :disabled="safeDialogPage >= totalVendorPages"
-                  :title="isZh ? '下一页' : 'Next'"
-                  @click="gotoPage(safeDialogPage + 1)"
-                >
-                  <i class="fa-solid fa-chevron-right"></i>
-                </button>
-                <span class="oxm-pager__hint">
-                  {{ filteredVendorOptions.length }} {{ isZh ? '个供应商' : 'providers' }}
-                </span>
-              </div>
-
-              <!-- 选中后的配置 -->
-              <div v-if="selectedVendorOption" class="oxm-dialog__form">
-                <div class="oxm-dialog__form-head">
-                  <img :src="selectedVendorOption.logo" :alt="selectedVendorOption.label" />
-                  <div>
-                    <strong>{{ selectedVendorOption.label }}</strong>
-                    <p v-if="selectedVendorOption.isCustom">
-                      {{ isZh ? '自定义 OpenAI 兼容入口，与 OpenXnet 订阅中心绑定。' : 'Custom OpenAI-compatible endpoint, bound to OpenXnet subscription.' }}
-                    </p>
-                    <p v-else>
-                      {{ isZh ? '已为你预填该供应商默认地址，填入 API Key 即可使用。' : 'Default URL pre-filled. Provide an API key to start using it.' }}
-                    </p>
-                  </div>
-                  <a
-                    v-if="addDialog.websiteUrl"
-                    href="javascript:void(0)"
-                    class="oxm-dialog__form-link"
-                    @click="handleDialogVendorWebsite"
-                  >
-                    <i class="fa-solid fa-key"></i>
-                    <span>{{ isZh ? '获取 API Key' : 'Get API key' }}</span>
-                  </a>
-                </div>
-
-                <div class="oxm-dialog__form-grid">
-                  <label class="oxm-field oxm-field--full">
-                    <span>{{ isZh ? 'API 地址' : 'API URL' }}{{ selectedVendorOption.isCustom ? ' *' : '' }}</span>
-                    <input
-                      type="text"
-                      :value="addDialog.url"
-                      :placeholder="isZh ? 'https://api.example.com/v1' : 'https://api.example.com/v1'"
-                      @input="handleDialogField('url', $event)"
-                    />
-                  </label>
-                  <label class="oxm-field">
-                    <span>{{ isZh ? 'API 密钥' : 'API Key' }}</span>
-                    <input
-                      type="password"
-                      :value="addDialog.apiKey"
-                      :placeholder="isZh ? '可选，先添加再去填写' : 'Optional, can be filled later'"
-                      @input="handleDialogField('apiKey', $event)"
-                    />
-                  </label>
-                  <label class="oxm-field">
-                    <span>{{ isZh ? '默认模型 ID（可选）' : 'Default Model ID (optional)' }}</span>
-                    <input
-                      type="text"
-                      :value="addDialog.modelId"
-                      :placeholder="isZh ? '可留空，添加后可拉取模型列表' : 'Optional, fetch models after adding'"
-                      @input="handleDialogField('modelId', $event)"
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div class="oxm-dialog__foot">
-              <button type="button" class="oxm-secondary-btn" @click="handleDialogClose">
-                {{ isZh ? '取消' : 'Cancel' }}
-              </button>
-              <button
-                type="button"
-                class="oxm-primary-btn"
-                :disabled="!addDialog.vendor"
-                @click="handleDialogConfirm"
-              >
-                <i class="fa-solid fa-check"></i>
-                <span>{{ isZh ? '确认添加' : 'Confirm' }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </transition>
 
       <!-- 旧的 detail card 保留隐藏（兼容老 selectProviderCard 流程，不再渲染） -->
       <div v-if="false" ref="serviceDetailRef" class="ox-vite-model-detail-card">
@@ -874,6 +744,162 @@ onBeforeUnmount(() => {
         </label>
       </div>
     </div>
+      <Teleport to="body">
+        <dialog ref="providerDialogRef" class="oxm-dialog-mask" aria-labelledby="oxm-provider-title" @cancel.prevent="handleDialogClose" @click.self="handleDialogClose">
+          <div class="oxm-dialog-shell">
+            <div class="oxm-dialog__head">
+              <h2 id="oxm-provider-title">{{ isZh ? '添加新供应商' : 'Add New Provider' }}</h2>
+              <button type="button" class="oxm-icon-btn" :disabled="dialogSaving" :title="isZh ? '关闭' : 'Close'" @click="handleDialogClose">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <div class="oxm-dialog__body">
+              <div class="oxm-dialog__filter-row">
+                <div class="oxm-dialog__search">
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                  <input
+                    v-model="dialogSearch"
+                    autofocus
+                    type="text"
+                    :placeholder="isZh ? '搜索供应商' : 'Search providers'"
+                  />
+                </div>
+                <div class="oxm-dialog__filter-tabs">
+                  <button type="button" :class="{ 'is-active': dialogFilter === 'all' }" @click="dialogFilter = 'all'">{{ isZh ? '全部' : 'All' }}</button>
+                  <button type="button" :class="{ 'is-active': dialogFilter === 'cloud' }" @click="dialogFilter = 'cloud'">{{ isZh ? '云端' : 'Cloud' }}</button>
+                  <button type="button" :class="{ 'is-active': dialogFilter === 'local' }" @click="dialogFilter = 'local'">{{ isZh ? '本地' : 'Local' }}</button>
+                </div>
+              </div>
+
+              <div class="oxm-vendor-grid">
+                <button
+                  v-for="item in pagedVendorOptions"
+                  :key="item.value"
+                  type="button"
+                  class="oxm-vendor-card"
+                  :class="{ 'is-selected': item.selected, 'is-custom': item.isCustom }"
+                  @click="handleDialogVendorSelect(item.value)"
+                >
+                  <div class="oxm-vendor-card__logo-wrap">
+                    <img :src="item.logo" :alt="item.label" />
+                  </div>
+                  <span class="oxm-vendor-card__name">{{ item.label }}</span>
+                </button>
+                <div v-if="!filteredVendorOptions.length" class="oxm-vendor-empty">
+                  <i class="fa-solid fa-circle-info"></i>
+                  <span>{{ isZh ? '没有匹配的供应商' : 'No matching providers' }}</span>
+                </div>
+              </div>
+
+              <!-- 分页器（每页 14 个，2 行 × 7 列）-->
+              <div v-if="totalVendorPages > 1" class="oxm-pager">
+                <button
+                  type="button"
+                  class="oxm-pager__btn"
+                  :disabled="safeDialogPage <= 1"
+                  :title="isZh ? '上一页' : 'Previous'"
+                  @click="gotoPage(safeDialogPage - 1)"
+                >
+                  <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <div class="oxm-pager__pages">
+                  <button
+                    v-for="p in totalVendorPages"
+                    :key="`vendor-page-${p}`"
+                    type="button"
+                    class="oxm-pager__page"
+                    :class="{ 'is-active': safeDialogPage === p }"
+                    @click="gotoPage(p)"
+                  >{{ p }}</button>
+                </div>
+                <button
+                  type="button"
+                  class="oxm-pager__btn"
+                  :disabled="safeDialogPage >= totalVendorPages"
+                  :title="isZh ? '下一页' : 'Next'"
+                  @click="gotoPage(safeDialogPage + 1)"
+                >
+                  <i class="fa-solid fa-chevron-right"></i>
+                </button>
+                <span class="oxm-pager__hint">
+                  {{ filteredVendorOptions.length }} {{ isZh ? '个供应商' : 'providers' }}
+                </span>
+              </div>
+
+              <!-- 选中后的配置 -->
+              <div v-if="selectedVendorOption" class="oxm-dialog__form">
+                <div class="oxm-dialog__form-head">
+                  <img :src="selectedVendorOption.logo" :alt="selectedVendorOption.label" />
+                  <div>
+                    <strong>{{ selectedVendorOption.label }}</strong>
+                    <p v-if="selectedVendorOption.isCustom">
+                      {{ isZh ? '自定义 OpenAI 兼容入口，与 OpenXnet 订阅中心绑定。' : 'Custom OpenAI-compatible endpoint, bound to OpenXnet subscription.' }}
+                    </p>
+                    <p v-else>
+                      {{ isZh ? '已为你预填该供应商默认地址，填入 API Key 即可使用。' : 'Default URL pre-filled. Provide an API key to start using it.' }}
+                    </p>
+                  </div>
+                  <a
+                    v-if="addDialog.websiteUrl"
+                    href="javascript:void(0)"
+                    class="oxm-dialog__form-link"
+                    @click="handleDialogVendorWebsite"
+                  >
+                    <i class="fa-solid fa-key"></i>
+                    <span>{{ isZh ? '获取 API Key' : 'Get API key' }}</span>
+                  </a>
+                </div>
+
+                <div class="oxm-dialog__form-grid">
+                  <label class="oxm-field oxm-field--full">
+                    <span>{{ isZh ? 'API 地址' : 'API URL' }}{{ selectedVendorOption.isCustom ? ' *' : '' }}</span>
+                    <input
+                      type="text"
+                      :value="addDialog.url"
+                      :placeholder="isZh ? 'https://api.example.com/v1' : 'https://api.example.com/v1'"
+                      @input="handleDialogField('url', $event)"
+                    />
+                  </label>
+                  <label class="oxm-field">
+                    <span>{{ isZh ? 'API 密钥' : 'API Key' }}</span>
+                    <input
+                      type="password"
+                      :value="addDialog.apiKey"
+                      :placeholder="isZh ? '可选，先添加再去填写' : 'Optional, can be filled later'"
+                      @input="handleDialogField('apiKey', $event)"
+                    />
+                  </label>
+                  <label class="oxm-field">
+                    <span>{{ isZh ? '默认模型 ID（可选）' : 'Default Model ID (optional)' }}</span>
+                    <input
+                      type="text"
+                      :value="addDialog.modelId"
+                      :placeholder="isZh ? '可留空，添加后可拉取模型列表' : 'Optional, fetch models after adding'"
+                      @input="handleDialogField('modelId', $event)"
+                    />
+                  </label>
+                </div>
+              </div>
+              <p v-if="dialogError" class="oxm-dialog__error" role="alert">{{ dialogError }}</p>
+            </div>
+            <div class="oxm-dialog__foot">
+              <button type="button" class="oxm-secondary-btn" :disabled="dialogSaving" @click="handleDialogClose">
+                {{ isZh ? '取消' : 'Cancel' }}
+              </button>
+              <button
+                type="button"
+                class="oxm-primary-btn"
+                :disabled="!addDialog.vendor || dialogSaving"
+                @click="handleDialogConfirm"
+              >
+                <i class="fa-solid fa-check"></i>
+                <span>{{ dialogSaving ? (isZh ? '正在保存…' : 'Saving…') : (isZh ? '确认添加' : 'Confirm') }}</span>
+              </button>
+            </div>
+          </div>
+        </dialog>
+      </Teleport>
   </div>
 </template>
 
@@ -2071,21 +2097,39 @@ onBeforeUnmount(() => {
 .oxm-add-tile__label { font-size: 14px; font-weight: 600; }
 
 /* ════ Add Provider Dialog ════ */
+.oxm-dialog-mask, .oxm-dialog-mask *, .oxm-dialog-mask *::before, .oxm-dialog-mask *::after {
+  box-sizing: border-box;
+}
 .oxm-dialog-mask {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.42);
-  backdrop-filter: blur(2px);
-  display: flex;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  box-sizing: border-box;
+  background: transparent;
+  color: var(--ox-text-primary);
   align-items: center;
   justify-content: center;
   z-index: 9000;
   padding: 24px;
 }
+.oxm-dialog-mask[open] { display: flex; }
+.oxm-dialog-mask:not([open]) { display: none; }
+.oxm-dialog-mask::backdrop {
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(2px);
+}
 /* 固定尺寸：避免内容多寡导致 dialog 高度抖动、footer 被遮挡 */
 .oxm-dialog-shell {
-  width: min(1180px, 92vw);
-  height: min(720px, calc(100vh - 48px));
+  width: min(1180px, 100%);
+  height: min(720px, 100%);
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0 !important;
   background: var(--ox-bg-surface, #ffffff);
   border: 1px solid var(--ox-border, rgba(148,163,184,0.22));
   border-radius: 18px;
@@ -2124,8 +2168,9 @@ onBeforeUnmount(() => {
 }
 .oxm-dialog__search {
   position: relative;
-  flex: 1;
-  min-width: 240px;
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 100%;
 }
 .oxm-dialog__search i {
   position: absolute;
@@ -2155,6 +2200,7 @@ onBeforeUnmount(() => {
 
 .oxm-dialog__filter-tabs {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 4px;
   padding: 4px;
@@ -2388,6 +2434,7 @@ onBeforeUnmount(() => {
   gap: 12px 14px;
 }
 
+.oxm-dialog__error { margin: 0; padding: 10px 22px; color: var(--ox-danger, #dc2626); background: var(--ox-bg-surface); }
 .oxm-dialog__foot {
   display: flex;
   align-items: center;
@@ -2590,5 +2637,9 @@ html[data-theme="midnight"] .oxm-service-empty strong { color: #E6EDF6; }
 @media (max-width: 720px) {
   .oxm-service-grid { grid-template-columns: 1fr; }
   .oxm-dialog__form-grid { grid-template-columns: 1fr; }
+  .oxm-dialog-mask { padding: 12px; }
+  .oxm-dialog__head, .oxm-dialog__body, .oxm-dialog__foot { padding: 14px; }
+  .oxm-pager { flex-wrap: wrap; }
+  .oxm-pager__hint { position: static; width: 100%; text-align: center; }
 }
 </style>

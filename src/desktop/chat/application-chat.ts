@@ -123,7 +123,22 @@ export class ApplicationChatService {
     });
   }
 
-  /** Execute one explicitly approved tool inside the credential-retaining engine. */
+  /** 核对原会话执行状态，只返回身份匹配的公开状态。 / Check original execution and return only identity-matched public status. */
+  public async getRecoveryStatus(value: unknown): Promise<ApplicationChatResponse> {
+    const record = requireExactRecord(value, ["conversationId"], "chat recovery request");
+    const conversationId = requireConversationId(record.conversationId);
+    const response = await this.requestJson(`/v1/chat/recovery-status?conversation_id=${encodeURIComponent(conversationId)}`, {}, "GET");
+    if (response.statusCode < 200 || response.statusCode >= 300) return createLocalResponse(response.statusCode, { conversationId, state: "unknown" });
+    const body = requirePlainRecord(response.body, "recovery response");
+    if (body.conversationId !== conversationId || !["running", "idle", "unknown"].includes(String(body.state))) throw new Error("Application chat recovery response is invalid.");
+    return createLocalResponse(response.statusCode, {
+      conversationId, state: body.state,
+      ...(typeof body.registeredAt === "string" && body.registeredAt.length <= 128 || typeof body.registeredAt === "number" && Number.isFinite(body.registeredAt) ? { registeredAt: body.registeredAt } : {}),
+      ...(typeof body.abortRequested === "boolean" ? { abortRequested: body.abortRequested } : {}),
+    });
+  }
+
+  /** 执行明确批准的工具并保留真实来源会话。 / Execute an explicitly approved tool while preserving its actual origin conversation. */
   public async executeTool(value: unknown): Promise<ApplicationChatResponse> {
     const normalized = normalizeExecuteToolRequest(value);
     return this.requestJson("/execute_tool_manually", {
@@ -132,6 +147,7 @@ export class ApplicationChatService {
       approval_type: normalized.approvalType ?? "",
       approval_id: normalized.approvalId ?? "",
       trace_id: normalized.traceId ?? "",
+      ...(normalized.conversationId === undefined ? {} : { conversationId: normalized.conversationId }),
     });
   }
 
@@ -285,12 +301,12 @@ export class ApplicationChatService {
     }
   }
 
-  /** Execute one bounded authenticated JSON request over a temporary engine lease. */
-  private async requestJson(path: string, payload: unknown): Promise<ApplicationChatResponse> {
-    const body = serializeBoundedJson(payload);
+  /** 使用临时引擎租约发送有限认证请求，GET查询不携带请求正文。 / Send a bounded authenticated request over a temporary engine lease, with no body for GET queries. */
+  private async requestJson(path: string, payload: unknown, method: "POST" | "GET" = "POST"): Promise<ApplicationChatResponse> {
+    const body = method === "GET" ? Buffer.alloc(0) : serializeBoundedJson(payload);
     const lease = await this.options.acquireEngine();
-    const target = new URL(path, lease.origin);
     try {
+      const target = new URL(path, lease.origin);
       return await new Promise<ApplicationChatResponse>((resolve, reject) => {
         let settled = false;
         /** Resolve the command once and ignore late response events. */
@@ -308,7 +324,7 @@ export class ApplicationChatService {
         }
 
         const upstream = createHttpRequest(target, {
-          method: "POST",
+          method,
           headers: this.createHeaders(target, body.length),
         }, (response) => {
           const chunks: Buffer[] = [];
@@ -335,8 +351,11 @@ export class ApplicationChatService {
               body: parseResponseBody(text, contentType),
             });
           });
+          response.once("aborted", /** 中断响应不能被视为成功状态。 / An interrupted response cannot be treated as successful status. */ () => rejectOnce(new Error("Application chat engine response was interrupted.")));
+          response.once("error", /** 响应失败必须释放查询租约。 / Response failures must release the query lease. */ () => rejectOnce(new Error("Application chat engine response failed.")));
         });
         upstream.once("error", () => rejectOnce(new Error("Application chat engine command failed.")));
+        if (method === "GET") upstream.setTimeout(10_000, /** 只读状态查询使用有限等待。 / Bound the wait for read-only status queries. */ () => upstream.destroy(new Error("Application chat status query timed out.")));
         upstream.end(body);
       });
     } finally {
@@ -371,7 +390,7 @@ function normalizeCompleteRequest(value: unknown): CompleteApplicationChatReques
   return { mode: normalizeMode(record.mode), request: normalizeProviderRequest(record.request) };
 }
 
-/** Normalize one local and provider cancellation request. */
+/** 规范取消身份，保持与恢复检查一致的完整会话ID。 / Normalize cancellation identity with the same complete conversation ID as recovery checks. */
 function normalizeAbortRequest(value: unknown): AbortApplicationChatRequest {
   const record = requireExactRecord(value, ["streamId", "conversationId"], "chat abort request", true);
   const streamId = record.streamId === undefined
@@ -379,7 +398,7 @@ function normalizeAbortRequest(value: unknown): AbortApplicationChatRequest {
     : requireIdentifier(record.streamId, "streamId", STREAM_ID_PATTERN);
   const conversationId = record.conversationId === undefined
     ? undefined
-    : requireIdentifier(record.conversationId, "conversationId", IDENTIFIER_PATTERN);
+    : requireConversationId(record.conversationId);
   if (streamId === undefined && conversationId === undefined) {
     throw new TypeError("Application chat abort requires streamId or conversationId.");
   }
@@ -389,11 +408,11 @@ function normalizeAbortRequest(value: unknown): AbortApplicationChatRequest {
   };
 }
 
-/** Normalize one manual tool execution request. */
+/** 规范手动工具参数并保留会话范围身份。 / Normalize manual tool parameters while preserving conversation scope identity. */
 function normalizeExecuteToolRequest(value: unknown): ExecuteApplicationChatToolRequest {
   const record = requireExactRecord(
     value,
-    ["toolName", "toolParameters", "approvalType", "approvalId", "traceId"],
+    ["toolName", "toolParameters", "approvalType", "approvalId", "traceId", "conversationId"],
     "chat tool request",
     true,
   );
@@ -403,6 +422,7 @@ function normalizeExecuteToolRequest(value: unknown): ExecuteApplicationChatTool
     toolName,
     toolParameters,
     ...readOptionalBoundedStrings(record, ["approvalType", "approvalId", "traceId"]),
+    ...(record.conversationId === undefined || record.conversationId === "" ? {} : { conversationId: requireConversationId(record.conversationId) }),
   };
 }
 
@@ -430,7 +450,7 @@ function normalizeResolveApprovalRequest(value: unknown): ResolveApplicationChat
   };
 }
 
-/** Normalize the allow-listed provider request fields and enforce its JSON budget. */
+/** 规范公开提供商字段并拒绝冲突会话身份。 / Normalize allowed provider fields and reject conflicting conversation identities. */
 function normalizeProviderRequest(value: unknown): ApplicationChatProviderRequest {
   const record = requirePlainRecord(value, "request");
   for (const key of Object.keys(record)) {
@@ -442,6 +462,10 @@ function normalizeProviderRequest(value: unknown): ApplicationChatProviderReques
     throw new TypeError("Application chat messages must contain between 1 and 256 entries.");
   }
   const messages = record.messages.map((message, index) => requirePlainRecord(message, `messages[${index}]`));
+  for (const field of ["conversationId", "conversation_id"]) {
+    if (record[field] !== undefined && record[field] !== null && record[field] !== "") record[field] = requireConversationId(record[field]);
+  }
+  if (record.conversationId && record.conversation_id && record.conversationId !== record.conversation_id) throw new TypeError("Application chat conversation identities conflict.");
   const normalized = { ...record, messages } as ApplicationChatProviderRequest;
   serializeBoundedJson(normalized);
   return normalized;
@@ -559,7 +583,13 @@ function createLocalResponse(statusCode: number, body: unknown): ApplicationChat
   };
 }
 
-/** Resolve one bounded conversation ID from either supported compatibility field. */
+/** 验证完整会话身份而不截断或接受控制字符。 / Validate complete conversation identity without truncation or control characters. */
+function requireConversationId(value: unknown): string {
+  if (typeof value !== "string" || value !== value.trim() || value.length > 512 || /[\u0000-\u001f\u007f]/.test(value)) throw new TypeError("Application chat conversationId is invalid.");
+  return requireBoundedString(value, "conversationId", 512);
+}
+
+/** 从兼容字段读取已验证的完整会话ID，不进行有损截断。 / Read the validated complete conversation ID from compatibility fields without lossy truncation. */
 function readConversationId(request: ApplicationChatProviderRequest): string {
-  return String(request.conversation_id ?? request.conversationId ?? "").trim().slice(0, 128);
+  return String(request.conversation_id ?? request.conversationId ?? "").trim();
 }

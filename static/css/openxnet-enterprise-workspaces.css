@@ -1,0 +1,516 @@
+/* Enterprise workspaces: verified against the mounted .oxe-content pages.
+ * Load after shared workspace and skin surfaces. The 3D sandbox is excluded.
+ */
+#app .oxe-rebuilt .oxe-content:not([data-tab="enterprise-sandbox"]) {
+  --oxe-work-panel: var(--ox-workspace-panel, var(--ox-skin-panel, var(--ox-bg-surface)));
+  --oxe-work-inset: var(--ox-workspace-inset, var(--ox-bg-surface-hover));
+  --oxe-work-line: var(--ox-workspace-line, var(--ox-border));
+  --oxe-work-gap: calc(16px * var(--ox-density, 1));
+  --oxe-work-pad: calc(18px * var(--ox-density, 1));
+  container: enterprise-workspace / inline-size;
+  padding: calc(22px * var(--ox-density, 1)) !important;
+  color: var(--ox-text-primary);
+}
+#app .oxe-rebuilt .oxe-content[data-tab="competition"] { container-name: enterprise-workspace competition-host; }
+/* 正式运行页复用同一工作流内容断点，侧栏开合后仍按可用宽度排版。 / Formal operations retain the same content breakpoints when the sidebar changes available width. */
+#app .oxe-rebuilt .oxe-content[data-tab="ops-control"] { container-name: enterprise-workspace competition-host; }
+/* 完整地址在窄窗内换行，不挤出保存和检查按钮。 / Wrap full service URLs within narrow panels without displacing actions. */
+#app .oxe-rebuilt .enterprise-service-config .enterprise-inline-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A compact command area establishes the page, with controls in the same band. */
+#app .oxe-rebuilt :is(
+  .enterprise-module-head, .enterprise-service-head, .enterprise-skill-page__header,
+  .enterprise-team-page__header, .enterprise-workspace-hub__head,
+  .staff-role-studio__hero, .competition-commandbar
+) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  min-width: 0;
+  min-height: 72px;
+  gap: calc(12px * var(--ox-density, 1)) var(--oxe-work-gap) !important;
+  margin: 0 0 var(--oxe-work-gap) !important;
+  padding: calc(14px * var(--ox-density, 1)) var(--oxe-work-pad) !important;
+  border: 1px solid var(--oxe-work-line) !important;
+  border-inline-start: 3px solid var(--ox-brand-primary, #009fdf) !important;
+  border-radius: var(--ox-radius-lg) !important;
+  background: var(--oxe-work-panel) !important;
+  box-shadow: var(--ox-shadow-sm) !important;
+}
+#app .oxe-rebuilt :is(
+  .enterprise-module-title, .enterprise-workspace-hub__title,
+  .staff-role-studio__title, .enterprise-skill-page__header h2,
+  .enterprise-team-page__header h2, .competition-commandbar h2
+) {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--ox-density, 1));
+  margin: 0 !important;
+  color: var(--ox-text-primary) !important;
+  font-size: 20px !important;
+  line-height: 1.4 !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+}
+#app .oxe-rebuilt :is(
+  .enterprise-module-title-icon, .enterprise-team-page__icon,
+  .competition-commandbar__icon, .enterprise-workspace-card__icon
+) {
+  display: inline-grid;
+  flex: 0 0 32px;
+  place-items: center;
+  width: 32px !important;
+  height: 32px !important;
+  margin: 0;
+  border: 0 !important;
+  border-radius: var(--ox-radius-sm) !important;
+  background: var(--ox-accent-soft) !important;
+  color: var(--ox-accent) !important;
+  box-shadow: none !important;
+  font-size: 16px !important;
+}
+#app .oxe-rebuilt :is(
+  .enterprise-service-description, .enterprise-workspace-hub__description,
+  .enterprise-skill-page__header p, .enterprise-kb-description
+) {
+  max-width: 860px;
+  margin: calc(6px * var(--ox-density, 1)) 0 0 !important;
+  color: var(--ox-text-secondary) !important;
+  font-size: 12px !important;
+  line-height: 1.65;
+}
+#app .oxe-rebuilt :is(
+  .enterprise-module-actions, .enterprise-service-actions, .enterprise-skill-page__actions,
+  .enterprise-service-config-actions, .enterprise-workspace-card__actions,
+  .enterprise-team-editor__actions, .competition-commandbar__actions
+) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(8px * var(--ox-density, 1));
+}
+#app .oxe-rebuilt :is(.enterprise-module-actions, .enterprise-service-actions, .enterprise-service-config-actions, .enterprise-workspace-card__actions) > .el-button + .el-button { margin-left: 0; }
+#app .oxe-rebuilt .oxe-content:not([data-tab="enterprise-sandbox"]) .el-button > span:has(> i) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Overview metrics are one compact instrument strip, not six oversized cards. */
+#app .oxe-rebuilt :is(.enterprise-metric-grid, .enterprise-service-metric-grid) {
+  display: grid;
+  gap: 0 !important;
+  margin: 0 0 var(--oxe-work-gap) !important;
+  padding: calc(4px * var(--ox-density, 1)) !important;
+  border: 1px solid var(--oxe-work-line) !important;
+  border-radius: var(--ox-radius-lg) !important;
+  background: var(--oxe-work-panel) !important;
+  box-shadow: var(--ox-shadow-sm) !important;
+}
+#app .oxe-rebuilt .enterprise-metric-grid--usage { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+#app .oxe-rebuilt .enterprise-metric-grid--neuro { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+#app .oxe-rebuilt :is(.enterprise-metric-grid--kg, .enterprise-service-metric-grid) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#app .oxe-rebuilt :is(.enterprise-metric-card, .enterprise-service-metric-card) {
+  min-width: 0;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: var(--ox-radius-sm) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+#app .oxe-rebuilt :is(.enterprise-metric-card, .enterprise-service-metric-card) > .el-card__body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 82px;
+  gap: calc(8px * var(--ox-density, 1));
+  padding: calc(12px * var(--ox-density, 1)) calc(18px * var(--ox-density, 1)) !important;
+}
+#app .oxe-rebuilt :is(.enterprise-metric-card, .enterprise-service-metric-card):not(:last-child) > .el-card__body { border-inline-end: 1px solid var(--oxe-work-line); }
+#app .oxe-rebuilt :is(.enterprise-metric-card__label, .enterprise-service-metric-card__label) {
+  margin: 0;
+  color: var(--ox-text-secondary) !important;
+  font-size: 12px !important;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+#app .oxe-rebuilt :is(.enterprise-metric-card__value, .enterprise-service-metric-card__value) {
+  margin: 0;
+  color: var(--ox-text-primary) !important;
+  font-size: 24px !important;
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  text-shadow: none !important;
+  overflow-wrap: anywhere;
+}
+#app .oxe-rebuilt .enterprise-metric-card:first-child .enterprise-metric-card__value { color: var(--ox-accent) !important; }
+#app .oxe-rebuilt .enterprise-service-metric-card__value--text { font-size: 17px !important; }
+
+/* Charts, query results and service tools each receive one explicit work panel. */
+#app .oxe-rebuilt .enterprise-panel-card {
+  min-width: 0;
+  margin: 0 0 var(--oxe-work-gap) !important;
+  padding: 0 !important;
+  border: 1px solid var(--oxe-work-line) !important;
+  border-radius: var(--ox-radius-lg) !important;
+  background: var(--oxe-work-panel) !important;
+  box-shadow: var(--ox-shadow-sm) !important;
+  overflow: hidden;
+}
+#app .oxe-rebuilt .enterprise-panel-card > .el-card__header {
+  padding: calc(12px * var(--ox-density, 1)) var(--oxe-work-pad) !important;
+  border-bottom: 1px solid var(--oxe-work-line) !important;
+  background: var(--oxe-work-inset) !important;
+  color: var(--ox-text-primary) !important;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+#app .oxe-rebuilt .enterprise-panel-card > .el-card__body { padding: var(--oxe-work-pad) !important; }
+#app .oxe-rebuilt .enterprise-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: calc(10px * var(--ox-density, 1));
+}
+#app .oxe-rebuilt .enterprise-panel-head > span { display: inline-flex; align-items: center; gap: 8px; }
+#app .oxe-rebuilt .enterprise-panel-card > .el-card__header i { margin-inline-end: 4px; color: var(--ox-accent); }
+#app .oxe-rebuilt .enterprise-trend-chart {
+  min-height: 152px;
+  height: 168px;
+  padding: calc(18px * var(--ox-density, 1)) calc(6px * var(--ox-density, 1)) calc(6px * var(--ox-density, 1));
+  border-bottom: 1px solid var(--oxe-work-line);
+  background: repeating-linear-gradient(to top, transparent 0, transparent 39px, color-mix(in srgb, var(--ox-border) 45%, transparent) 40px);
+}
+#app .oxe-rebuilt .enterprise-trend-chart__label { color: var(--ox-text-muted); font-size: 10px; }
+#app .oxe-rebuilt .enterprise-graph-stage {
+  min-height: 320px;
+  border: 1px solid var(--oxe-work-line);
+  border-radius: var(--ox-radius-md);
+  background-color: var(--oxe-work-inset);
+  background-image: radial-gradient(color-mix(in srgb, var(--ox-text-muted) 22%, transparent) 0.7px, transparent 0.7px);
+  background-size: 18px 18px;
+}
+#app .oxe-rebuilt .enterprise-graph-empty__inner {
+  padding: var(--oxe-work-pad);
+  border: 1px solid var(--oxe-work-line);
+  border-radius: var(--ox-radius-md);
+  background: var(--oxe-work-panel);
+  color: var(--ox-text-secondary);
+}
+#app .oxe-rebuilt .enterprise-graph-empty__icon { color: var(--ox-accent); }
+#app .oxe-rebuilt :is(.enterprise-search-row, .enterprise-graph-controls) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(10px * var(--ox-density, 1));
+}
+#app .oxe-rebuilt .enterprise-search-row {
+  margin: 0 0 var(--oxe-work-gap);
+  padding: calc(12px * var(--ox-density, 1));
+  border: 1px solid var(--oxe-work-line);
+  border-radius: var(--ox-radius-md);
+  background: var(--oxe-work-inset);
+}
+#app .oxe-rebuilt .enterprise-search-row__input { flex: 1 1 220px; min-width: 160px; max-width: 480px; }
+#app .oxe-rebuilt .enterprise-search-row__select { flex: 0 1 200px; min-width: 150px; }
+#app .oxe-rebuilt .enterprise-insight-tab--neuro > .enterprise-search-row {
+  margin-bottom: 0;
+  border-radius: var(--ox-radius-md) var(--ox-radius-md) 0 0;
+  border-bottom: 0;
+}
+#app .oxe-rebuilt .enterprise-insight-tab--neuro > .enterprise-table {
+  border: 1px solid var(--oxe-work-line) !important;
+  border-radius: 0 0 var(--ox-radius-md) var(--ox-radius-md) !important;
+}
+#app .oxe-rebuilt .enterprise-table {
+  --el-table-header-bg-color: var(--oxe-work-inset);
+  --el-table-tr-bg-color: var(--ox-bg-surface);
+  --el-table-row-hover-bg-color: var(--ox-accent-soft);
+  --el-table-border-color: var(--oxe-work-line);
+  --el-table-text-color: var(--ox-text-primary);
+  --el-table-header-text-color: var(--ox-text-secondary);
+  border-radius: var(--ox-radius-sm) !important;
+}
+#app .oxe-rebuilt .enterprise-table .el-table__cell { padding-block: calc(10px * var(--ox-density, 1)); }
+#app .oxe-rebuilt .enterprise-pagination-note { margin: 8px 0 var(--oxe-work-gap); color: var(--ox-text-muted); font-size: 12px; }
+
+/* AIOps, DataOps and MLOps share configuration beside the live service view. */
+#app .oxe-rebuilt .enterprise-service-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--oxe-work-gap);
+}
+#app .oxe-rebuilt .enterprise-service-layout > .enterprise-panel-card { margin: 0 !important; }
+#app .oxe-rebuilt .enterprise-service-config { display: grid; gap: var(--oxe-work-gap); }
+#app .oxe-rebuilt .enterprise-service-field-label { margin-bottom: 8px; color: var(--ox-text-secondary); font-size: 12px; font-weight: 600; }
+#app .oxe-rebuilt .enterprise-service-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(10px * var(--ox-density, 1)) calc(12px * var(--ox-density, 1));
+  border-radius: var(--ox-radius-sm);
+  background: var(--oxe-work-inset);
+  font-size: 13px;
+}
+#app .oxe-rebuilt .enterprise-service-config .el-alert {
+  padding: calc(12px * var(--ox-density, 1));
+  border: 0 !important;
+  border-radius: var(--ox-radius-sm) !important;
+  background: var(--ox-accent-soft) !important;
+  box-shadow: none !important;
+}
+#app .oxe-rebuilt .enterprise-service-config .el-alert__description { color: var(--ox-text-secondary) !important; font-size: 12px; line-height: 1.65; }
+#app .oxe-rebuilt .enterprise-service-config-actions { padding-top: 4px; }
+#app .oxe-rebuilt .enterprise-service-layout > .enterprise-panel-card:last-child > .el-card__body { min-height: 330px; }
+#app .oxe-rebuilt .enterprise-service-layout .el-empty { min-height: 280px; padding: 30px 16px; }
+#app .oxe-rebuilt .enterprise-service-layout .el-empty__image { width: 110px !important; }
+#app .oxe-rebuilt .enterprise-service-preview { display: flex; flex-direction: column; gap: 12px; }
+#app .oxe-rebuilt .enterprise-service-iframe { width: 100%; min-height: 380px; border: 1px solid var(--oxe-work-line); border-radius: var(--ox-radius-sm); background: var(--ox-bg-surface); }
+
+/* Role studio: command band, category filter, template library and owned roles. */
+#app .oxe-rebuilt .staff-role-studio { display: flex; flex-direction: column; gap: var(--oxe-work-gap); padding: 0; background: transparent !important; }
+#app .oxe-rebuilt .staff-role-studio__hero { margin-bottom: 0 !important; }
+#app .oxe-rebuilt .staff-role-studio__hero-copy { flex: 0 0 auto; }
+#app .oxe-rebuilt .staff-role-studio__eyebrow { margin-bottom: 4px; color: var(--ox-text-muted); font-size: 11px; font-weight: 500; }
+#app .oxe-rebuilt .staff-role-studio__stats { display: flex; gap: 0; margin: 0; }
+#app .oxe-rebuilt .staff-role-studio__stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 calc(14px * var(--ox-density, 1));
+  border: 0;
+  border-inline-start: 1px solid var(--oxe-work-line);
+  border-radius: 0;
+  background: transparent;
+}
+#app .oxe-rebuilt .staff-role-studio__stat-value { color: var(--ox-text-primary); font-size: 20px; font-weight: 650; }
+#app .oxe-rebuilt .staff-role-studio__stat-label { color: var(--ox-text-secondary); font-size: 11px; }
+#app .oxe-rebuilt .staff-role-studio__toolbar { display: flex; flex: 1 1 320px; justify-content: flex-end; gap: 10px; margin: 0; }
+#app .oxe-rebuilt .oxe-staff-search { flex: 1 1 180px; max-width: 320px; min-width: 0; border: 1px solid var(--oxe-work-line) !important; border-radius: var(--ox-radius-sm) !important; background: var(--ox-bg-input) !important; }
+#app .oxe-rebuilt .oxe-staff-search input { min-width: 0; color: var(--ox-text-primary) !important; -webkit-text-fill-color: var(--ox-text-primary) !important; background: transparent !important; }
+#app .oxe-rebuilt .oxe-staff-search input::placeholder { color: var(--ox-text-muted) !important; -webkit-text-fill-color: var(--ox-text-muted) !important; }
+#app .oxe-rebuilt .oxe-staff-create { border-radius: var(--ox-radius-sm) !important; background: var(--ox-accent) !important; color: var(--ox-on-accent) !important; }
+#app .oxe-rebuilt .staff-role-category-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(6px * var(--ox-density, 1));
+  margin: 0;
+  padding: calc(8px * var(--ox-density, 1));
+  border: 1px solid var(--oxe-work-line);
+  border-radius: var(--ox-radius-md);
+  background: var(--oxe-work-panel);
+}
+#app .oxe-rebuilt .staff-role-category-chip { min-height: 32px; padding: 6px 10px; border: 0 !important; border-radius: var(--ox-radius-sm) !important; background: transparent !important; color: var(--ox-text-secondary) !important; box-shadow: none !important; font-size: 12px; }
+#app .oxe-rebuilt .staff-role-category-chip.is-active { color: var(--ox-on-accent) !important; background: var(--ox-accent) !important; font-weight: 650; }
+#app .oxe-rebuilt .staff-role-category-chip strong { color: inherit; font-size: 11px; }
+#app .oxe-rebuilt .staff-role-studio__layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--oxe-work-gap); margin: 0; align-items: start; }
+#app .oxe-rebuilt :is(.staff-role-template-panel, .staff-role-library) {
+  min-width: 0;
+  padding: var(--oxe-work-pad) !important;
+  border: 1px solid var(--oxe-work-line) !important;
+  border-radius: var(--ox-radius-lg) !important;
+  background: var(--oxe-work-panel) !important;
+  box-shadow: var(--ox-shadow-sm) !important;
+}
+#app .oxe-rebuilt :is(.staff-role-section-head, .enterprise-team-section-heading) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 var(--oxe-work-gap);
+  padding: 0 0 calc(12px * var(--ox-density, 1));
+  border-bottom: 1px solid var(--oxe-work-line);
+}
+#app .oxe-rebuilt :is(.staff-role-section-head h4, .enterprise-team-section-heading h3) { margin: 3px 0 0; color: var(--ox-text-primary); font-size: 14px; font-weight: 650; line-height: 1.5; }
+#app .oxe-rebuilt .staff-role-section-eyebrow { color: var(--ox-text-muted); font-size: 10px; font-weight: 500; }
+#app .oxe-rebuilt .staff-role-section-count { padding: 3px 8px; border: 0; border-radius: var(--ox-radius-xs); background: var(--ox-accent-soft); color: var(--ox-accent); font-size: 12px; }
+#app .oxe-rebuilt :is(.staff-role-template-grid, .staff-role-library__grid) { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: calc(12px * var(--ox-density, 1)); padding: 0; }
+#app .oxe-rebuilt :is(.staff-role-template-card, .staff-role-library-card) {
+  min-width: 0;
+  min-height: 180px;
+  padding: calc(15px * var(--ox-density, 1));
+  border: 1px solid var(--oxe-work-line) !important;
+  border-radius: var(--ox-radius-md) !important;
+  background: var(--ox-bg-surface) !important;
+  box-shadow: none !important;
+  text-align: left;
+  transform: none !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+#app .oxe-rebuilt :is(.staff-role-template-card, .staff-role-library-card):hover { border-color: var(--ox-border-hover) !important; box-shadow: var(--ox-shadow-sm) !important; }
+#app .oxe-rebuilt :is(.staff-role-template-card__header, .staff-role-library-card__hero) { gap: 10px; margin-bottom: 10px; }
+#app .oxe-rebuilt :is(.staff-role-template-card__icon, .staff-role-library-card__icon) { width: 34px; height: 34px; flex-basis: 34px; border-radius: var(--ox-radius-sm); font-size: 16px; }
+#app .oxe-rebuilt :is(.staff-role-template-card__title, .staff-role-library-card__name) { color: var(--ox-text-primary); font-size: 14px; line-height: 1.5; font-weight: 650; }
+#app .oxe-rebuilt :is(.staff-role-template-card__summary, .staff-role-library-card__summary) { margin: 10px 0; color: var(--ox-text-secondary); font-size: 12px; line-height: 1.65; }
+#app .oxe-rebuilt .staff-role-template-card__footer { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--oxe-work-line); color: var(--ox-accent); font-size: 12px; }
+#app .oxe-rebuilt .staff-role-spotlight { min-width: 0; padding: var(--oxe-work-pad); border: 1px solid var(--oxe-work-line); border-radius: var(--ox-radius-lg); background: var(--oxe-work-inset); }
+#app .oxe-rebuilt :is(.staff-role-goai-shortcut, .staff-role-spotlight__card) { width: 100%; min-width: 0; padding: calc(12px * var(--ox-density, 1)); border: 1px solid var(--oxe-work-line); border-radius: var(--ox-radius-sm); background: var(--ox-bg-surface); box-shadow: none; }
+#app .oxe-rebuilt .staff-role-section-head--recommendations { margin-top: calc(22px * var(--ox-density, 1)); }
+#app .oxe-rebuilt .oxe-staff-pager { margin: var(--oxe-work-gap) 0 0; padding-top: 12px; border-top: 1px solid var(--oxe-work-line); }
+
+/* Local team templates are a list; the editor is a separate working surface. */
+#app .oxe-rebuilt .enterprise-team-page { background: transparent !important; }
+#app .oxe-rebuilt .enterprise-team-service-state { margin: 0 0 var(--oxe-work-gap); padding: 10px var(--oxe-work-pad); border: 1px solid var(--oxe-work-line); border-radius: var(--ox-radius-sm); background: var(--oxe-work-inset); font-size: 12px; line-height: 1.6; }
+#app .oxe-rebuilt .enterprise-team-layout { gap: var(--oxe-work-gap); }
+#app .oxe-rebuilt .enterprise-team-layout.has-editor { grid-template-columns: minmax(300px, 0.9fr) minmax(360px, 1.1fr); }
+#app .oxe-rebuilt :is(.enterprise-team-list, .enterprise-team-editor) { padding: var(--oxe-work-pad) !important; border: 1px solid var(--oxe-work-line) !important; border-radius: var(--ox-radius-lg) !important; background: var(--oxe-work-panel) !important; box-shadow: var(--ox-shadow-sm) !important; }
+#app .oxe-rebuilt .enterprise-team-list { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+#app .oxe-rebuilt .enterprise-team-item { margin: 0; padding: var(--oxe-work-pad); border: 1px solid var(--oxe-work-line) !important; border-radius: var(--ox-radius-md) !important; background: var(--ox-bg-surface) !important; box-shadow: none !important; }
+#app .oxe-rebuilt .enterprise-team-item h4 { color: var(--ox-text-primary); font-size: 14px; }
+#app .oxe-rebuilt .enterprise-team-item p { color: var(--ox-text-secondary); font-size: 12px; line-height: 1.65; }
+#app .oxe-rebuilt .enterprise-team-member-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 0; padding: 0; list-style: none; }
+#app .oxe-rebuilt .enterprise-team-member-summary li { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: var(--ox-radius-xs); background: var(--oxe-work-inset); font-size: 11px; }
+#app .oxe-rebuilt .enterprise-team-member-summary em { color: var(--ox-accent); font-style: normal; }
+#app .oxe-rebuilt .enterprise-team-role-row { padding: 10px; border: 1px solid transparent !important; border-radius: var(--ox-radius-sm) !important; background: var(--oxe-work-inset) !important; }
+#app .oxe-rebuilt .enterprise-team-role-row.is-selected { border-color: var(--ox-border-hover) !important; background: var(--ox-accent-soft) !important; }
+#app .oxe-rebuilt .enterprise-team-editor__actions { justify-content: flex-end; padding-top: var(--oxe-work-gap); border-top: 1px solid var(--oxe-work-line); }
+
+/* Skill, knowledge and workspace libraries use recognizable object tiles. */
+#app .oxe-rebuilt :is(.enterprise-skill-grid, .enterprise-kb-grid, .enterprise-workspace-hub__grid) { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: var(--oxe-work-gap); padding: 0; }
+#app .oxe-rebuilt :is(.enterprise-skill-card, .enterprise-kb-grid > .provider-card, .enterprise-workspace-card) {
+  min-width: 0;
+  margin: 0;
+  padding: var(--oxe-work-pad) !important;
+  border: 1px solid var(--oxe-work-line) !important;
+  border-radius: var(--ox-radius-lg) !important;
+  background: var(--oxe-work-panel) !important;
+  box-shadow: var(--ox-shadow-sm) !important;
+  transform: none !important;
+}
+#app .oxe-rebuilt .enterprise-skill-card { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: start; gap: 12px; }
+#app .oxe-rebuilt .enterprise-skill-card__icon { width: 34px !important; height: 34px !important; border-radius: var(--ox-radius-sm) !important; background: var(--ox-accent-soft) !important; color: var(--ox-accent) !important; font-size: 16px !important; }
+#app .oxe-rebuilt .enterprise-skill-card__heading { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+#app .oxe-rebuilt .enterprise-skill-card__heading strong { color: var(--ox-text-primary); font-size: 14px; }
+#app .oxe-rebuilt .enterprise-skill-card__heading code { max-width: 100%; color: var(--ox-text-muted); font-size: 10px; overflow-wrap: anywhere; }
+#app .oxe-rebuilt .enterprise-skill-card__body p { margin: 10px 0; color: var(--ox-text-secondary); font-size: 12px; line-height: 1.65; }
+#app .oxe-rebuilt .enterprise-skill-card__actions { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+#app .oxe-rebuilt .enterprise-skill-card__meta { padding-top: 10px; border-top: 1px solid var(--oxe-work-line); color: var(--ox-text-muted); font-size: 11px; }
+#app .oxe-rebuilt .enterprise-skill-card.is-enabled { border-color: var(--ox-border-hover) !important; }
+#app .oxe-rebuilt .oxe-content[data-tab="enterprise-kb"] > div > .section-title { margin: 0; color: var(--ox-text-primary); font-size: 20px; font-weight: 650; }
+#app .oxe-rebuilt .oxe-content[data-tab="enterprise-kb"] .enterprise-kb-description { margin-bottom: var(--oxe-work-gap) !important; }
+#app .oxe-rebuilt .enterprise-kb-grid { padding: var(--oxe-work-pad); border: 1px solid var(--oxe-work-line); border-radius: var(--ox-radius-lg); background: var(--oxe-work-inset); }
+#app .oxe-rebuilt .enterprise-kb-grid > .provider-card { min-height: 174px; background: var(--ox-bg-surface) !important; box-shadow: none !important; }
+#app .oxe-rebuilt .enterprise-kb-grid .card-header { margin-bottom: 12px; padding: 0 0 10px; border-bottom: 1px solid var(--oxe-work-line); }
+#app .oxe-rebuilt .enterprise-kb-grid .staff-role-content { padding: 0; }
+#app .oxe-rebuilt .enterprise-kb-grid .staff-role-header { gap: 12px; }
+#app .oxe-rebuilt .enterprise-kb-grid .staff-role-icon-badge { width: 36px; height: 36px; border-radius: var(--ox-radius-sm); background: var(--ox-accent-soft); color: var(--ox-accent); }
+#app .oxe-rebuilt .enterprise-kb-grid .staff-role-name { color: var(--ox-text-primary); font-size: 14px; }
+#app .oxe-rebuilt .enterprise-kb-grid .staff-role-prompt { margin-top: 12px; color: var(--ox-text-secondary); font-size: 12px; line-height: 1.65; }
+#app .oxe-rebuilt .enterprise-kb-add-tile { border-style: dashed !important; color: var(--ox-accent); }
+#app .oxe-rebuilt .enterprise-kb-add-icon { font-size: 24px; }
+#app .oxe-rebuilt .enterprise-workspace-card__head { gap: 12px; margin-bottom: 16px; }
+#app .oxe-rebuilt .enterprise-workspace-card__identity { gap: 10px; min-width: 0; }
+#app .oxe-rebuilt .enterprise-workspace-card__name { color: var(--ox-text-primary); font-size: 15px; font-weight: 650; }
+#app .oxe-rebuilt .enterprise-workspace-card__meta { margin-top: 5px; color: var(--ox-text-muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+#app .oxe-rebuilt .enterprise-workspace-card__stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 12px 0; border-block: 1px solid var(--oxe-work-line); background: transparent; }
+#app .oxe-rebuilt .enterprise-workspace-card__stat { padding: 0 10px; border: 0; background: transparent; }
+#app .oxe-rebuilt .enterprise-workspace-card__stat + .enterprise-workspace-card__stat { border-left: 1px solid var(--oxe-work-line); }
+#app .oxe-rebuilt .enterprise-workspace-card__stat-label { color: var(--ox-text-secondary); font-size: 11px; }
+#app .oxe-rebuilt .enterprise-workspace-card__stat-value { margin-top: 6px; color: var(--ox-text-primary); font-size: 20px; font-weight: 650; }
+#app .oxe-rebuilt .enterprise-workspace-card__stat-value--small { font-size: 12px; overflow-wrap: anywhere; }
+#app .oxe-rebuilt .enterprise-workspace-card__actions { margin-top: 16px; }
+
+/* Incident Center retains its workflow grid, with distinct operating areas. */
+#app .oxe-rebuilt .competition-workbench { --competition-radius: var(--ox-radius-md); gap: calc(12px * var(--ox-density, 1)); border: 0; border-radius: 0; background: transparent !important; }
+/* 明确父级列模型，避免旧column flex与换行规则将演练面板排出视口。 / Define parent columns explicitly so legacy column-flex wrapping cannot push the rehearsal panel out of view. */
+#app .oxe-rebuilt .competition-commandbar { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; align-items: start !important; margin-bottom: 0 !important; }
+#app .oxe-rebuilt .competition-commandbar > * { min-width: 0; max-width: 100%; }
+#app .oxe-rebuilt :is(.competition-kpi-strip, .competition-stage-rail, .competition-incident-pane, .competition-action-pane, .competition-assurance-grid, .competition-evidence-grid, .competition-secondary-grid) {
+  min-width: 0;
+  border: 1px solid var(--oxe-work-line) !important;
+  border-radius: var(--ox-radius-md) !important;
+  background: var(--oxe-work-panel) !important;
+  box-shadow: var(--ox-shadow-sm) !important;
+}
+#app .oxe-rebuilt .competition-kpi-strip { padding: 4px; }
+#app .oxe-rebuilt .competition-kpi { padding: 10px 12px; }
+#app .oxe-rebuilt .competition-stage-rail { padding: 8px; }
+#app .oxe-rebuilt .competition-action-pane { background: var(--oxe-work-inset) !important; }
+#app .oxe-rebuilt .competition-section-heading { padding-bottom: 10px; border-bottom: 1px solid var(--oxe-work-line); }
+#app .oxe-rebuilt .competition-section-heading h3 { color: var(--ox-text-primary); font-size: 14px; font-weight: 650; }
+#app .oxe-rebuilt .competition-rehearsal-panel { grid-column: 1 / -1; justify-self: stretch; box-sizing: border-box; flex-basis: 100%; padding: 12px; border: 1px solid var(--oxe-work-line); border-radius: var(--ox-radius-sm); background: var(--oxe-work-inset); }
+#app .oxe-rebuilt .competition-production-empty { min-height: 340px; gap: 14px; padding: calc(32px * var(--ox-density, 1)); border: 1px solid var(--oxe-work-line); border-radius: var(--ox-radius-lg); background: var(--oxe-work-panel); }
+#app .oxe-rebuilt .competition-production-empty > p { max-width: 680px; margin: 0; color: var(--ox-text-secondary); font-size: 13px; line-height: 1.7; }
+#app .oxe-rebuilt .competition-production-empty__sources { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+#app .oxe-rebuilt .competition-production-empty__sources > span { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: var(--ox-radius-sm); background: var(--oxe-work-inset); color: var(--ox-text-secondary); font-size: 12px; }
+
+/* Empty collections remain useful, with the existing guidance and actions intact. */
+#app .oxe-rebuilt :is(.enterprise-team-empty, .enterprise-workspace-hub__empty, .enterprise-skill-page__empty, .staff-role-empty-state) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  gap: 12px;
+  margin: 0;
+  padding: calc(28px * var(--ox-density, 1));
+  border: 1px dashed var(--ox-border-hover);
+  border-radius: var(--ox-radius-md);
+  background: var(--oxe-work-inset);
+  color: var(--ox-text-secondary);
+  box-shadow: none;
+}
+#app .oxe-rebuilt :is(.enterprise-team-empty, .enterprise-skill-page__empty, .staff-role-empty-state) > i { color: var(--ox-accent); font-size: 24px; }
+#app .oxe-rebuilt .enterprise-workspace-hub__empty .el-empty { padding: 12px; }
+#app .oxe-rebuilt .enterprise-workspace-hub__empty .el-empty__image { width: 120px !important; }
+
+@container enterprise-workspace (max-width: 1080px) {
+  #app .oxe-rebuilt .staff-role-studio__layout { grid-template-columns: minmax(0, 1fr); }
+  #app .oxe-rebuilt .staff-role-spotlight { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  #app .oxe-rebuilt .staff-role-goai-shortcuts { grid-row: span 2; }
+  #app .oxe-rebuilt .staff-role-section-head--recommendations { margin-top: 0; margin-bottom: 0; }
+  #app .oxe-rebuilt .staff-role-studio__toolbar { flex-basis: 100%; }
+  #app .oxe-rebuilt .oxe-staff-search { max-width: none; }
+  #app .oxe-rebuilt .enterprise-metric-grid--usage { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #app .oxe-rebuilt .enterprise-metric-grid--usage .enterprise-metric-card:nth-child(3n) > .el-card__body { border-inline-end: 0; }
+  #app .oxe-rebuilt .enterprise-metric-grid--usage .enterprise-metric-card:nth-child(n + 4) > .el-card__body { border-top: 1px solid var(--oxe-work-line); }
+}
+@container enterprise-workspace (max-width: 820px) {
+  #app .oxe-rebuilt .competition-commandbar { grid-template-columns: minmax(0, 1fr); }
+  #app .oxe-rebuilt .competition-commandbar > * { grid-column: 1 / -1; }
+  #app .oxe-rebuilt .competition-commandbar__actions { justify-content: flex-start; width: 100%; }
+  #app .oxe-rebuilt .enterprise-service-layout,
+  #app .oxe-rebuilt .enterprise-team-layout.has-editor { grid-template-columns: minmax(0, 1fr); }
+  #app .oxe-rebuilt :is(.enterprise-metric-grid--neuro, .enterprise-metric-grid--kg, .enterprise-service-metric-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #app .oxe-rebuilt :is(.enterprise-metric-card, .enterprise-service-metric-card):nth-child(2n) > .el-card__body { border-inline-end: 0; }
+  #app .oxe-rebuilt .enterprise-panel-head { align-items: flex-start; }
+  #app .oxe-rebuilt .enterprise-graph-controls { width: 100%; }
+  #app .oxe-rebuilt .enterprise-skill-page__actions { width: 100%; }
+  #app .oxe-rebuilt .enterprise-skill-page__actions select { min-width: 0; flex: 1 1 200px; max-width: 100%; }
+}
+@container enterprise-workspace (max-width: 560px) {
+  #app .oxe-rebuilt :is(.enterprise-metric-grid--usage, .enterprise-metric-grid--neuro, .enterprise-metric-grid--kg, .enterprise-service-metric-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #app .oxe-rebuilt .enterprise-metric-grid--usage .enterprise-metric-card:nth-child(n) > .el-card__body { border: 0; }
+  #app .oxe-rebuilt :is(.enterprise-metric-card, .enterprise-service-metric-card) > .el-card__body { min-height: 76px; padding-inline: 12px !important; }
+  #app .oxe-rebuilt :is(.enterprise-metric-card__value, .enterprise-service-metric-card__value) { font-size: 20px !important; }
+  #app .oxe-rebuilt .staff-role-studio__stats { flex-wrap: wrap; row-gap: 8px; }
+  #app .oxe-rebuilt .staff-role-studio__stat { padding-inline: 9px; }
+  #app .oxe-rebuilt .staff-role-spotlight { display: block; }
+  #app .oxe-rebuilt .staff-role-section-head--recommendations { margin-top: 20px; margin-bottom: 14px; }
+  #app .oxe-rebuilt :is(.enterprise-skill-grid, .enterprise-kb-grid, .enterprise-workspace-hub__grid) { grid-template-columns: minmax(0, 1fr); }
+  #app .oxe-rebuilt .enterprise-search-row__input { max-width: none; }
+  #app .oxe-rebuilt .competition-production-empty { min-height: 300px; padding: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #app .oxe-rebuilt :is(.staff-role-template-card, .staff-role-library-card) { transition: none; }
+}
+
+/* 无容器查询环境仍保持窄视口父布局单列。 / Preserve a single parent column on narrow viewports without container-query support. */
+@media (max-width: 800px) {
+  #app .oxe-rebuilt .competition-commandbar { grid-template-columns: minmax(0, 1fr); }
+  #app .oxe-rebuilt .competition-commandbar > * { grid-column: 1 / -1; }
+  #app .oxe-rebuilt .competition-commandbar__actions { justify-content: flex-start; width: 100%; }
+}

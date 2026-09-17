@@ -1,3 +1,5 @@
+import { createContextWorkspaceBridge } from './context-workspace';
+
 function getHostApp() {
   return typeof window !== 'undefined' ? window.openxnetApp || null : null;
 }
@@ -25,6 +27,16 @@ const synapxnetMemoryRuntime = {
   includeRetired: false,
   loading: false,
   error: '',
+};
+
+// Ollama discovery is kept separate from the Memory ledger. The renderer only receives
+// sanitized loopback status and model summaries from the Electron Main process.
+const ollamaRuntime = {
+  status: null,
+  loading: false,
+  error: '',
+  attempted: false,
+  request: null,
 };
 
 const featurePackDefinitions = [
@@ -86,6 +98,8 @@ const featurePackDefinitions = [
 function getDesktopCoreApi() {
   return typeof window !== 'undefined' ? window.openxnetDesktop || null : null;
 }
+
+const contextWorkspace = createContextWorkspaceBridge({ getHost: getHostApp, getDesktopApi: getDesktopCoreApi });
 
 /**
  * Subscribe once to Feature Pack progress emitted by Electron Main.
@@ -965,6 +979,36 @@ function requireSynapxnetMemoryApi() {
   return api;
 }
 
+/** Discover the optional local Ollama service without exposing credentials or filesystem paths. */
+async function detectApplicationOllama(force = false) {
+  const api = getDesktopCoreApi();
+  if (typeof api?.discoverApplicationOllama !== 'function') {
+    ollamaRuntime.attempted = true;
+    ollamaRuntime.status = null;
+    return null;
+  }
+  if (ollamaRuntime.request) return ollamaRuntime.request;
+  if (!force && ollamaRuntime.attempted && ollamaRuntime.status) return ollamaRuntime.status;
+  ollamaRuntime.loading = true;
+  ollamaRuntime.error = '';
+  ollamaRuntime.request = api.discoverApplicationOllama({})
+    .then((result) => {
+      ollamaRuntime.status = result && typeof result === 'object' ? result : null;
+      return ollamaRuntime.status;
+    })
+    .catch((error) => {
+      ollamaRuntime.status = null;
+      ollamaRuntime.error = String(error?.message || 'Ollama discovery failed.');
+      return null;
+    })
+    .finally(() => {
+      ollamaRuntime.attempted = true;
+      ollamaRuntime.loading = false;
+      ollamaRuntime.request = null;
+    });
+  return ollamaRuntime.request;
+}
+
 /** 生成可切换的记忆 Agent 身份；输入宿主和语言，返回去重后的主 Agent 与角色卡列表。 */
 function buildSynapxnetMemoryAgentOptions(host, isZh) {
   const agents = host?.agents && typeof host.agents === 'object' ? host.agents : {};
@@ -1027,6 +1071,8 @@ async function loadSynapxnetMemories(filters = {}) {
   synapxnetMemoryRuntime.loading = true;
   synapxnetMemoryRuntime.error = '';
   try {
+    // Probe once when Memory V3 is opened; the optional service never blocks the ledger.
+    if (!ollamaRuntime.attempted) void detectApplicationOllama();
     if (!synapxnetMemoryRuntime.recoveryAttempted) {
       synapxnetMemoryRuntime.recovery = await api.recoverSynapxnetMemories({
         actorAgent: synapxnetMemoryRuntime.actorAgent,
@@ -1174,7 +1220,192 @@ function buildSynapxnetMemorySnapshot(host, isZh) {
     items: [...synapxnetMemoryRuntime.items],
     history: [...synapxnetMemoryRuntime.history],
     agentOptions,
+    ollama: {
+      status: ollamaRuntime.status ? { ...ollamaRuntime.status } : null,
+      loading: ollamaRuntime.loading,
+      error: ollamaRuntime.error,
+      attempted: ollamaRuntime.attempted,
+    },
   };
+}
+
+// Keep upload formats aligned with the existing host uploadStorageFiles policy.
+const storageUploadExtensions = {
+  text: ['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'pdf', 'pages', 'numbers', 'key', 'rtf', 'odt', 'epub', 'js', 'ts', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'swift', 'kt', 'dart', 'rb', 'php', 'html', 'css', 'scss', 'less', 'vue', 'svelte', 'jsx', 'tsx', 'json', 'xml', 'yml', 'yaml', 'sql', 'sh', 'csv', 'tsv', 'txt', 'md', 'log', 'conf', 'ini', 'env', 'toml'],
+  image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'],
+};
+const storageKinds = Object.freeze({
+  text: { list: 'textFiles', remove: 'deleteFile', batch: 'batchDeleteFiles', selected: 'selectedFiles' },
+  image: { list: 'imageFiles', remove: 'deleteImage', batch: 'batchDeleteImages', selected: 'selectedImages' },
+  video: { list: 'videoFiles', remove: 'deleteVideo', batch: 'batchDeleteVideos', selected: 'selectedVideos' },
+});
+
+/** Return a localized storage action error without changing the host. */
+function storageActionError(zh, en) {
+  const host = getHostApp();
+  return new Error(!host || isCurrentLanguageZh(host) ? zh : en);
+}
+
+/** Resolve an existing file by its stable storage name; reject stale or ambiguous selections. */
+function requireStorageContext(kind, ids = []) {
+  const host = getHostApp();
+  if (!host) throw storageActionError('文件库尚未连接，请重新打开页面。', 'The file library is not connected. Reopen the page.');
+  if (!Object.hasOwn(storageKinds, kind)) throw storageActionError('文件库类型无效。', 'Invalid file library kind.');
+  if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string' || !id.trim() || /[/\\\u0000-\u001f]/.test(id) || id === '.' || id === '..')) {
+    throw storageActionError('文件标识无效，请刷新文件库后重试。', 'Invalid file identifier. Refresh the library and retry.');
+  }
+  const config = storageKinds[kind];
+  const files = ids.map(id => {
+    const matches = toArray(host[config.list]).filter(file => file?.unique_filename === id);
+    if (matches.length !== 1) throw storageActionError('所选文件已不存在或标识重复，请刷新后重试。', 'A selected file is missing or its identifier is duplicated. Refresh and retry.');
+    return matches[0];
+  });
+  return { host, config, files };
+}
+
+/** Build the existing same-library artifact URL, encoding only the storage filename. */
+function storageFileUrl(host, id) {
+  if (!id || /[/\\\u0000-\u001f]/.test(id) || id === '.' || id === '..') throw storageActionError('文件标识无效。', 'Invalid file identifier.');
+  const base = String(host?.partyURL || (typeof window !== 'undefined' ? window.location?.origin : '') || '');
+  const url = new URL('uploaded_files/' + encodeURIComponent(id), base.replace(/\/+$/, '') + '/');
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw storageActionError('文件服务地址无效。', 'Invalid file service URL.');
+  return url.href;
+}
+
+/** Map the complete real file collection without manufacturing preview records. */
+function mapStorageFiles(host, kind, isZh) {
+  const entries = toArray(host?.[storageKinds[kind].list]);
+  const counts = new Map();
+  entries.forEach(file => counts.set(file?.unique_filename, (counts.get(file?.unique_filename) || 0) + 1));
+  return entries.map(file => {
+    const id = typeof file?.unique_filename === 'string' ? file.unique_filename : '';
+    const name = String(file?.original_filename || id || file?.name || (isZh ? '未命名文件' : 'Untitled file'));
+    let url = '', invalidReason = '';
+    try {
+      if (counts.get(id) !== 1) throw new Error();
+      url = storageFileUrl(host, id);
+    } catch (_) { invalidReason = isZh ? '文件标识或服务地址不可用，请刷新文件库。' : 'File identifier or service URL is unavailable. Refresh the library.'; }
+    const ext = String(host?.getPrototypeStorageFileExtension?.(file) || (name.includes('.') ? name.split('.').pop() : '')).toUpperCase();
+    return {
+      id, name, ext, url, invalidReason,
+      size: String(host?.getPrototypeStorageFileDisplaySize?.(file) || (Number(file?.size || file?.file_size || file?.bytes) > 0 ? Number(file?.size || file?.file_size || file?.bytes).toLocaleString() + ' B' : (isZh ? '未知大小' : 'Unknown size'))),
+      time: String(host?.getPrototypeStorageFileDisplayTime?.(file) || formatDateTime(file?.uploaded_at || file?.created_at || file?.timestamp) || '—'),
+    };
+  });
+}
+
+/** Recognize explicit user cancellation without classifying transport errors as success. */
+function storageActionCancelled(value) {
+  return value?.canceled === true || value?.cancelled === true || ['AbortError', 'CancelError'].includes(value?.name)
+    || ['ERR_CANCELED', 'ERR_CANCELLED'].includes(value?.code) || /^Download (?:was )?cancel[l]?ed\.?$/i.test(String(value?.message || ''));
+}
+
+/** Upload already selected File objects through the existing host; an empty selection is cancellation. */
+async function uploadStorageLibrary(kind, files) {
+  const { host, config } = requireStorageContext(kind);
+  if (!storageUploadExtensions[kind]) throw storageActionError('视频库当前接收工作流产生的视频，不支持手动上传。', 'The video library currently receives workflow outputs and does not support manual uploads.');
+  if (!Array.isArray(files)) throw storageActionError('请选择要上传的文件。', 'Select files to upload.');
+  if (!files.length) return { status: 'cancelled' };
+  if (typeof host.uploadStorageFiles !== 'function') throw storageActionError('当前环境无法上传文件。', 'File upload is unavailable in this environment.');
+  if (files.some(file => !(file instanceof Blob) || typeof file.name !== 'string' || !storageUploadExtensions[kind].includes(file.name.split('.').pop().toLowerCase()))) {
+    throw storageActionError('所选文件包含不支持的格式，请使用当前文件库允许的格式。', 'The selection contains unsupported formats. Use formats allowed by this library.');
+  }
+  const before = JSON.stringify(toArray(host[config.list]));
+  let result;
+  try { result = await host.uploadStorageFiles(kind === 'image' ? 'image' : 'file', files); }
+  catch (error) {
+    if (storageActionCancelled(error)) return { status: 'cancelled' };
+    throw error;
+  }
+  if (storageActionCancelled(result)) return { status: 'cancelled' };
+  if (result === false || result?.ok === false || result?.success === false || JSON.stringify(toArray(host[config.list])) === before) {
+    throw storageActionError('未确认文件导入完成，请检查上传提示后重试。', 'The file import could not be confirmed. Check the upload message and retry.');
+  }
+  return { status: 'completed' };
+}
+
+/** Refresh only the file collections through existing Artifact or update_storage interfaces. */
+async function refreshStorageLibrary() {
+  const { host } = requireStorageContext('text');
+  if (host.isElectron) {
+    if (typeof host.loadApplicationArtifacts !== 'function') throw storageActionError('当前环境无法读取文件库。', 'The file library cannot be loaded in this environment.');
+    const snapshot = await host.loadApplicationArtifacts();
+    if (!snapshot || snapshot.ok === false) throw storageActionError('文件库刷新失败，请重试。', 'The file library could not be refreshed. Retry.');
+  } else {
+    const response = await fetch('/update_storage', { method: 'GET' });
+    if (!response.ok) throw storageActionError(`文件库刷新失败（${response.status}）。`, `File library refresh failed (${response.status}).`);
+    const data = await response.json();
+    if (!data || !['textFiles', 'imageFiles', 'videoFiles'].every(key => Array.isArray(data[key]))) throw storageActionError('文件库返回的数据无效。', 'The file library returned invalid data.');
+    host.textFiles = data.textFiles;
+    host.imageFiles = data.imageFiles;
+    host.videoFiles = data.videoFiles;
+  }
+  return { status: 'completed' };
+}
+
+/** Route confirmed deletion to the existing host actions and verify every selected file disappeared. */
+async function deleteStorageFiles(kind, ids) {
+  if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length) throw storageActionError('请选择有效且不重复的文件。', 'Select valid files without duplicate identifiers.');
+  const { host, config, files } = requireStorageContext(kind, ids);
+  const method = ids.length === 1 ? config.remove : config.batch;
+  if (typeof host[method] !== 'function') throw storageActionError('当前环境无法删除所选文件。', 'Deleting the selected files is unavailable.');
+  const previousSelection = toArray(host[config.selected]).slice();
+  if (ids.length > 1) host[config.selected] = ids.slice();
+  try {
+    const result = await host[method](...(ids.length === 1 ? [files[0]] : []));
+    if (storageActionCancelled(result)) return { status: 'cancelled' };
+    const remaining = new Set(toArray(host[config.list]).map(file => file?.unique_filename));
+    if (result === false || result?.ok === false || result?.success === false || ids.some(id => remaining.has(id))) {
+      throw storageActionError('部分文件未能删除，请刷新后重试。', 'Some files could not be deleted. Refresh and retry.');
+    }
+    return { status: 'completed' };
+  } catch (error) {
+    if (storageActionCancelled(error)) return { status: 'cancelled' };
+    throw error;
+  } finally {
+    const remaining = new Set(toArray(host[config.list]).map(file => file?.unique_filename));
+    host[config.selected] = previousSelection.filter(id => remaining.has(id));
+  }
+}
+
+/** Run existing link/download capabilities with observable completion; previews return a validated URL. */
+async function runStorageFileAction(kind, action, id) {
+  if (!['copy-link', 'download', 'preview'].includes(action)) throw storageActionError('文件操作无效。', 'Invalid file action.');
+  const { host, files } = requireStorageContext(kind, [id]);
+  const file = files[0];
+  const url = storageFileUrl(host, id);
+  if (action === 'preview') {
+    if (kind !== 'image' && kind !== 'video') throw storageActionError('此文件不支持媒体预览。', 'This file does not support media preview.');
+    return { status: 'completed', url };
+  }
+  try {
+    if (action === 'copy-link') {
+      if (typeof navigator === 'undefined' || typeof navigator.clipboard?.writeText !== 'function') throw storageActionError('当前环境无法访问剪贴板。', 'Clipboard access is unavailable.');
+      await navigator.clipboard.writeText(url);
+    } else if (host.isElectron) {
+      if (typeof window.electronAPI?.downloadFile !== 'function') throw storageActionError('当前环境无法下载文件。', 'File download is unavailable.');
+      const result = await window.electronAPI.downloadFile({ url, filename: file.original_filename || id });
+      if (storageActionCancelled(result)) return { status: 'cancelled' };
+      if (result?.success !== true) throw storageActionError('下载未完成，请重试。', 'The download did not complete. Retry.');
+    } else {
+      const response = await fetch(url);
+      if (!response.ok) throw storageActionError(`文件下载失败（${response.status}）。`, `File download failed (${response.status}).`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = file.original_filename || id;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+      return { status: 'requested' };
+    }
+    return { status: 'completed' };
+  } catch (error) {
+    if (storageActionCancelled(error)) return { status: 'cancelled' };
+    throw error;
+  }
 }
 
 /** 构建存储工作台快照；输入宿主和语言，返回文件、Recall 与 Memory V3 数据。 */
@@ -1182,38 +1413,30 @@ function buildStorageSnapshot(host, isZh) {
   const tabs = toArray(host?.storageTiles).map((tile) => ({
     id: String(tile?.id || ''),
     icon: String(tile?.icon || 'fa-solid fa-circle'),
-    label: getTileLabel(host, tile, isZh),
+    label: tile?.id === 'memory-v3' ? (isZh ? '记忆与上下文' : 'Memory & context') : getTileLabel(host, tile, isZh),
   }));
   if (!tabs.some((item) => item.id === 'memory-v3')) {
-    tabs.push({ id: 'memory-v3', icon: 'fa-solid fa-brain', label: isZh ? 'Memory V3' : 'Memory V3' });
+    tabs.push({ id: 'memory-v3', icon: 'fa-solid fa-brain', label: isZh ? '记忆与上下文' : 'Memory & context' });
   }
   const activeTab = String(host?.subMenu || 'text');
-  const textFiles = toArray(host?.textFiles).slice(0, 8).map((file, index) => ({
-    id: String(file?.id || file?.path || `text-${index}`),
-    name: String(file?.original_filename || file?.unique_filename || file?.name || (isZh ? '未命名文件' : 'Untitled file')),
-    ext: host?.getPrototypeStorageFileExtension?.(file) || '',
-    size: host?.getPrototypeStorageFileDisplaySize?.(file) || '',
-    time: host?.getPrototypeStorageFileDisplayTime?.(file) || '',
-  }));
-  const imageFiles = toArray(host?.imageFiles).slice(0, 6).map((file, index) => ({
-    id: String(file?.id || file?.path || `image-${index}`),
-    name: String(file?.original_filename || file?.unique_filename || file?.name || (isZh ? '未命名图片' : 'Untitled image')),
-    size: host?.getPrototypeStorageFileDisplaySize?.(file) || '',
-  }));
+  const textFiles = mapStorageFiles(host, 'text', isZh);
+  const imageFiles = mapStorageFiles(host, 'image', isZh);
+  const videoFiles = mapStorageFiles(host, 'video', isZh);
+  const fileGroups = { text: textFiles, image: imageFiles, video: videoFiles };
   const recallItems = toArray(host?.recallResults).slice(0, 6).map((item, index) => ({
     id: String(item?.task_id || item?.id || `recall-${index}`),
     title: truncate(item?.title || item?.summary || item?.query || (isZh ? '续接任务' : 'Recall item'), 56),
     note: truncate(item?.content || item?.description || item?.source || '', 80),
   }));
   return {
-    title: isZh ? '存储管理' : 'Storage Manager',
+    title: activeTab === 'memory-v3' ? (isZh ? '记忆与上下文' : 'Memory & context') : (isZh ? '存储管理' : 'Storage Manager'),
     subtitle: isZh ? '统一管理文本、图片、视频和续接素材' : 'Manage text, images, videos, and recall assets together',
     tabs,
     activeTab,
     meta: activeTab === 'memory-v3'
       ? {
         title: 'SynapXnet Memory V3',
-        summary: isZh ? '可共享、可编辑、可追溯、可回滚的长期记忆。' : 'Shareable, editable, traceable, and rollback-capable long-term memory.',
+        summary: isZh ? '从当前会话、项目协作，到可复用的原生记忆。' : 'From current conversations and project collaboration to reusable native memory.',
         chips: [],
       }
       : host?.getPrototypeStorageDetailMeta?.(activeTab) || { title: '', summary: '', chips: [] },
@@ -1228,11 +1451,13 @@ function buildStorageSnapshot(host, isZh) {
     overviewStats: toArray(host?.getPrototypeStorageOverviewStats?.()),
     textFiles,
     imageFiles,
-    videoFiles: [
-      { id: 'video-1', name: 'product-demo.mp4', size: '128 MB', duration: '04:32' },
-      { id: 'video-2', name: 'training-session.mov', size: '1.2 GB', duration: '45:08' },
-      { id: 'video-3', name: 'bug-repro.webm', size: '45 MB', duration: '02:47' },
-    ],
+    videoFiles,
+    fileLibrary: {
+      kind: activeTab,
+      files: fileGroups[activeTab] || [],
+      canUpload: Object.hasOwn(storageUploadExtensions, activeTab),
+      uploadAccept: (storageUploadExtensions[activeTab] || []).map(ext => '.' + ext).join(','),
+    },
     recallItems,
     memoryV3: buildSynapxnetMemorySnapshot(host, isZh),
   };
@@ -1265,6 +1490,25 @@ function buildKernelSnapshot(host, isZh) {
       next: host?.getKernelConsoleActionNextLabel?.(item) || '',
     })),
     updatedLabel: host?.getKernelConsoleUpdatedLabel?.() || '',
+  };
+}
+
+/** Keep skin previews small; background image payloads stay in the host. */
+function mapSkinPreview(skin, isZh) {
+  const value = skin && typeof skin === 'object' ? skin : {};
+  const dark = value.mode === 'dark';
+  const color = (candidate, fallback) => /^#[\da-f]{6}$/i.test(String(candidate || '')) ? String(candidate) : fallback;
+  return {
+    id: String(value.id || ''),
+    name: String(value.name || (isZh ? 'OpenXnet 蓝青' : 'OpenXnet Blue')),
+    mode: dark ? 'dark' : 'light',
+    primary: color(value.primary, '#21859c'),
+    background: color(value.background, dark ? '#16232b' : '#f1f7fa'),
+    surface: color(value.surface, dark ? '#21333e' : '#ffffff'),
+    text: color(value.text, dark ? '#e5f0f4' : '#263f4a'),
+    radius: Math.max(0, Math.min(32, Number.isFinite(Number(value.radius)) ? Number(value.radius) : 14)),
+    density: value.density === 'compact' ? 'compact' : 'comfortable',
+    hasWallpaper: Boolean(value.hasWallpaper || value.wallpaper),
   };
 }
 
@@ -1347,6 +1591,9 @@ function buildSystemSnapshot(host, isZh) {
       { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY' },
     ],
     themeOptions,
+    skinCurrent: mapSkinPreview(host?.getSkinCurrentSummary?.(), isZh),
+    skinLibrary: toArray(host?.getSkinLibrary?.()).map((skin) => mapSkinPreview(skin, isZh)),
+    skinStudioAvailable: typeof host?.openSkinStudio === 'function',
     networkOptions: networkOptions.length ? networkOptions : [
       { value: 'local', label: isZh ? '本机可见' : 'Local only' },
       { value: 'global', label: isZh ? '局域网可见' : 'LAN visible' },
@@ -1954,6 +2201,18 @@ async function updateSystemSetting(key, value) {
   if (settingKey === 'launchAtStartup' || settingKey === 'startMinimized') {
     await syncLaunchSettings(host);
   }
+}
+
+/** Open the shared device appearance editor without saving business settings. */
+async function openSkinStudio() {
+  const host = getHostApp();
+  if (typeof host?.openSkinStudio === 'function') await host.openSkinStudio();
+}
+
+/** Select a saved skin through its host-owned persistence boundary. */
+async function activateSkin(id) {
+  const host = getHostApp();
+  if (typeof host?.activateSkin === 'function') await host.activateSkin(String(id || ''));
 }
 
 async function setSystemTargetLanguage(value) {
@@ -2603,13 +2862,20 @@ async function loadEnterpriseKnowledgeBaseVersions(kbId) {
 
 export function createOpsBridge() {
   return {
+    contextWorkspace,
     snapshot: buildSurfaceSnapshot,
     ensureLoaded,
     selectSurfaceTab,
     refreshSurface,
+    uploadStorageLibrary,
+    refreshStorageLibrary,
+    runStorageFileAction,
+    deleteStorageFiles,
     runSystemUpdateCheck,
     openAboutSurface,
     updateSystemSetting,
+    openSkinStudio,
+    activateSkin,
     setSystemTargetLanguage,
     clearSystemRuntimeCache,
     runSystemQuickAction,
@@ -2653,6 +2919,7 @@ export function createOpsBridge() {
     deleteEnterpriseKnowledgeBase,
     loadEnterpriseKnowledgeBaseVersions,
     loadSynapxnetMemories,
+    detectApplicationOllama,
     selectSynapxnetMemory,
     createSynapxnetMemory,
     editSynapxnetMemory,

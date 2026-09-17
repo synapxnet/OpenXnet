@@ -401,6 +401,7 @@ onBeforeUnmount(() => {
                   <input class="oxt-field__input" :value="detailForm.fields.endpoint" type="text" @input="handleField(activeId, 'endpoint', $event)" />
                 </label>
                 <div class="oxt-note">{{ isZh ? '已登记服务数' : 'Registered services' }}: {{ detailForm.fields.serverCount }}</div>
+                <button type="button" class="oxt-btn" @click="handleOpenDedicatedConfig"><i class="fa-solid fa-arrow-up-right-from-square"></i>{{ isZh ? '管理服务与工作流' : 'Manage servers and workflows' }}</button>
               </template>
 
               <template v-else-if="needsDedicatedConfig">

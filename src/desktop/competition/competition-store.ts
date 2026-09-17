@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   APPLICATION_COMPETITION_ADAPTER_MODES,
@@ -11,10 +12,46 @@ import {
   type ApplicationCompetitionDeploymentAction,
   type ApplicationCompetitionIncident,
   type ApplicationCompetitionToolInvocation,
+  type ApplicationCompetitionResidentAgent,
 } from "../contracts/application-competition-runtime";
+import { createDefaultResidentAgents } from "./competition-resident-agents";
 
 const MAX_STORE_BYTES = 32 * 1024 * 1024;
 const MAX_RECORDS_PER_COLLECTION = 10_000;
+const WINDOWS_REPLACE_DELAYS_MS = [25, 50, 100, 200, 300, 400] as const;
+
+/** 不包含文件路径的控制面写入异常。 / A control-plane write failure that never exposes filesystem paths. */
+export class CompetitionStoreWriteError extends Error {
+  public readonly code = "CONTROL_PLANE_PERSISTENCE_FAILED";
+  public readonly retryable = false;
+  public readonly systemCode: string;
+
+  /** 保留安全系统代码，不把平台副作用当作可直接重试。 / Preserve a safe system code without declaring platform side effects retryable. */
+  public constructor(error: unknown) {
+    const rawCode = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    const systemCode = typeof rawCode === "string" && /^[A-Z][A-Z0-9_]{0,31}$/u.test(rawCode) ? rawCode : "UNKNOWN";
+    super(`本机运行记录保存失败（${systemCode}）。平台操作可能已经发生，请先核对执行回执和当前状态，不要重复执行。`);
+    this.name = "CompetitionStoreWriteError";
+    this.systemCode = systemCode;
+  }
+}
+
+/** 仅重试同一快照的原子替换，不重算更新或重跑工具。 / Retry only atomic replacement of the same snapshot, never mutations or tools. */
+async function replaceSnapshotWithRetry(temporaryPath: string, storePath: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(temporaryPath, storePath);
+      return;
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+      const pause = WINDOWS_REPLACE_DELAYS_MS[attempt];
+      if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(String(code)) || pause === undefined) {
+        throw error;
+      }
+      await delay(pause);
+    }
+  }
+}
 
 /** 竞赛 Store 的文件和时间依赖。 */
 export interface CompetitionStoreOptions {
@@ -83,19 +120,20 @@ export class CompetitionStore {
       throw new Error("Competition control-plane store exceeds its byte budget.");
     }
     const directory = path.dirname(this.storePath);
-    await mkdir(directory, { recursive: true });
     const temporaryPath = `${this.storePath}.${randomUUID()}.tmp`;
     try {
+      await mkdir(directory, { recursive: true });
       await writeFile(temporaryPath, serialized, { encoding: "utf8", flag: "wx", mode: 0o600 });
-      await rename(temporaryPath, this.storePath);
+      await replaceSnapshotWithRetry(temporaryPath, this.storePath);
     } catch (error) {
-      await rm(temporaryPath, { force: true });
-      throw error;
+      // 清理失败不能覆盖原始写入错误。 / Cleanup failures must not replace the original write failure.
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw new CompetitionStoreWriteError(error);
     }
   }
 }
 
-/** 创建空竞赛快照；输入当前时间，返回 Fixture 模式默认状态。 */
+/** 创建空竞赛快照和待预检的驻场注册表。 / Create an empty snapshot with a resident registry awaiting preflight. */
 export function createEmptySnapshot(now: string): ApplicationCompetitionSnapshot {
   return {
     schema: APPLICATION_COMPETITION_RUNTIME_SCHEMA,
@@ -113,11 +151,14 @@ export function createEmptySnapshot(now: string): ApplicationCompetitionSnapshot
     taskGraphs: [],
     reasoningDecisions: [],
     skillEvolutionRuns: [],
+    residentAgents: createDefaultResidentAgents(),
+    residentContexts: [],
+    residentEvents: [],
     updatedAt: now,
   };
 }
 
-/** 校验并深拷贝存储快照；输入未知 JSON，返回有界协议对象，无效时抛出 Error。 */
+/** 校验、迁移并深拷贝存储快照。 / Validate, migrate and deep-copy the stored snapshot. */
 export function parseStoredSnapshot(value: unknown): ApplicationCompetitionSnapshot {
   if (!isRecord(value) || value.schema !== APPLICATION_COMPETITION_RUNTIME_SCHEMA) {
     throw new Error("Competition control-plane store schema is invalid.");
@@ -149,6 +190,11 @@ export function parseStoredSnapshot(value: unknown): ApplicationCompetitionSnaps
     taskGraphs: Array.isArray(cloned.taskGraphs) ? cloned.taskGraphs.map(normalizeTaskGraph) : [],
     reasoningDecisions: Array.isArray(cloned.reasoningDecisions) ? cloned.reasoningDecisions : [],
     skillEvolutionRuns: Array.isArray(cloned.skillEvolutionRuns) ? cloned.skillEvolutionRuns : [],
+    residentAgents: Array.isArray(cloned.residentAgents)
+      ? cloned.residentAgents.map(normalizeResidentAgent)
+      : createDefaultResidentAgents(),
+    residentEvents: Array.isArray(cloned.residentEvents) ? cloned.residentEvents : [],
+    residentContexts: Array.isArray(cloned.residentContexts) ? cloned.residentContexts : [],
   };
   requireCollection(snapshot.incidents, "incidents");
   requireCollection(snapshot.traces, "traces");
@@ -163,10 +209,25 @@ export function parseStoredSnapshot(value: unknown): ApplicationCompetitionSnaps
   requireCollection(snapshot.taskGraphs, "taskGraphs");
   requireCollection(snapshot.reasoningDecisions, "reasoningDecisions");
   requireCollection(snapshot.skillEvolutionRuns, "skillEvolutionRuns");
+  requireCollection(snapshot.residentAgents, "residentAgents");
+  requireCollection(snapshot.residentEvents, "residentEvents");
+  requireCollection(snapshot.residentContexts, "residentContexts");
   if (typeof snapshot.updatedAt !== "string" || snapshot.updatedAt.length > 128) {
     throw new Error("Competition snapshot timestamp is invalid.");
   }
   return snapshot;
+}
+
+/** 迁移驻场 Agent 身份；输入旧版或新版记录，缺失字段时回退为安全默认值。 / Migrate resident identity records with safe defaults. */
+function normalizeResidentAgent(value: ApplicationCompetitionResidentAgent): ApplicationCompetitionResidentAgent {
+  const compatible = value as ApplicationCompetitionResidentAgent & { readonly capabilities?: unknown; readonly allowedTools?: unknown };
+  const fallback = createDefaultResidentAgents().find((agent) => agent.agentId === value.agentId);
+  return {
+    ...value,
+    capabilities: Array.isArray(compatible.capabilities) ? compatible.capabilities : fallback?.capabilities ?? [],
+    allowedTools: Array.isArray(compatible.allowedTools) ? compatible.allowedTools : fallback?.allowedTools ?? [],
+    status: ["ONLINE", "DEGRADED", "OFFLINE"].includes(value.status) ? value.status : "REGISTERED",
+  };
 }
 
 /** 迁移 Task Graph；输入旧版或新版记录，为旧数据补齐协同事件列表。 */

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openxnet.synapxnet.com/skills/goai-evidence-collect/1.1.0/output.schema.json",
+  "title": "GOAI Evidence Collect Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "decision", "summary", "confidence", "requestedToolNames", "evidenceIds"],
+  "properties": {
+    "schema": { "const": "goai.skill.evidence-collect.output.v1.1" },
+    "decision": { "const": "COLLECT_EVIDENCE" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 16384 },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "requestedToolNames": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "type": "string" }
+    },
+    "evidenceIds": { "type": "array", "maxItems": 0 }
+  }
+}

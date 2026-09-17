@@ -81,10 +81,11 @@ async function connectDesktopCoreState(viewModel) {
  * @param {object} viewModel Mounted OpenXnet Vue instance.
  */
 function connectTaskExecutionState(viewModel) {
+  viewModel.connectCompletionNoticeNavigation?.();
   if (typeof window.openxnetDesktop?.onTaskExecutionChanged !== 'function') return;
   viewModel.taskExecutionUnsubscribe?.();
   viewModel.taskExecutionUnsubscribe = window.openxnetDesktop.onTaskExecutionChanged((snapshot) => {
-    viewModel.applyApplicationTaskSnapshot?.(snapshot);
+    viewModel.applyApplicationTaskSnapshot?.(snapshot, { notify: true });
     if (!viewModel.viewingTaskDetail) return;
     const updated = viewModel.taskList.find((task) => (
       task.task_id === viewModel.viewingTaskDetail.task_id
@@ -103,6 +104,7 @@ function persistThemePreference(theme) {
   } catch (error) {
     console.warn('Failed to persist theme preference:', error);
   }
+  window.restoreOpenXnetSkin?.();
 }
 
 function resolveOpenXnetDomTheme(theme) {
@@ -831,6 +833,7 @@ handleAction(item, extraValue) {
 // ==========================================
 const app = Vue.createApp({
   render: window.openxnetCompiledRender,
+  mixins: [window.OpenXnetSkinWorkbench || {}],
   data() {
     return vue_data
   },
@@ -1322,6 +1325,8 @@ const handleRemoteInstall = (data) => {
     this.desktopCoreUnsubscribe = null;
     this.taskExecutionUnsubscribe?.();
     this.taskExecutionUnsubscribe = null;
+    this.completionNoticeUnsubscribe?.();
+    this.completionNoticeUnsubscribe = null;
     this.syncAccessDialogScrollLock(true);
     this.stopDesktopControlFollowPolling();
     this.stopEdgeScroll();
@@ -1586,11 +1591,14 @@ const handleRemoteInstall = (data) => {
           window.mermaid.initialize({
             startOnLoad: false,
             securityLevel: 'loose',
-            theme : ['dark','midnight','neon'].includes(newVal) ? 'dark' : 'default'
+            theme: this.getPrototypeThemeMode() === 'dark' ? 'dark' : 'default'
           });
         }
 
-        // 完整的主题色映射
+        // The local skin owns the complete palette, including teleported dialogs.
+        if (window.restoreOpenXnetSkin?.()) return;
+
+        // Legacy fallback for renderers without the skin runtime.
         const themeColors = {
           light: '#21859c',      // 默认
           dark: '#ee7e00',       // 橙色
@@ -1626,6 +1634,7 @@ const handleRemoteInstall = (data) => {
         if (window.__ELEMENT_PLUS_INSTANCE__) {
           window.__ELEMENT_PLUS_INSTANCE__.config.globalProperties.$ELEMENT.reload();
         }
+        window.restoreOpenXnetSkin?.();
       },
       immediate: true
     },
@@ -4028,6 +4037,7 @@ const handleRemoteInstall = (data) => {
   },
   methods: {
     ...vue_methods,
+    ...(window.OpenXnetSkinWorkbench?.methods || {}),
   },
 directives: {
     morph: {

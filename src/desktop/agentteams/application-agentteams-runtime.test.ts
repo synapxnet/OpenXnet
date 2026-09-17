@@ -87,7 +87,7 @@ function createRequest(): Record<string, unknown> {
         {
           name: "incident-leader",
           role: "team_leader",
-          model: "qwen3.5-plus",
+          model: "qwen3.8-max",
           runtime: "copaw",
           identity: "事件指挥 Agent",
           instructions: "拆解任务并汇总证据。",
@@ -96,7 +96,7 @@ function createRequest(): Record<string, unknown> {
         {
           name: "diagnosis-worker",
           role: "worker",
-          model: "qwen3.5-plus",
+          model: "qwen3.8-max",
           runtime: "copaw",
           identity: "诊断分析 Agent",
           instructions: "收集证据并分析根因。",
@@ -105,7 +105,7 @@ function createRequest(): Record<string, unknown> {
         {
           name: "verification-worker",
           role: "worker",
-          model: "qwen3.5-plus",
+          model: "qwen3.8-max",
           runtime: "copaw",
           identity: "验证审计 Agent",
           instructions: "独立验证恢复结果。",

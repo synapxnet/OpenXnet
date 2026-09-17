@@ -1,0 +1,233 @@
+/* Shared skin surfaces. Load after module and workbench styles. */
+html body.openxnet-ui-redesign-body,
+html body #app.openxnet-redesign-app {
+  --ox-radius-xs: max(2px, calc(var(--ox-radius-sm) - 2px));
+  --ox-radius-xl: calc(var(--ox-radius-lg) + 4px);
+  --ox-surface: var(--ox-bg-surface);
+  --ox-brand: var(--ox-accent);
+  --ox-brand-dim: var(--ox-accent-soft);
+  --ox-brand-glow: color-mix(in srgb, var(--ox-brand-primary) 14%, transparent);
+  --ox-bg-1: var(--ox-bg-surface);
+  --ox-bg-2: var(--ox-bg-surface-hover);
+  --ox-text-1: var(--ox-text-primary);
+  --ox-text-2: var(--ox-text-secondary);
+  --ox-text-3: var(--ox-text-muted);
+  --ox-vite-shell-bg: transparent;
+  --ox-vite-surface: var(--ox-bg-surface);
+  --ox-vite-surface-subtle: var(--ox-bg-surface-hover);
+  --ox-vite-input-bg: var(--ox-bg-input);
+  --ox-vite-input-bg-hover: var(--ox-bg-input-hover, var(--ox-bg-surface-hover));
+  --ox-vite-border: var(--ox-border);
+  --ox-vite-border-strong: var(--ox-border-hover);
+  --ox-vite-text-primary: var(--ox-text-primary);
+  --ox-vite-text-secondary: var(--ox-text-secondary);
+  --ox-vite-text-muted: var(--ox-text-muted);
+  --ox-vite-accent-soft: var(--ox-accent-soft);
+  --ox-vite-shadow-card: var(--ox-shadow-card);
+  --ox-vite-shadow-panel: var(--ox-shadow-md);
+  --ox-skin-panel: color-mix(in srgb, var(--ox-bg-surface) calc(var(--ox-skin-surface-opacity, 1) * 100%), transparent);
+  --ox-workspace-panel: var(--ox-skin-panel);
+  --ox-workspace-inset: color-mix(in srgb, var(--ox-bg-surface-hover) 72%, var(--ox-skin-panel));
+  --ox-workspace-line: var(--ox-border);
+  --el-border-radius-base: var(--ox-radius-sm);
+  --el-border-radius-small: var(--ox-radius-xs);
+  --el-text-color-primary: var(--ox-text-primary);
+  --el-text-color-regular: var(--ox-text-secondary);
+  --el-text-color-secondary: var(--ox-text-muted);
+  --el-text-color-placeholder: var(--ox-text-muted);
+  --el-border-color: var(--ox-border);
+  --el-border-color-light: var(--ox-border);
+  --el-border-color-lighter: color-mix(in srgb, var(--ox-border) 70%, transparent);
+  --el-fill-color-blank: var(--ox-bg-surface);
+  --el-fill-color-light: var(--ox-bg-surface-hover);
+  --el-bg-color: var(--ox-bg-surface);
+  --el-bg-color-overlay: var(--ox-bg-surface);
+}
+
+/* The wallpaper is a separate paint layer; text and controls stay opaque. */
+#app.openxnet-redesign-app .content.ox-content-surface {
+  position: relative;
+  isolation: isolate;
+}
+#app.openxnet-redesign-app .content.ox-content-surface::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: -1 !important;
+  pointer-events: none !important;
+  background-image: var(--ox-skin-wallpaper, none) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-color: transparent !important;
+  opacity: var(--ox-skin-wallpaper-opacity, 0.2) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  transform: none !important;
+  filter: none !important;
+  animation: none !important;
+}
+#app.openxnet-redesign-app .content.ox-content-surface > .page,
+#app.openxnet-redesign-app :is(
+  .oxe-rebuilt .oxe-content, .suite-layout, .ox-prototype-section-page .suite-content,
+  .ox-vite-model-shell, .ox-vite-skills-shell, .ox-vite-ops-shell,
+  .ox-vite-role-shell, .ox-vite-toolkit-shell, .ox-vite-chat-page, .ox-vite-chat-shell,
+  .ox-kb, .ox-kernel-prototype, .ox-dev, .ox-about, .ox-uiplan-home-content
+) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+#app.openxnet-redesign-app .oxe-rebuilt {
+  --oxe-radius-card: var(--ox-radius-card);
+  --oxe-glass-bg: var(--ox-skin-panel);
+  --oxe-glass-border: var(--ox-border);
+  --oxe-glass-shadow: var(--ox-shadow-card);
+  --oxe-glass-shadow-hover: var(--ox-shadow-md);
+}
+
+/* Shared panels consume the skin tokens above in the workbench stylesheet.
+   Enterprise surfaces retain their own module styling and paint layer. */
+body.openxnet-ui-redesign-body :is(
+  .enterprise-skill-card, .enterprise-team-item, .enterprise-preview-card
+) {
+  background: var(--ox-skin-panel) !important;
+  border-radius: var(--ox-radius-card) !important;
+}
+body.openxnet-ui-redesign-body .enterprise-team-editor {
+  border-color: color-mix(in srgb, var(--ox-border) 65%, transparent) !important;
+  border-radius: var(--ox-radius-md) !important;
+  background: var(--ox-skin-panel) !important;
+}
+#app.openxnet-redesign-app .top-bar.el-header {
+  background: var(--ox-bg-topbar, var(--ox-bg-surface)) !important;
+  border-bottom-color: color-mix(in srgb, var(--ox-border) 65%, transparent) !important;
+  box-shadow: var(--ox-shadow-sm) !important;
+}
+#app.openxnet-redesign-app .main-container > .sidebar.el-aside:not(.mobile-sidebar) {
+  border-right-color: color-mix(in srgb, var(--ox-border) 60%, transparent) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ox-brand-secondary) 5%, var(--ox-bg-sidebar)), var(--ox-bg-sidebar) 220px) !important;
+}
+#app.openxnet-redesign-app .sidebar-brand {
+  padding: calc(14px * var(--ox-density, 1));
+  margin: calc(8px * var(--ox-density, 1));
+  border: 0 !important;
+  border-radius: var(--ox-radius-md) !important;
+  background: var(--ox-accent-soft) !important;
+  box-shadow: none !important;
+}
+#app.openxnet-redesign-app .sidebar-brand-mark,
+#app.openxnet-redesign-app .sidebar-brand-mark img {
+  background: transparent !important;
+  filter: none !important;
+  box-shadow: none !important;
+}
+#app.openxnet-redesign-app .sidebar-brand-copy strong,
+#app.openxnet-redesign-app .ox-prototype-brand-wordmark {
+  color: var(--ox-text-primary) !important;
+  -webkit-text-fill-color: var(--ox-text-primary) !important;
+}
+#app.openxnet-redesign-app .sidebar-brand-copy span { color: var(--ox-text-secondary) !important; }
+#app.openxnet-redesign-app .sidebar-brand-pulse { background: var(--ox-brand-primary) !important; box-shadow: 0 0 0 4px var(--ox-accent-soft) !important; }
+#app.openxnet-redesign-app .main-container > .sidebar.el-aside:not(.mobile-sidebar) .ox-nav-item {
+  position: relative;
+  border-radius: var(--ox-radius-md) !important;
+  transition: color 160ms ease, background-color 160ms ease !important;
+}
+#app.openxnet-redesign-app .ox-nav-item.ox-nav-item--active::before {
+  content: "";
+  display: block !important;
+  position: absolute;
+  left: -6px;
+  top: calc(50% - 7px);
+  width: 3px;
+  height: 14px;
+  border-radius: var(--ox-radius-xs);
+  background: linear-gradient(var(--ox-brand-primary), var(--ox-brand-secondary));
+}
+#app.openxnet-redesign-app :is(.oxe-module-bar, .oxc-header) {
+  background: var(--ox-skin-panel) !important;
+  border-bottom-color: color-mix(in srgb, var(--ox-border) 60%, transparent) !important;
+}
+#app.openxnet-redesign-app .oxe-module-link { border-radius: var(--ox-radius-sm); }
+#app.openxnet-redesign-app .oxe-module-link.is-active { font-weight: 650; }
+#app.openxnet-redesign-app :is(.ox-prototype-subnav-item, .suite-sidebar .nav-item, .oxc-conversation-item) { border-radius: var(--ox-radius-sm) !important; }
+#app.openxnet-redesign-app :is(.oxc-workspace-project__head, .oxc-workspace__add, .oxc-workspace-project__new) { border-radius: var(--ox-radius-sm) !important; }
+#app.openxnet-redesign-app :is(.oxc-workspace-project__head.is-active, .oxc-workspace__add) { color: var(--ox-accent) !important; border-color: var(--ox-border-hover) !important; background: var(--ox-accent-soft) !important; }
+#app.openxnet-redesign-app .oxc-conversation-menu { border-radius: var(--ox-radius-md) !important; box-shadow: var(--ox-shadow-md) !important; }
+#app.openxnet-redesign-app :is(.ox-prototype-topbar-search, .oxc-input-card) { transition: border-color 160ms ease, box-shadow 160ms ease !important; }
+#app.openxnet-redesign-app .ox-prototype-topbar-search:hover { border-color: var(--ox-border-hover) !important; }
+
+/* Native and Element Plus controls follow the same skin and focus treatment. */
+body.openxnet-ui-redesign-body :is(
+  .ox-btn, .el-button, .oxm-primary-btn, .oxm-secondary-btn,
+  .ox-vite-model-primary-btn, .ox-vite-model-secondary-btn,
+  .ox-vite-skills-primary-btn, .ox-vite-skills-secondary-btn,
+  .ox-vite-role-primary-btn, .ox-vite-role-secondary-btn,
+  .ox-vite-ops-primary-btn, .ox-vite-ops-secondary-btn, .oxd-btn
+) {
+  min-height: max(30px, calc(36px * var(--ox-density, 1)));
+  padding-inline: calc(14px * var(--ox-density, 1));
+  border-radius: var(--ox-radius-sm) !important;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease !important;
+}
+body.openxnet-ui-redesign-body .el-button.is-circle { padding: 0; border-radius: 50% !important; }
+body.openxnet-ui-redesign-body :is(
+  .ox-btn--primary, .el-button--primary:not(.is-plain):not(.is-text):not(.is-link),
+  .oxm-primary-btn, .ox-vite-model-primary-btn, .ox-vite-skills-primary-btn,
+  .ox-vite-role-primary-btn, .ox-vite-ops-primary-btn, .oxd-btn--primary
+) {
+  color: var(--ox-on-accent) !important;
+  background: var(--ox-accent) !important;
+  border-color: var(--ox-accent) !important;
+}
+body.openxnet-ui-redesign-body :is(
+  .ox-btn--primary, .el-button--primary:not(.is-plain):not(.is-text):not(.is-link),
+  .oxm-primary-btn, .ox-vite-model-primary-btn, .ox-vite-skills-primary-btn,
+  .ox-vite-role-primary-btn, .ox-vite-ops-primary-btn, .oxd-btn--primary
+):hover:not(:disabled):not(.is-disabled) {
+  background: var(--ox-accent-hover) !important;
+  border-color: var(--ox-accent-hover) !important;
+  box-shadow: var(--ox-shadow-sm) !important;
+}
+body.openxnet-ui-redesign-body :is(.el-button--primary.is-plain, .el-button--primary.is-text, .el-button--primary.is-link) { color: var(--ox-accent) !important; }
+body.openxnet-ui-redesign-body :is(
+  .ox-btn--primary, .el-button--primary:not(.is-plain):not(.is-text):not(.is-link),
+  .oxm-primary-btn, .ox-vite-model-primary-btn, .ox-vite-skills-primary-btn,
+  .ox-vite-role-primary-btn, .ox-vite-ops-primary-btn, .oxd-btn--primary
+):is(:disabled, .is-disabled) {
+  color: var(--ox-text-disabled) !important;
+  background: var(--ox-bg-surface-hover) !important;
+  border-color: var(--ox-border) !important;
+  box-shadow: none !important;
+}
+body.openxnet-ui-redesign-body :is(.el-input__wrapper, .el-select__wrapper, .el-textarea__inner) {
+  background: var(--ox-bg-input) !important;
+  border-radius: var(--ox-radius-sm) !important;
+}
+body.openxnet-ui-redesign-body :is(.el-input__wrapper.is-focus, .el-select__wrapper.is-focused, .el-textarea__inner:focus) {
+  box-shadow: inset 0 0 0 1px var(--ox-accent), 0 0 0 3px var(--ox-accent-soft) !important;
+}
+body.openxnet-ui-redesign-body :is(.el-dialog, .el-message-box, .oxm-dialog-shell) {
+  border-radius: var(--ox-radius-lg) !important;
+  padding: calc(20px * var(--ox-density, 1));
+  color: var(--ox-text-primary) !important;
+}
+body.openxnet-ui-redesign-body :is(.el-select__popper, .el-dropdown__popper, .el-popover.el-popper) {
+  border-color: var(--ox-border) !important;
+  border-radius: var(--ox-radius-md) !important;
+  color: var(--ox-text-primary) !important;
+  background: var(--ox-bg-surface) !important;
+  box-shadow: var(--ox-shadow-md) !important;
+}
+body.openxnet-ui-redesign-body :is(.el-select-dropdown__item, .el-dropdown-menu__item) { color: var(--ox-text-secondary); }
+body.openxnet-ui-redesign-body :is(.el-select-dropdown__item.is-selected, .el-select-dropdown__item.is-hovering, .el-dropdown-menu__item:not(.is-disabled):hover) { color: var(--ox-accent) !important; background: var(--ox-accent-soft) !important; }
+body.openxnet-ui-redesign-body .el-table { border-radius: var(--ox-radius-md) !important; }
+body.openxnet-ui-redesign-body .enterprise-team-role-row {
+  border-bottom-color: color-mix(in srgb, var(--ox-border) 60%, transparent) !important;
+  border-radius: var(--ox-radius-sm) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.openxnet-ui-redesign-body :is(button, a, input, select, textarea, .ox-nav-item, .oxc-input-card, .oxm-provider-card, .ox-vite-skills-card, .ox-kb-card) { transition: none !important; animation: none !important; }
+}

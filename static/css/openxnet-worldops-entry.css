@@ -1,0 +1,23 @@
+/*
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+用途：物理世界企业入口。Purpose: Enterprise entry for the local WorldOps workbench.
+Author: maoyo | Department: 研发部 | Date: 2026-09-13
+Version: 1.0.0 | Security Level: INTERNAL
+__version__: 1.0.0 | __author__: maoyo | __copyright__: Copyright 2026 Synapxnet
+__maintainer__: maoyo | __email__: synapxnet@gmail.com
+*/
+.worldops-entry{max-width:1120px;margin:0 auto;padding:clamp(24px,4vw,56px);color:var(--ox-text-primary,#24334b)}
+.worldops-entry__hero{padding:clamp(28px,4vw,52px);border-radius:var(--ox-radius-lg,24px);background:linear-gradient(125deg,color-mix(in srgb,var(--ox-accent,#357cda) 13%,transparent),color-mix(in srgb,#2faec8 5%,transparent));border:1px solid color-mix(in srgb,var(--ox-accent,#357cda) 15%,transparent)}
+.worldops-entry__eyebrow,.worldops-entry__features article>span{font-size:11px;font-weight:650;letter-spacing:.16em;color:var(--ox-accent,#357cda)}
+.worldops-entry__hero h2{font-size:clamp(24px,3vw,36px);line-height:1.35;font-weight:650;margin:20px 0 14px}
+.worldops-entry__hero p{max-width:650px;line-height:1.9;color:var(--ox-text-secondary,#68778c);margin-bottom:30px}
+.worldops-entry__hero button{min-height:42px;gap:10px}
+.worldops-entry__mode{display:inline-block;margin:14px 0 0 20px;font-size:12px;color:var(--ox-text-secondary,#68778c)}
+.worldops-entry__features{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:30px;padding:36px 8px}
+.worldops-entry__features h3{font-size:18px;margin:14px 0 10px}
+.worldops-entry__features p{font-size:13px;line-height:1.9;color:var(--ox-text-secondary,#68778c);margin:0}
+.worldops-entry__note{display:flex;align-items:baseline;gap:12px;border-top:1px solid var(--ox-border,#dce3ec);padding-top:22px;color:var(--ox-text-secondary,#68778c);font-size:12px;line-height:1.8}
+.worldops-entry__note p{margin:0}
+@media(max-width:760px){.worldops-entry__features{grid-template-columns:1fr;gap:26px}.worldops-entry__mode{display:block;margin-left:0}}

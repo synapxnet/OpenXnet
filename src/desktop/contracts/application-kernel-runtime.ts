@@ -40,6 +40,8 @@ export const APPLICATION_KERNEL_OPERATIONS = Object.freeze([
   "skill-transition",
   "guidance-list",
   "guidance-add",
+  "guidance-edit",
+  "guidance-cancel",
   "config-intent",
   "config-apply",
 ] as const);
@@ -76,7 +78,7 @@ export function parseApplicationKernelCommandRequest(value: unknown): Applicatio
 }
 
 /**
- * 解析一个操作载荷；输入固定操作和不可信值，返回规范字段；结构不匹配时抛出 TypeError，不修改输入对象。
+ * 解析固定操作载荷，拒绝未声明的权限字段。 / Parse fixed operation payloads and reject undeclared authority fields.
  */
 function parseOperationPayload(
   operation: ApplicationKernelOperation,
@@ -138,6 +140,9 @@ function parseOperationPayload(
       return parseGuidanceListPayload(value);
     case "guidance-add":
       return parseGuidanceAddPayload(value);
+    case "guidance-edit":
+    case "guidance-cancel":
+      return parseGuidanceMutationPayload(operation, value);
     case "config-intent":
       return parseConfigIntentPayload(value);
     case "config-apply":
@@ -386,22 +391,57 @@ function parseSkillSelectPayload(value: unknown): Readonly<Record<string, unknow
   };
 }
 
-/** 解析指导列表参数；输入未知值，返回可选会话 ID；控制字符或额外字段会抛出 TypeError。 */
-function parseGuidanceListPayload(value: unknown): Readonly<Record<string, unknown>> {
-  const payload = requireRecord(value, ["conversationId"], "guidance list payload");
-  return { conversationId: requireText(payload.conversationId, "Guidance conversation id", 256) };
+/** 精确保留引导身份，拒绝空白别名、控制字符和截断。 / Preserve exact guidance identities, rejecting whitespace aliases, controls, and truncation. */
+function requireGuidanceIdentity(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value || value !== value.trim() || value.length > 512 || /[\u0000-\u001f\u007f]/.test(value)) throw new TypeError(`${label} is invalid.`);
+  return value;
 }
 
-/** 解析新增指导参数；输入未知值，返回有界文本、关联 ID、模式和优先级；非法字段会抛出 TypeError。 */
+/** 可选轮次关联允许空串，非空身份仍必须精确。 / Optional turn correlations permit empty strings while retaining exact nonempty identities. */
+function requireGuidanceCorrelation(value: unknown, label: string): string {
+  if (value === "") return "";
+  return requireGuidanceIdentity(value, label);
+}
+
+/** 列表只接受精确会话与可选引擎身份。 / Lists accept an exact conversation and optional engine identity only. */
+function parseGuidanceListPayload(value: unknown): Readonly<Record<string, unknown>> {
+  const payload = requireRecord(value, ["conversationId", "runtimeId"], "guidance list payload");
+  return { conversationId: requireGuidanceIdentity(payload.conversationId, "Guidance conversation id"),
+    ...(payload.runtimeId === undefined ? {} : { runtimeId: requireGuidanceIdentity(payload.runtimeId, "Guidance runtime id") }) };
+}
+
+/** 校验引导公开内容与既有有界强度，不产生执行动作。 / Validate public guidance and existing bounded strength without generating execution actions. */
+function parseGuidanceContent(payload: Record<string, unknown>): Readonly<Record<string, unknown>> {
+  const text = requireText(payload.text, "Guidance text", 16_000);
+  if (!text) throw new TypeError("Guidance text is invalid.");
+  if (typeof payload.mode !== "string" || !["soft", "constraint", "safety", "interrupt"].includes(payload.mode)) throw new TypeError("Guidance mode is invalid.");
+  return { text, mode: payload.mode, priority: requireInteger(payload.priority, "Guidance priority", -100, 100) };
+}
+
+/** 新增引导绑定精确会话、请求与引擎身份。 / Bind new guidance to exact conversation, request, and engine identities. */
 function parseGuidanceAddPayload(value: unknown): Readonly<Record<string, unknown>> {
-  const payload = requireRecord(value, ["text", "conversationId", "turnId", "traceId", "mode", "priority"], "guidance add payload");
+  const payload = requireRecord(value, ["text", "conversationId", "turnId", "traceId", "mode", "priority", "requestId", "runtimeId"], "guidance add payload");
   return {
-    text: requireText(payload.text, "Guidance text", 16_000),
-    conversationId: requireText(payload.conversationId, "Guidance conversation id", 256),
-    turnId: requireText(payload.turnId, "Guidance turn id", 256),
-    traceId: requireText(payload.traceId, "Guidance trace id", 256),
-    mode: requireText(payload.mode, "Guidance mode", 32),
-    priority: requireInteger(payload.priority, "Guidance priority", -100, 100),
+    ...parseGuidanceContent(payload),
+    conversationId: requireGuidanceIdentity(payload.conversationId, "Guidance conversation id"),
+    turnId: requireGuidanceCorrelation(payload.turnId, "Guidance turn id"),
+    traceId: requireGuidanceCorrelation(payload.traceId, "Guidance trace id"),
+    requestId: requireGuidanceIdentity(payload.requestId, "Guidance request id"),
+    runtimeId: requireGuidanceIdentity(payload.runtimeId, "Guidance runtime id"),
+  };
+}
+
+/** 修改与撤回只接受原子版本及精确身份，不接受消费或执行命令。 / Edits and cancellation accept atomic revisions and exact identities, never consume or execute commands. */
+function parseGuidanceMutationPayload(operation: "guidance-edit" | "guidance-cancel", value: unknown): Readonly<Record<string, unknown>> {
+  const fields = ["conversationId", "guidanceId", "requestId", "runtimeId", "expectedRevision"];
+  const payload = requireRecord(value, operation === "guidance-edit" ? [...fields, "text", "mode", "priority"] : fields, `${operation} payload`);
+  return {
+    conversationId: requireGuidanceIdentity(payload.conversationId, "Guidance conversation id"),
+    guidanceId: requireGuidanceIdentity(payload.guidanceId, "Guidance id"),
+    requestId: requireGuidanceIdentity(payload.requestId, "Guidance request id"),
+    runtimeId: requireGuidanceIdentity(payload.runtimeId, "Guidance runtime id"),
+    expectedRevision: requireInteger(payload.expectedRevision, "Guidance revision", 1, Number.MAX_SAFE_INTEGER),
+    ...(operation === "guidance-edit" ? parseGuidanceContent(payload) : {}),
   };
 }
 

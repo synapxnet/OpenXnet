@@ -120,3 +120,59 @@ test("ApplicationArtifactService imports, registers, hashes, and tombstones file
     rmSync(sourceDirectory, { recursive: true, force: true });
   }
 });
+
+test("ApplicationArtifactService preserves Core metadata across restart while discovering new legacy files", async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "openxnet-artifact-restart-"));
+  const sourceDirectory = mkdtempSync(path.join(os.tmpdir(), "openxnet-artifact-restart-source-"));
+  const sourcePath = path.join(sourceDirectory, "Project plan.txt");
+  writeFileSync(sourcePath, "Keep the selected filename across application restarts.", "utf8");
+  let service = bootstrapApplicationArtifacts({
+    userDataDirectory: directory,
+    now: () => new Date("2026-09-08T07:00:00.000Z"),
+  });
+  try {
+    const native = await service.importArtifacts({ paths: [sourcePath] });
+    const nativeArtifact = native.artifacts[0];
+    assert.ok(nativeArtifact);
+    await service.importRendererArtifacts({
+      entries: [{ source: "bytes", originalName: "Meeting notes.md", bytes: Buffer.from("# Notes", "utf8") }],
+    });
+    const before = await service.listArtifacts();
+    assert.equal(before.artifacts.length, 2);
+    service.close();
+
+    const legacyStorageName = "5325864b-3b11-466d-83dc-c6d0f6b23a95.png";
+    writeFileSync(path.join(directory, "uploaded_files", legacyStorageName), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    writeFileSync(path.join(directory, "settings.json"), JSON.stringify({
+      imageFiles: [{ unique_filename: legacyStorageName, original_filename: "New legacy reference.png" }],
+      videoFiles: [{ unique_filename: nativeArtifact.storageName, original_filename: "Stale legacy label.txt" }],
+    }), "utf8");
+
+    service = bootstrapApplicationArtifacts({
+      userDataDirectory: directory,
+      now: () => new Date("2026-09-08T08:00:00.000Z"),
+    });
+    const reopened = await service.listArtifacts();
+    for (const artifact of before.artifacts) {
+      assert.deepEqual(reopened.artifacts.find((item) => item.id === artifact.id), artifact);
+    }
+    const migrated = reopened.artifacts.find((item) => item.storageName === legacyStorageName);
+    assert.equal(migrated?.originalName, "New legacy reference.png");
+    assert.equal(migrated?.kind, "image");
+    assert.equal(migrated?.status, "available");
+    assert.equal(reopened.artifacts.length, 3);
+    service.close();
+
+    service = bootstrapApplicationArtifacts({
+      userDataDirectory: directory,
+      now: () => new Date("2026-09-08T09:00:00.000Z"),
+    });
+    const repeated = await service.listArtifacts();
+    assert.deepEqual(repeated.artifacts, reopened.artifacts);
+    assert.equal(repeated.catalogRevision, reopened.catalogRevision);
+  } finally {
+    service.close();
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(sourceDirectory, { recursive: true, force: true });
+  }
+});

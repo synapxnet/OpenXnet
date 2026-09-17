@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request, Query
 from pydantic import BaseModel, Field
 
 
@@ -15,6 +15,7 @@ CHAT_ENGINE_PATHS = frozenset({
     "/v1/chat/completions",
     "/simple_chat",
     "/v1/chat/abort",
+    "/v1/chat/recovery-status",
     "/v1/models",
     "/execute_tool_manually",
     "/v1/chat/tools/approval",
@@ -57,7 +58,7 @@ class ApplicationChatAbortRequest(BaseModel):
     """Exact provider conversation cancellation command."""
 
     model_config = {"extra": "forbid"}
-    conversationId: str = Field(min_length=1, max_length=128)
+    conversationId: str = Field(min_length=1, max_length=512)
 
 
 class ApplicationChatToolRequest(BaseModel):
@@ -69,6 +70,7 @@ class ApplicationChatToolRequest(BaseModel):
     approval_type: str = Field(default="", max_length=512)
     approval_id: str = Field(default="", max_length=512)
     trace_id: str = Field(default="", max_length=512)
+    conversationId: str = Field(default="", max_length=512)
 
 
 class ApplicationChatApprovalRequest(BaseModel):
@@ -91,6 +93,7 @@ class ChatEngineDependencies:
     abort_chat: AbortHandler
     execute_tool: PayloadCommandHandler
     resolve_approval: PayloadCommandHandler
+    recovery_status: Optional[Callable[[str], Awaitable[Any]]] = None
 
 
 class ChatEngineApi:
@@ -108,6 +111,7 @@ class ChatEngineApi:
         router.add_api_route("/v1/chat/completions", self.chat, methods=["POST"])
         router.add_api_route("/simple_chat", self.simple_chat, methods=["POST"])
         router.add_api_route("/v1/chat/abort", self.abort, methods=["POST"])
+        router.add_api_route("/v1/chat/recovery-status", self.recovery_status, methods=["GET"])
         router.add_api_route("/v1/models", self.models, methods=["POST"])
         router.add_api_route("/execute_tool_manually", self.execute_tool, methods=["POST"])
         router.add_api_route("/v1/chat/tools/approval", self.resolve_approval, methods=["POST"])
@@ -133,6 +137,12 @@ class ChatEngineApi:
         """Return the provider and agent model catalog."""
 
         return await self._dependencies.list_models()
+
+    async def recovery_status(self, conversation_id: str = Query(min_length=1, max_length=512)) -> Any:
+        """经认证读取会话执行状态，缺少适配器时保持未知。 / Read authenticated conversation execution state and preserve unknown when no adapter is configured."""
+        if self._dependencies.recovery_status is None:
+            return {"conversationId": conversation_id, "state": "unknown"}
+        return await self._dependencies.recovery_status(conversation_id)
 
     async def execute_tool(self, req: ApplicationChatToolRequest) -> Any:
         """Execute one typed manual tool command through the governed runtime."""

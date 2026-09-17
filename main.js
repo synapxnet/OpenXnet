@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, shell, dialog, Tray, Menu, session, globalShortcut, safeStorage, net: electronNet } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, shell, dialog, Tray, Menu, session, globalShortcut, safeStorage, Notification, net: electronNet } = require('electron')
 const { clipboard, nativeImage,desktopCapturer  } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const { createHash, createHmac, randomBytes } = require('crypto')
@@ -9,6 +9,7 @@ const { download } = require('electron-dl');
 const fs = require('fs')
 const os = require('os')
 const applicationPackage = require('./package.json')
+const { readCompetitionSkillCertification, resolveCompetitionEnvironmentFingerprint } = require('./build-ts/desktop/competition/competition-skill-certification')
 const net = require('net') // 添加 net 模块用于端口检测
 const dgram = require('dgram');
 const osc = require('osc');
@@ -56,6 +57,7 @@ const {
   resolveApplicationCompetitionUiProfile,
   ApplicationKernelRuntimeService,
   ApplicationModelAssetRuntimeService,
+  ApplicationOllamaRuntimeService,
   ApplicationAgentRuntimeService,
   ApplicationMemoryManagementRuntimeService,
   ApplicationSynapxnetMemoryRuntimeService,
@@ -99,6 +101,7 @@ const {
   registerApplicationCompetitionRuntimeIpc,
   registerApplicationKernelRuntimeIpc,
   registerApplicationModelAssetIpc,
+  registerApplicationOllamaRuntimeIpc,
   registerApplicationAgentRuntimeIpc,
   registerApplicationMemoryManagementIpc,
   registerApplicationSynapxnetMemoryIpc,
@@ -142,14 +145,19 @@ const {
   WorkerRpcGateway,
   WorkerSupervisor,
 } = require('./build-ts/desktop')
+const { registerAppearancePreferencesIpc } = require('./build-ts/desktop/main/register-appearance-preferences-ipc')
+const { registerConversationFilesIpc } = require('./build-ts/desktop/main/register-conversation-files-ipc')
+const { registerConversationSubagentIpc } = require('./build-ts/desktop/main/register-conversation-subagent-ipc')
+const { registerCompletionNoticeIpc } = require('./build-ts/desktop/main/register-completion-notice-ipc')
+const { COMPLETION_NOTICE_CHANNELS } = require('./build-ts/desktop/contracts/completion-notice')
+const { competitionMemoryPermissions, competitionSkillMemoryTaskId } = require('./build-ts/desktop/competition/competition-memory-access')
+const { ApplicationCompetitionConnectionService } = require('./build-ts/desktop/competition/application-competition-connection')
+const { registerApplicationCompetitionConnectionIpc } = require('./build-ts/desktop/main/register-application-competition-connection-ipc')
+const { ApplicationCompetitionLiveConnectionService } = require('./build-ts/desktop/competition/application-competition-live-connection')
+const { registerApplicationCompetitionLiveConnectionIpc } = require('./build-ts/desktop/main/register-application-competition-live-connection-ipc')
 const OPENXNET_APP_NAME = 'OpenXnet'
 const OPENXNET_APP_ID = 'com.openxnet.desktop'
 const GOAI_STAGING_MEMORY_BOOTSTRAP_MANIFEST = 'b0a7a9fd7ecb78c035007aa2b33b6bb87e1eb93586bad155461ffb5fe3171546'
-const GOAI_MEMORY_SHARED_AGENT_IDS = Object.freeze([
-  'role_goai_incident_commander',
-  'role_goai_evidence_agent',
-  'role_goai_verification_agent',
-])
 const DESKTOP_PROCESS_STARTED_AT = Date.now()
 const OPENXNET_WINDOW_ICON = path.join(
   __dirname,
@@ -217,7 +225,7 @@ const DYNAMIC_ISLAND_SURFACE_DEFAULT = {
   width: 188,
   height: 58,
   compact: true,
-  interactive: false,
+  interactive: true,
 }
 let dynamicIslandSurfaceState = { ...DYNAMIC_ISLAND_SURFACE_DEFAULT }
 const FLOATING_TASK_HUD_WINDOW_DEFAULT = {
@@ -1857,6 +1865,67 @@ const unregisterApplicationSettingsIpc = registerApplicationSettingsIpc({
   settings: applicationSettings,
   authorizeEvent: assertMainRendererSender,
 })
+const unregisterAppearancePreferencesIpc = registerAppearancePreferencesIpc({
+  ipcMain,
+  userDataDirectory: app.getPath('userData'),
+  authorizeEvent: assertMainRendererSender,
+  /** 伴随窗口仅能读取经验证的皮肤库，顶层身份必须属于当前窗口。 / Companions may only read validated skins from their trusted top-level frames. */
+  authorizeReader(event) {
+    assertTrustedWindowSender(event, [mainWindow, dynamicIslandWindow, floatingTaskHudWindow])
+    if (event.senderFrame && event.senderFrame !== event.sender.mainFrame) throw new Error('Appearance access requires a top-level frame.')
+  },
+  /** 成功保存后通知现存浮窗重新读取，不发送路径或打开窗口。 / Notify existing companions to reread after a successful save without sending paths or opening windows. */
+  onDidChange() {
+    for (const companion of [dynamicIslandWindow, floatingTaskHudWindow]) {
+      try { if (companion && !companion.isDestroyed()) companion.webContents.send('openxnet:appearance-preferences:changed') } catch { /* 已关闭窗口可忽略。 / Closed windows are ignored. */ }
+    }
+  },
+  validateSerialized(serialized) {
+    try {
+      const skinEnginePath = app.isPackaged
+        ? path.join(process.resourcesPath, 'ui', 'js', 'openxnet-skins.js')
+        : path.join(__dirname, 'static', 'js', 'openxnet-skins.js')
+      const skinEngine = require(skinEnginePath)
+      let normalized = null
+      const validation = skinEngine.createStore({ storage: {
+        getItem: () => null,
+        setItem: (_key, value) => { normalized = value },
+      } }).write(JSON.parse(serialized))
+      if (!validation.ok) return { ok: false, error: validation.error }
+      return { ok: true, value: normalized }
+    } catch (_) { return { ok: false, error: '皮肤库格式或版本无效，原有皮肤未被修改。' } }
+  },
+})
+const unregisterConversationFilesIpc = registerConversationFilesIpc({
+  ipcMain,
+  authorizeEvent: assertMainRendererSender,
+  /** 当前工作区仅从Main已保存设置读取。 / Resolve the current workspace only from Main-owned saved settings. */
+  getWorkspacePath() {
+    return legacyRendererState.getSnapshot().settings.CLISettings?.cc_path
+  },
+  /** 原生选择只授予已选中的单文件。 / Native selection grants access only to the selected file. */
+  async chooseFile(suggestedPath) {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择文件预览 / Select file to preview',
+      properties: ['openFile'],
+      ...(suggestedPath ? { defaultPath: suggestedPath } : {}),
+    })
+    return result.canceled ? null : result.filePaths[0] || null
+  },
+  /** 副本目标由原生保存对话框决定。 / Let the native save dialog choose the copy destination. */
+  async chooseSavePath(sourcePath) {
+    const parsed = path.parse(sourcePath)
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '另存文件副本 / Save a file copy',
+      defaultPath: path.join(parsed.dir, `${parsed.name}-copy${parsed.ext}`),
+    })
+    return result.canceled ? null : result.filePath || null
+  },
+  /** 仅由专用服务通过扩展校验后默认打开。 / Open defaults only after the dedicated service validates their extensions. */
+  openDefault(file) { return shell.openPath(file) },
+  /** 定位已授权普通文件。 / Reveal the authorized regular file. */
+  reveal(file) { shell.showItemInFolder(file) },
+})
 const unregisterApplicationAuthIpc = registerApplicationAuthIpc({
   ipcMain,
   auth: applicationAuth,
@@ -2270,9 +2339,78 @@ async function resolveCompetitionDelegationToken(platform, request) {
   return `${signingInput}.${signature}`
 }
 
-/** 读取竞赛专用 AgentTeams 隔离服务端点；无输入，返回配置地址，缺失时抛错。 */
+const applicationCompetitionConnection = new ApplicationCompetitionConnectionService({
+  filePath: path.join(app.getPath('userData'), 'competition', 'agentteams-connection.enc'),
+  safeStorage,
+  resolveOwnerId: requireCompetitionSubject,
+  /** 仅提供旧部署配置的非敏感投影。 / Provide only a non-sensitive projection of legacy deployment settings. */
+  readDeployment: () => {
+    const enabled = process.env.OPENXNET_COMPETITION_AGENTTEAMS_ISOLATED_SERVICE_ENABLED === '1'
+    const endpoint = String(process.env.OPENXNET_COMPETITION_AGENTTEAMS_BASE_URL || '').trim()
+    const credentialConfigured = String(process.env.OPENXNET_AGENTTEAMS_DELEGATION_SECRET || '').trim().length >= 32
+    return enabled || endpoint || credentialConfigured ? { enabled, endpoint, credentialConfigured } : undefined
+  },
+  /** 活跃协作期间不得替换地址、工作空间或访问码。 / Do not replace endpoint, workspace or code while collaboration is active. */
+  assertCanChange: async () => {
+    const context = await applicationCompetitionRuntime.readCollaborationConfigurationContext()
+    if (!context.canChange) throw new Error('CONNECTION_IN_USE')
+  },
+})
+
+const applicationCompetitionLiveConnection = new ApplicationCompetitionLiveConnectionService({
+  filePath: path.join(app.getPath('userData'), 'competition', 'live-connection.enc'),
+  safeStorage,
+  resolveOwnerId: requireCompetitionSubject,
+  /** 审批等待和执行期间锁定接入范围。 / Lock connection scope during approval waits and execution. */
+  assertCanChange: async () => {
+    const context = await applicationCompetitionRuntime.readCollaborationConfigurationContext()
+    if (!context.canChange) throw new Error('CONNECTION_IN_USE')
+  },
+})
+
+/** 分开读取公开配置项；损坏的本机配置不能回退成部署权限。 / Read public configuration flags without falling back from corrupt local settings to deployment authority. */
+function readCompetitionAgentTeamsConfiguration(mode = 'fixture') {
+  if (mode === 'live') {
+    const live = applicationCompetitionLiveConnection.getSnapshot()
+    if (applicationCompetitionLiveConnection.hasLocalConfiguration() || live.source === 'saved' || live.storageError) {
+      const usable = !live.storageError && live.access?.serviceReady === true
+        && Date.parse(live.access.expiresAt) > Date.now() && live.access.remainingRequests > 0
+      return { enabled: usable && live.enabled, endpointConfigured: usable && Boolean(live.endpoint),
+        delegationConfigured: usable && live.credentialConfigured, source: live.source }
+    }
+    return { enabled: process.env.OPENXNET_COMPETITION_AGENTTEAMS_ISOLATED_SERVICE_ENABLED === '1',
+      endpointConfigured: Boolean(String(process.env.OPENXNET_COMPETITION_AGENTTEAMS_BASE_URL || '').trim()),
+      delegationConfigured: String(process.env.OPENXNET_AGENTTEAMS_DELEGATION_SECRET || '').trim().length >= 32,
+      source: 'deployment' }
+  }
+  const snapshot = applicationCompetitionConnection.getSnapshot()
+  const usable = !snapshot.storageError
+  const expired = snapshot.access && Date.parse(snapshot.access.expiresAt) <= Date.now()
+  return {
+    enabled: usable && snapshot.enabled,
+    endpointConfigured: usable && Boolean(snapshot.endpoint),
+    delegationConfigured: usable && snapshot.credentialConfigured && !expired,
+    source: snapshot.source,
+  }
+}
+
+/** 读取持久接入或管理员配置的服务地址。 / Resolve the persisted connection or administrator deployment endpoint. */
 async function resolveCompetitionAgentTeamsEndpoint() {
-  const endpoint = String(process.env.OPENXNET_COMPETITION_AGENTTEAMS_BASE_URL || '').trim()
+  const context = await applicationCompetitionRuntime.readCollaborationConfigurationContext()
+  if (context.adapterMode === 'live') {
+    const live = applicationCompetitionLiveConnection.getSnapshot()
+    if (live.storageError) throw new Error('Live 接入配置无法解密，请在软件内重新连接。')
+    if (applicationCompetitionLiveConnection.hasLocalConfiguration() || live.source === 'saved') {
+      if (!live.enabled || !live.endpoint) throw new Error('请先启用已保存的 Live 接入。')
+      return live.endpoint
+    }
+    const endpoint = String(process.env.OPENXNET_COMPETITION_AGENTTEAMS_BASE_URL || '').trim()
+    if (!endpoint) throw new Error('请在“协同与执行配置 → Live 执行链”连接受控服务。')
+    return endpoint
+  }
+  const snapshot = applicationCompetitionConnection.getSnapshot()
+  if (snapshot.storageError) throw new Error('协同接入配置无法解密，请在软件内重新连接。')
+  const endpoint = snapshot.endpoint
   if (!endpoint) throw new Error('Competition AgentTeams isolated endpoint is not configured.')
   return endpoint
 }
@@ -2284,6 +2422,25 @@ async function resolveCompetitionAgentTeamsEndpoint() {
  * @returns {Promise<string>} 仅允许一个模板版本操作或单个阶段任务的受众限定委托令牌。
  */
 async function resolveCompetitionAgentTeamsDelegationToken(context) {
+  const execution = await applicationCompetitionRuntime.readCollaborationConfigurationContext()
+  if (execution.adapterMode === 'live') {
+    const live = applicationCompetitionLiveConnection.getSnapshot()
+    if (applicationCompetitionLiveConnection.hasLocalConfiguration() || live.source === 'saved' || live.storageError) {
+      const saved = applicationCompetitionLiveConnection.requireRuntimeConnection(context.workspaceId)
+      return saved.accessCode
+    }
+  }
+  const snapshot = applicationCompetitionConnection.getSnapshot()
+  if (execution.adapterMode !== 'live' && snapshot.storageError) throw new Error('协同接入配置无法解密，请在软件内重新连接。')
+  if (execution.adapterMode !== 'live' && snapshot.source === 'saved') {
+    const saved = applicationCompetitionConnection.getSavedConnection()
+    const runtimeContext = await applicationCompetitionRuntime.readCollaborationConfigurationContext()
+    if (!saved || !saved.enabled) throw new Error('请先启用已保存的 AgentTeams 连接。')
+    if (saved.workspaceId !== context.workspaceId) throw new Error('演示访问码绑定的工作空间与当前事件不同。')
+    if (Date.parse(saved.access.expiresAt) <= Date.now()) throw new Error('演示访问码已到期，请在软件内更换。')
+    if (runtimeContext.adapterMode !== 'fixture') throw new Error('此访问码仅用于隔离演示，请选择“AgentTeams 演示”；它不包含 Live 执行权限。')
+    return saved.accessCode
+  }
   const secret = String(process.env.OPENXNET_AGENTTEAMS_DELEGATION_SECRET || '').trim()
   if (secret.length < 32) throw new Error('Competition AgentTeams delegation signing secret is not configured.')
   const subject = requireCompetitionSubject()
@@ -2325,17 +2482,68 @@ async function resolveCompetitionApprovalIssuerToken() {
 }
 
 const competitionFixtureAdapter = new FixtureCompetitionToolAdapter()
-const competitionLiveAdapter = new HttpCompetitionToolAdapter({
+const competitionLegacyLiveAdapter = new HttpCompetitionToolAdapter({
   resolveEndpoint: resolveCompetitionPlatformEndpoint,
   resolveDelegationToken: resolveCompetitionDelegationToken,
 })
-const competitionApprovalPublisher = new HttpCompetitionApprovalPublisher({
+const competitionLegacyApprovalPublisher = new HttpCompetitionApprovalPublisher({
   resolveEndpoint: resolveCompetitionApprovalEndpoint,
   resolveIssuerToken: resolveCompetitionApprovalIssuerToken,
 })
+
+/** 任何已保存或损坏的 Live 配置都禁止回退到部署密钥。 / Saved or unreadable Live configuration always prevents fallback to deployment secrets. */
+function hasCompetitionLiveGatewayConnection() {
+  const snapshot = applicationCompetitionLiveConnection.getSnapshot()
+  return applicationCompetitionLiveConnection.hasLocalConfiguration() || snapshot.source === 'saved' || Boolean(snapshot.storageError)
+}
+
+/** 读取已保存网关根地址，绝不回退到网页地址。 / Read the saved gateway base without falling back to a platform webpage. */
+async function resolveCompetitionLiveGatewayEndpoint() {
+  const snapshot = applicationCompetitionLiveConnection.getSnapshot()
+  if (snapshot.storageError) throw new Error('Live 接入配置无法解密，请重新连接。')
+  if (snapshot.source !== 'saved' || !snapshot.enabled || !snapshot.endpoint) throw new Error('请先保存并启用 Live 接入。')
+  return snapshot.endpoint
+}
+
+const competitionGatewayLiveAdapter = new HttpCompetitionToolAdapter({
+  resolveEndpoint: resolveCompetitionPlatformEndpoint,
+  gateway: {
+    resolveEndpoint: resolveCompetitionLiveGatewayEndpoint,
+    /** 仅把绑定本次工作空间及工具的授权交给网关。 / Give the gateway only authorization matching this workspace and tool. */
+    resolveAccessCode: async (request) => applicationCompetitionLiveConnection.requireRuntimeConnection(
+      request.workspaceId, { toolName: request.toolName },
+    ).accessCode,
+  },
+})
+const competitionLiveAdapter = {
+  /** 使用显式保存的网关或原管理员部署路径。 / Select the explicitly saved gateway or the existing administrator deployment path. */
+  invoke: (request) => (hasCompetitionLiveGatewayConnection() ? competitionGatewayLiveAdapter : competitionLegacyLiveAdapter).invoke(request),
+  /** 异步动作沿用原调用的授权与响应校验。 / Poll asynchronous actions with the original authorization and response checks. */
+  waitForAction: (request, actionId) => (hasCompetitionLiveGatewayConnection() ? competitionGatewayLiveAdapter : competitionLegacyLiveAdapter).waitForAction(request, actionId),
+}
+const competitionApprovalPublisher = {
+  /** 仅在人工批准后向同一工作空间网关发布范围证明。 / Publish scope proof to the same workspace gateway only after human approval. */
+  publish: async (approval) => {
+    if (!hasCompetitionLiveGatewayConnection()) return competitionLegacyApprovalPublisher.publish(approval)
+    const saved = applicationCompetitionLiveConnection.requireRuntimeConnection(approval.workspaceId)
+    for (const scope of approval.scopes) {
+      applicationCompetitionLiveConnection.requireRuntimeConnection(approval.workspaceId, { toolName: scope.toolName })
+    }
+    const publisher = new HttpCompetitionApprovalPublisher({
+      gatewayMode: true,
+      /** 审批期间固定本次已验证地址。 / Freeze the verified endpoint for this approval. */
+      resolveEndpoint: async () => saved.endpoint,
+      /** 仅提供受限接入码，不提供底层签发密钥。 / Supply the scoped access code, never the underlying issuer secret. */
+      resolveIssuerToken: async () => saved.accessCode,
+    })
+    return publisher.publish(approval)
+  },
+}
 const competitionAgentTeamsAdapter = new HttpCompetitionAgentTeamsAdapter({
   resolveEndpoint: resolveCompetitionAgentTeamsEndpoint,
   resolveDelegationToken: resolveCompetitionAgentTeamsDelegationToken,
+  /** 服务端核对 Main 提供的实际模式。 / Let the server verify the actual mode provided by Main. */
+  resolveExecutionMode: async () => (await applicationCompetitionRuntime.readCollaborationConfigurationContext()).adapterMode,
 })
 
 /** 构造企业群聊使用的神经符号操作事件；输入策略结果和业务字段，返回严格的结构化审计载荷。 */
@@ -2431,6 +2639,10 @@ function buildCompetitionGovernanceOperation(event) {
     APPROVAL_REJECTED: 'REJECTED',
     REHEARSAL_SUCCEEDED: 'SUCCEEDED',
     ACTION_EXECUTING: 'EXECUTING',
+    // 补齐步骤和补偿状态的聊天投影。 / Include step and compensation states in conversation projection.
+    ACTION_STEP_SUCCEEDED: 'SUCCEEDED',
+    COMPENSATION_EXECUTING: 'EXECUTING',
+    COMPENSATION_SUCCEEDED: 'SUCCEEDED',
     VERIFICATION_SUCCEEDED: 'SUCCEEDED',
     VERIFICATION_FAILED: 'FAILED',
   }
@@ -2440,6 +2652,9 @@ function buildCompetitionGovernanceOperation(event) {
     APPROVAL_REJECTED: '生产变更审批已拒绝',
     REHEARSAL_SUCCEEDED: '隔离预检已完成',
     ACTION_EXECUTING: '生产变更正在执行',
+    ACTION_STEP_SUCCEEDED: '执行步骤已完成',
+    COMPENSATION_EXECUTING: '正在执行补偿',
+    COMPENSATION_SUCCEEDED: '补偿已完成',
     VERIFICATION_SUCCEEDED: '独立验证已经通过',
     VERIFICATION_FAILED: '独立验证未通过',
   }
@@ -2574,7 +2789,8 @@ async function recordCompetitionOperationConversation(event) {
 }
 
 /**
- * 把已结晶企业 Skill 的有界复盘写入 V3；输入发布请求，创建或追加版本。
+ * 把已结晶企业 Skill 的有界复盘写入 V3；同权限范围幂等且保留已有 ACL。
+ * Publish bounded Skill retrospectives idempotently within the same scope, preserving existing ACLs.
  *
  * @param {object} request Competition Runtime 生成的脱敏 Skill 发布请求。
  * @returns {Promise<object>} 新建或编辑后的 V3 记忆记录。
@@ -2582,7 +2798,8 @@ async function recordCompetitionOperationConversation(event) {
 async function persistCompetitionSkillMemory(request) {
   const currentSettings = legacyRendererState.getSnapshot().settings
   const ownerAgent = String(currentSettings.mainAgent || 'openxnet-model').trim() || 'openxnet-model'
-  const taskId = `skill:${String(request.skillId || '').trim()}`.slice(0, 512)
+  const permissions = competitionMemoryPermissions(request)
+  const taskId = competitionSkillMemoryTaskId(request)
   const title = `Skill: ${String(request.name || request.skillId || '').trim()}`.slice(0, 512)
   const workflow = String(request.workflow || '').trim()
   const content = [
@@ -2598,25 +2815,29 @@ async function persistCompetitionSkillMemory(request) {
     `Environment: ${request.environmentScope}`,
     `Derivation: ${request.derivationMethod}`,
   ].join('\n\n')
-  const permissions = GOAI_MEMORY_SHARED_AGENT_IDS
-  const tags = ['skill', 'competition', String(request.environmentScope || 'simulation'), String(request.familyId || 'retrospective')]
+  const tags = [...new Set(['skill', 'competition', String(request.environmentScope || 'simulation'), String(request.familyId || 'retrospective')])].sort()
   const listing = await applicationSynapxnetMemoryRuntime.list({
     requesterAgent: ownerAgent,
-    query: String(request.skillId || ''),
+    query: taskId,
     ownerAgent,
     includeRetired: true,
     limit: 20,
   })
   const existing = (listing.items || []).find((item) => item.taskId === taskId)
   if (existing) {
+    const history = await applicationSynapxnetMemoryRuntime.history({ memoryId: existing.memoryId, requesterAgent: ownerAgent })
+    const latest = history.versions?.[0]
+    if (!latest || latest.taskId !== taskId || latest.ownerAgent !== ownerAgent) throw new Error('COMPETITION_MEMORY_HISTORY_INVALID')
+    if (latest.status === 'RETIRED' || (latest.title === title && latest.content === content && latest.qualityScore === 0.98
+      && JSON.stringify(latest.tags) === JSON.stringify(tags))) return latest
     return applicationSynapxnetMemoryRuntime.edit({
-      memoryId: existing.memoryId,
-      baseVersion: existing.version,
+      memoryId: latest.memoryId,
+      baseVersion: latest.version,
       actorAgent: ownerAgent,
       title,
       content,
       qualityScore: 0.98,
-      permissions,
+      permissions: latest.permissions,
       tags,
       reason: `Skill ${request.skillId} crystallized from incident ${request.incidentId}`.slice(0, 2048),
     })
@@ -2660,12 +2881,14 @@ function localizeCompetitionMemoryValue(value) {
 }
 
 /**
- * 把已通过独立验证的比赛事件写入 Memory V3。
+ * 把已通过独立验证的比赛事件写入 Memory V3，并仅共享实际绑定成员。
+ * Publish independently verified incidents to Memory V3, sharing only with actual bound members.
  *
  * @param {object} request Competition Runtime 生成的脱敏闭环摘要。
  * @returns {Promise<object>} 已存在的幂等记录或新建的 V3 记忆。
  */
 async function persistCompetitionResolvedMemory(request) {
+  const permissions = competitionMemoryPermissions(request)
   const currentSettings = legacyRendererState.getSnapshot().settings
   const ownerAgent = String(currentSettings.mainAgent || 'openxnet-model').trim() || 'openxnet-model'
   const taskId = `incident:${String(request.incidentId || '').trim()}`.slice(0, 512)
@@ -2706,7 +2929,7 @@ async function persistCompetitionResolvedMemory(request) {
     title: `闭环记忆：${String(request.title || request.incidentId || '').trim()}`.slice(0, 512),
     content,
     qualityScore: 0.97,
-    permissions: GOAI_MEMORY_SHARED_AGENT_IDS,
+    permissions,
     tags: ['competition', 'resolved-incident', 'memory-type:incident', String(request.scenarioType || 'unknown')],
     source: 'competition-resolved-incident',
   })
@@ -2716,9 +2939,29 @@ const applicationCompetitionRuntime = new ApplicationCompetitionRuntimeService({
   userDataDirectory: app.getPath('userData'),
   fixtureAdapter: competitionFixtureAdapter,
   liveAdapter: competitionLiveAdapter,
+  /** 在创建 Live 运行前核对真实空间、场景和必需的 AgentTeams 协作。 / Validate the real workspace, scenario and required AgentTeams collaboration before creating a Live run. */
+  requireLiveAccess: ({ workspaceId, scenario, teamRuntime }) => {
+    if (!applicationCompetitionLiveConnection.hasLocalConfiguration()) return
+    const saved = applicationCompetitionLiveConnection.requireRuntimeConnection(workspaceId, { scenario })
+    if (teamRuntime !== saved.access.requiredTeamRuntime) {
+      throw new Error('当前 Live 授权要求 AgentTeams 协作，请选择 AgentTeams 并绑定当前工作空间团队。')
+    }
+  },
+  /** 将当前 HTTPS 入口和实际解析地址绑定到显式环境。 / Bind current HTTPS endpoints and resolved addresses to the explicit environment. */
+  resolveCurrentEnvironmentFingerprint: () => resolveCompetitionEnvironmentFingerprint({
+    fingerprint: process.env.OPENXNET_GOAI_CERTIFICATION_ENVIRONMENT_FINGERPRINT,
+    expectedEndpoints: {
+      aiops: process.env.OPENXNET_GOAI_CERTIFICATION_AIOPS_URL,
+      dataops: process.env.OPENXNET_GOAI_CERTIFICATION_DATAOPS_URL,
+      mlops: process.env.OPENXNET_GOAI_CERTIFICATION_MLOPS_URL,
+    },
+    resolveEndpoint: resolveCompetitionPlatformEndpoint,
+  }),
   publishApproval: (approval) => competitionApprovalPublisher.publish(approval),
+  /** 将演示别名解析为真实工作空间，不改变已审计运行的归属。 / Resolve demo aliases without changing ownership of audited runs. */
+  resolveWorkspaceId: (workspaceId) => applicationEnterpriseRuntime.resolveWorkspaceId(workspaceId),
   resolveTeamTemplate: (teamTemplateId) => applicationEnterpriseRuntime.resolveTeamTemplate(teamTemplateId),
-  /** 仅把当前 Workspace 已启用的同名 Skill 提供给竞赛控制面，用于生成真实复用证据。 */
+  /** 读取当前 Workspace 启用绑定及外部认证，核对当前包字节。 / Read the Workspace binding and external certification against current package bytes. */
   resolveEnabledEnterpriseSkill: async (workspaceId, skillId) => {
     const result = await applicationEnterpriseRuntime.listSkillBindings()
     const binding = result.bindings.find((item) => (
@@ -2728,11 +2971,18 @@ const applicationCompetitionRuntime = new ApplicationCompetitionRuntimeService({
     const catalog = await applicationSkillRuntime.listSkills()
     const skill = catalog.skills.find((item) => item.id === skillId)
     if (!skill) return null
+    const certification = await readCompetitionSkillCertification({
+      skillsDirectory: applicationSkillRuntime.skillsDirectory,
+      skillId,
+      sourceIncidentId: binding.sourceIncidentId,
+      receiptPath: process.env.OPENXNET_GOAI_SKILL_CERTIFICATIONS_PATH,
+    })
     return {
       sourceIncidentId: binding.sourceIncidentId,
       lifecycleStatus: skill.lifecycleStatus,
       environmentScope: skill.environmentScope,
-      productionEligible: skill.productionEligible
+      productionEligible: skill.productionEligible,
+      ...(certification || {}),
     }
   },
   /** 在 Workspace 图谱边界内执行在线检索；先定位所属 Incident，再按任务查询词对历史事实排序。 */
@@ -2772,7 +3022,10 @@ const applicationCompetitionRuntime = new ApplicationCompetitionRuntimeService({
       confidence: fact.confidence
     }))
   },
-  agentTeamsIsolatedServiceEnabled: process.env.OPENXNET_COMPETITION_AGENTTEAMS_ISOLATED_SERVICE_ENABLED === '1',
+  agentTeamsIsolatedServiceEnabled: false,
+  /** 每次运行读取最终启用状态，避免启动时提前冻结旧配置。 / Read the final enablement for each run instead of freezing pre-initialization settings. */
+  /** 接入可用性在每次实际请求中再次按运行模式检查。 / Actual requests recheck connection availability against their execution mode. */
+  isAgentTeamsIsolatedServiceEnabled: () => readCompetitionAgentTeamsConfiguration('fixture').enabled || readCompetitionAgentTeamsConfiguration('live').enabled,
   prepareAgentTeam: (incident, traceId, teamTemplate) => competitionAgentTeamsAdapter.prepare(incident, traceId, teamTemplate),
   dispatchAgentTeamTask: (input) => competitionAgentTeamsAdapter.dispatch(input),
   /** 把竞赛 Runtime 已接受的 AgentTeams 回执写入企业协作轨迹。 */
@@ -2794,58 +3047,91 @@ const applicationCompetitionRuntime = new ApplicationCompetitionRuntimeService({
   purgeKnowledge: (request) => applicationEnterpriseInsightsRuntime.purgeCompetitionKnowledge(request),
   /** 重置比赛控制面前同步清理相同 Incident/Trace 的项目群轨迹，普通聊天保持不变。 */
   purgeEnterpriseTaskConversations: (request) => applicationEnterpriseRuntime.purgeCompetitionMessages(request),
-  /** 将竞赛复盘结晶到全局技能目录，并在事件所属企业空间中启用。 */
+  /** 为本事件发布独立候选并保留已认证原包和人工绑定。 / Publish a separate candidate for this incident while preserving certified originals and human-managed bindings. */
   publishRetrospectiveSkill: async (request) => {
-    const writeResult = await applicationSkillRuntime.crystallizeSkill({
-      name: request.name,
-      skillId: request.skillId,
-      description: request.description,
-      triggerContext: request.triggerContext,
-      workflow: request.workflow,
-      notes: request.notes,
-      requiredCapabilities: request.requiredCapabilities,
-      verification: request.verification,
-      rollback: request.rollback,
-      examples: [],
-      counterExamples: [],
-      sourceEventIds: request.sourceEventIds,
-      status: 'candidate',
-      source: 'rehearsal',
-      familyId: request.familyId,
-      problemFingerprint: request.problemFingerprint,
-      evidenceOrigin: request.evidenceOrigin,
-      derivationMethod: request.derivationMethod,
-      environmentScope: request.environmentScope,
-      strategies: [{
-        strategyId: `retrospective-${request.skillId}`,
-        name: request.name,
-        workflow: String(request.workflow || '').split(/\r?\n/u).filter(Boolean),
-        toolChain: request.requiredCapabilities,
-        riskLevel: 'medium',
-        costScore: 0,
-        sourceEventIds: request.sourceEventIds,
-      }],
-      certifications: [{
-        scope: request.environmentScope,
-        status: 'candidate',
-        evidenceEventIds: request.sourceEventIds,
-      }],
-      syncToProject: false,
-      overwrite: true,
-    })
-    const skillId = String(writeResult.installedIds[0] || request.skillId)
-    await applicationEnterpriseRuntime.setSkillBinding({
-      workspaceId: request.workspaceId,
-      skillId,
-      enabled: false,
-      sourceIncidentId: request.incidentId,
-    })
+    const sourceIdentity = JSON.stringify([request.workspaceId, request.incidentId, request.skillId])
+    const incidentPrefix = request.incidentId.slice(0, 20).replace(/[^A-Za-z0-9._-]/gu, '-')
+    const candidateSkillId = `retrospective-${incidentPrefix}-${createHash('sha256').update(sourceIdentity, 'utf8').digest('hex').slice(0, 32)}`
+    const provenance = `OpenXnet retrospective source: ${sourceIdentity}`
+    const sourceEventIds = [...new Set([...request.sourceEventIds, request.incidentId])]
+    /** 只复用来源完全匹配的已有候选，不修改其认证或正文。 / Reuse only an existing candidate with matching provenance without changing certification or content. */
+    async function existingCandidateMatches() {
+      const catalog = await applicationSkillRuntime.listSkills()
+      const existing = catalog.skills.find(/** 精确匹配独立候选ID。 / Match the separate candidate ID exactly. */ skill => skill.id === candidateSkillId)
+      if (!existing) return false
+      const { content } = await applicationSkillRuntime.getSkillContent({ skillId: candidateSkillId, source: 'global' })
+      if (existing.familyId !== request.familyId || !content.split(/\r?\n/u).includes(`- ${provenance}`)) {
+        throw new Error('COMPETITION_RETROSPECTIVE_SOURCE_MISMATCH')
+      }
+      return true
+    }
+    if (!await existingCandidateMatches()) {
+      try {
+        const writeResult = await applicationSkillRuntime.crystallizeSkill({
+          name: request.name,
+          skillId: candidateSkillId,
+          description: request.description,
+          triggerContext: request.triggerContext,
+          workflow: request.workflow,
+          notes: [request.notes, provenance].filter(Boolean).join('\n'),
+          requiredCapabilities: request.requiredCapabilities,
+          verification: request.verification,
+          rollback: request.rollback,
+          examples: [],
+          counterExamples: [],
+          sourceEventIds,
+          status: 'candidate',
+          source: 'rehearsal',
+          familyId: request.familyId,
+          problemFingerprint: request.problemFingerprint,
+          evidenceOrigin: request.evidenceOrigin,
+          derivationMethod: request.derivationMethod,
+          environmentScope: request.environmentScope,
+          strategies: [{
+            strategyId: `retrospective-${request.skillId}`,
+            name: request.name,
+            workflow: String(request.workflow || '').split(/\r?\n/u).filter(Boolean),
+            toolChain: request.requiredCapabilities,
+            riskLevel: 'medium',
+            costScore: 0,
+            sourceEventIds,
+          }],
+          certifications: [{
+            scope: request.environmentScope,
+            status: 'candidate',
+            evidenceEventIds: sourceEventIds,
+          }],
+          syncToProject: false,
+          overwrite: false,
+        })
+        if (writeResult.installedIds.length !== 1 || writeResult.installedIds[0] !== candidateSkillId) {
+          throw new Error('COMPETITION_RETROSPECTIVE_PUBLICATION_ID_MISMATCH')
+        }
+      } catch (error) {
+        if (!await existingCandidateMatches()) throw error
+      }
+    }
+    const binding = (await applicationEnterpriseRuntime.listSkillBindings()).bindings.find(
+      /** 只查找新候选在本Workspace的绑定。 / Find only the new candidate binding in this Workspace. */
+      item => item.workspaceId === request.workspaceId && item.skillId === candidateSkillId,
+    )
+    if (binding && binding.sourceIncidentId !== request.incidentId) {
+      throw new Error('COMPETITION_RETROSPECTIVE_BINDING_SOURCE_MISMATCH')
+    }
+    if (!binding) {
+      await applicationEnterpriseRuntime.setSkillBinding({
+        workspaceId: request.workspaceId,
+        skillId: candidateSkillId,
+        enabled: false,
+        sourceIncidentId: request.incidentId,
+      })
+    }
     try {
-      await persistCompetitionSkillMemory(request)
+      await persistCompetitionSkillMemory({ ...request, skillId: candidateSkillId, sourceEventIds })
     } catch (error) {
       console.warn('Competition Skill memory persistence failed; the Candidate Skill remains available.', error)
     }
-    return { skillId }
+    return { skillId: candidateSkillId }
   },
   logger: console,
 })
@@ -2892,11 +3178,53 @@ const unregisterApplicationCompetitionRuntimeIpc = registerApplicationCompetitio
   ipcMain,
   runtime: applicationCompetitionRuntime,
   authorizeEvent: assertCompetitionRendererSender,
-  readUiProfile: () => resolveApplicationCompetitionUiProfile(
-    applicationPackage?.openxnet?.releaseProfile,
-    process.env.OPENXNET_COMPETITION_REHEARSAL_ENABLED,
-  ),
+  /** 公开运行前配置缺口，不把凭据、内部地址或仅配置状态称为在线。 / Expose preflight gaps without credentials, private endpoints, or claims of service health. */
+  readUiProfile: async () => {
+    const runtimeContext = await applicationCompetitionRuntime.readCollaborationConfigurationContext()
+    const connection = readCompetitionAgentTeamsConfiguration(runtimeContext.adapterMode)
+    const agentTeamsEnabled = connection.enabled
+    const agentTeamsEndpointConfigured = connection.endpointConfigured
+    const agentTeamsDelegationConfigured = connection.delegationConfigured
+    const agentTeamsConfigured = agentTeamsEnabled && agentTeamsEndpointConfigured && agentTeamsDelegationConfigured
+    const platformAuthorizationConfigured = String(process.env.OPENXNET_AGENT_DELEGATION_SECRET || '').trim().length >= 32
+      || ['AIOPS', 'DATAOPS', 'MLOPS'].every(/** 每个平台均需独立授权或共享受限令牌。 / Require authorization for each platform or a shared scoped token. */ platform =>
+        Boolean(String(process.env[`OPENXNET_${platform}_ADAPTER_TOKEN`] || process.env.OPENXNET_COMPETITION_ADAPTER_TOKEN || '').trim()))
+    const legacyLiveConfigured = platformAuthorizationConfigured
+      && Boolean(String(process.env.OPENXNET_COMPETITION_APPROVAL_BASE_URL || '').trim())
+      && String(process.env.OPENXNET_APPROVAL_ISSUER_TOKEN || '').trim().length >= 32
+    const liveSnapshot = applicationCompetitionLiveConnection.getSnapshot()
+    const hasSavedLive = hasCompetitionLiveGatewayConnection()
+    const liveExecutionConfigured = hasSavedLive
+      ? !liveSnapshot.storageError && liveSnapshot.enabled && liveSnapshot.credentialConfigured
+        && liveSnapshot.access?.serviceReady === true && Date.parse(liveSnapshot.access.expiresAt) > Date.now()
+        && liveSnapshot.access.remainingRequests > 0
+      : legacyLiveConfigured
+    return {
+      ...resolveApplicationCompetitionUiProfile(applicationPackage?.openxnet?.releaseProfile, process.env.OPENXNET_COMPETITION_REHEARSAL_ENABLED),
+      agentTeamsConfigured,
+      agentTeamsEnabled,
+      agentTeamsEndpointConfigured,
+      agentTeamsDelegationConfigured,
+      agentTeamsUnavailableReason: agentTeamsConfigured ? '' : runtimeContext.adapterMode === 'live'
+        ? '请在“协同与执行配置 → Live 执行链”保存当前工作空间的 Live 授权。演示访问码不能用于 Live。'
+        : '请在“协同与执行配置 → AgentTeams”选择工作空间、输入演示访问码并连接保存。团队模板已保留。',
+      liveExecutionConfigured,
+      liveRequiredTeamRuntime: hasSavedLive ? 'agentteams' : null,
+      liveWorkspaceId: hasSavedLive ? liveSnapshot.workspaceId : '',
+      liveExecutionUnavailableReason: liveExecutionConfigured ? '' : '请在“协同与执行配置 → Live 执行链”填写受控服务地址、选择工作空间并检测 Live 授权；检测结果会列出执行与审批服务的缺项。',
+    }
+  },
   resolveActorId: resolveCompetitionActorId,
+})
+const unregisterApplicationCompetitionConnectionIpc = registerApplicationCompetitionConnectionIpc({
+  ipcMain,
+  service: applicationCompetitionConnection,
+  authorizeEvent: assertCompetitionRendererSender,
+})
+const unregisterApplicationCompetitionLiveConnectionIpc = registerApplicationCompetitionLiveConnectionIpc({
+  ipcMain,
+  service: applicationCompetitionLiveConnection,
+  authorizeEvent: assertCompetitionRendererSender,
 })
 const applicationRecallRuntime = new ApplicationRecallRuntimeService({
   core: desktopCore,
@@ -3023,6 +3351,18 @@ const unregisterApplicationTaskExecutionIpc = registerApplicationTaskExecutionIp
   execution: applicationTaskExecution,
   authorizeEvent: assertMainRendererSender,
   getWebContents: getDesktopWebContents,
+})
+const unregisterConversationSubagentIpc = registerConversationSubagentIpc({
+  ipcMain,
+  authorizeEvent: assertMainRendererSender,
+  /** 工作区只从Main持久设置取得。 / Resolve workspace only from Main-owned persisted settings. */
+  getWorkspacePath: () => legacyRendererState.getSnapshot().settings.CLISettings?.cc_path,
+  /** 按工作区读取真实任务目录。 / Read actual tasks within the workspace. */
+  listTasks: (request) => applicationTasks.listTasks(request),
+  /** 读取Core中持久化的任务归属。 / Read durable task ownership from Core. */
+  getTask: (request) => applicationTasks.getTask(request),
+  /** 仅刷新指定任务，不启动或恢复执行。 / Refresh only the selected task without starting or resuming execution. */
+  refreshTask: (request) => applicationTaskExecution.getExecution(request),
 })
 const unregisterDesktopBootstrapIpc = registerDesktopBootstrapIpc({
   ipcMain,
@@ -3464,6 +3804,45 @@ const unregisterApplicationChatIpc = registerApplicationChatIpc({
   authorizeEvent: assertMainRendererSender,
   getWebContents: getDesktopWebContents,
 })
+const unregisterCompletionNoticeIpc = registerCompletionNoticeIpc({
+  ipcMain,
+  /** 只允许可信主窗口顶层页面发布结果。 / Permit result publication from the trusted main window's top-level page only. */
+  authorizePublisher(event) {
+    assertMainRendererSender(event)
+    if (event.senderFrame && event.senderFrame !== event.sender.mainFrame) throw new Error('Completion publication requires the main frame.')
+  },
+  /** 只允许主窗口与现存伴随浮窗读取和打开结果。 / Permit only the main window and existing companions to read and open results. */
+  authorizeReader(event) {
+    assertTrustedWindowSender(event, [mainWindow, dynamicIslandWindow, floatingTaskHudWindow])
+    if (event.senderFrame && event.senderFrame !== event.sender.mainFrame) throw new Error('Completion access requires a top-level frame.')
+  },
+  /** 每次读取Main已保存偏好。 / Read Main-owned saved preferences for each publication. */
+  readPreferences: () => applicationSettings.getSystemSettings().settings,
+  /** 读取操作系统实际支持状态。 / Read actual operating-system notification support. */
+  isSupported: () => Notification.isSupported(),
+  /** 创建系统提醒，不打开或激活应用窗口。 / Create a system alert without opening or activating application windows. */
+  createNotification: (options) => new Notification(options),
+  /** 只发送给现有可信窗口，不自动创建浮窗。 / Send only to existing trusted windows without creating companions. */
+  getReaders: () => [mainWindow, dynamicIslandWindow, floatingTaskHudWindow]
+    .filter(/** 过滤已经关闭的窗口。 / Filter closed windows. */ candidate => candidate && !candidate.isDestroyed())
+    .map(/** 只提供事件传输对象。 / Provide event transport objects only. */ candidate => candidate.webContents),
+  /** 校验浮窗运行归属及当前轨迹，过期提醒不能定位到另一轮审批。 / Validate run ownership and active trace so stale alerts cannot target another approval cycle. */
+  async validateEnterpriseRun(target) {
+    const snapshot = await applicationCompetitionRuntime.getSnapshot()
+    const incident = snapshot.incidents.find(/** 精确匹配事件与工作空间。 / Match the incident and workspace exactly. */ item =>
+      item.incidentId === target.incidentId && item.workspaceId === target.workspaceId)
+    if (!incident || !target.traceId || incident.activeTraceId !== target.traceId) return false
+    return snapshot.traces.some(/** 确认轨迹真实属于同一运行。 / Confirm the trace belongs to the same run. */ trace =>
+      trace.traceId === target.traceId && trace.incidentId === incident.incidentId && trace.workspaceId === incident.workspaceId)
+  },
+  /** 用户明确点击后打开主界面并导航身份，不执行任务。 / Open the main workspace and navigate identities after an explicit user click, without executing tasks. */
+  async navigate(target) {
+    if (!mainWindow || mainWindow.isDestroyed()) return false
+    if (!await navigateMainWindowToWorkspace({ reveal: true })) return false
+    mainWindow.webContents.send(COMPLETION_NOTICE_CHANNELS.navigate, target)
+    return true
+  },
+})
 const applicationKnowledgeBaseRuntime = new ApplicationKnowledgeBaseRuntimeService({
   token: taskRpcToken,
   acquireEngine: acquireApplicationKnowledgeBaseEngine,
@@ -3503,6 +3882,12 @@ const unregisterApplicationModelAssetIpc = registerApplicationModelAssetIpc({
   runtime: applicationModelAssetRuntime,
   authorizeEvent: assertMainRendererSender,
   getWebContents: getDesktopWebContents,
+})
+const applicationOllamaRuntime = new ApplicationOllamaRuntimeService()
+const unregisterApplicationOllamaRuntimeIpc = registerApplicationOllamaRuntimeIpc({
+  ipcMain,
+  runtime: applicationOllamaRuntime,
+  authorizeEvent: assertMainRendererSender,
 })
 
 const taskWorkerExecutable = app.isPackaged
@@ -4113,12 +4498,14 @@ function getWindowStatePayload(win) {
 
 const fullscreenChromeState = new WeakMap()
 
+/** 记录原最大化状态并隐藏全屏边框；remember maximization before hiding the native fullscreen frame. */
 function applyBorderlessFullscreenChrome(win) {
   if (!win || win.isDestroyed()) return
   if (!fullscreenChromeState.has(win)) {
     fullscreenChromeState.set(win, {
       resizable: typeof win.isResizable === 'function' ? win.isResizable() : undefined,
       hasShadow: typeof win.hasShadow === 'function' ? win.hasShadow() : undefined,
+      wasMaximized: win.isMaximized(),
     })
   }
   win.setBackgroundColor('#0a121c')
@@ -4141,8 +4528,9 @@ function applyBorderlessFullscreenChrome(win) {
   }
 }
 
+/** 全屏退出后恢复原窗口外观与最大化状态；restore native chrome and prior maximization after fullscreen ends. */
 function restoreBorderlessFullscreenChrome(win) {
-  if (!win || win.isDestroyed()) return
+  if (!win || win.isDestroyed() || win.isFullScreen()) return
   const state = fullscreenChromeState.get(win)
   win.setBackgroundColor('#0a121c')
   if (!state) return
@@ -4161,16 +4549,21 @@ function restoreBorderlessFullscreenChrome(win) {
     console.warn('Failed to restore fullscreen window shadow:', error)
   }
   fullscreenChromeState.delete(win)
+  if (state.wasMaximized && !win.isMaximized()) {
+    win.maximize()
+  }
 }
 
+/** 仅在需要进入全屏时改变窗口；change native window state only when entering fullscreen is required. */
 function enterBorderlessFullscreen(win) {
-  if (!win || win.isDestroyed()) return
+  if (!win || win.isDestroyed() || win.isFullScreen()) return
   applyBorderlessFullscreenChrome(win)
   win.setFullScreen(true)
 }
 
+/** 重复退出全屏必须无副作用，普通导航保留窗口；make redundant fullscreen exits inert so normal navigation preserves the window. */
 function exitBorderlessFullscreen(win) {
-  if (!win || win.isDestroyed()) return
+  if (!win || win.isDestroyed() || !win.isFullScreen()) return
   win.setBackgroundColor('#0a121c')
   win.setFullScreen(false)
   const restore = () => restoreBorderlessFullscreenChrome(win)
@@ -4958,9 +5351,8 @@ function normalizeDynamicIslandSurfaceState(nextState = {}) {
   const compact = typeof nextState.compact === 'boolean'
     ? nextState.compact
     : Boolean(dynamicIslandSurfaceState.compact)
-  const interactive = typeof nextState.interactive === 'boolean'
-    ? nextState.interactive
-    : !compact
+  // 可见岛窗始终接收首击，避免等待悬停IPC时穿透到背后窗口。 / Visible island windows always receive the first click instead of waiting for hover IPC.
+  const interactive = true
   const fallbackWidth = compact ? DYNAMIC_ISLAND_SURFACE_DEFAULT.width : 468
   const fallbackHeight = compact ? DYNAMIC_ISLAND_SURFACE_DEFAULT.height : 220
 
@@ -5067,7 +5459,7 @@ function closeFloatingTaskHudWindow() {
 
 async function ensureDynamicIslandWindow() {
   if (dynamicIslandWindow && !dynamicIslandWindow.isDestroyed()) {
-    positionDynamicIslandWindow()
+    applyDynamicIslandSurfaceState(dynamicIslandSurfaceState)
     if (!dynamicIslandWindow.isVisible()) {
       if (typeof dynamicIslandWindow.showInactive === 'function') {
         dynamicIslandWindow.showInactive()
@@ -5096,6 +5488,7 @@ async function ensureDynamicIslandWindow() {
     fullscreenable: false,
     hasShadow: false,
     backgroundColor: '#00000000',
+    acceptFirstMouse: true,
     webPreferences: createSecureWebPreferences({
       preload: path.join(__dirname, 'static/js/surface-preload.js'),
       backgroundThrottling: false,
@@ -6706,12 +7099,14 @@ app.whenReady().then(async () => {
     ipcMain.handle('download-file', async (event, payload) => {
       const senderWindow = assertMainRendererSender(event)
       const request = sanitizeRendererDownloadRequest(payload)
-      const dlItem = await download(senderWindow, request.url, {
-        filename: request.filename,
-        saveAs: true,
-        openFolderWhenDone: true
+      return new Promise((resolve, reject) => {
+        download(senderWindow, request.url, {
+          filename: request.filename,
+          saveAs: true,
+          openFolderWhenDone: true,
+          onCancel: () => resolve({ canceled: true })
+        }).then(dlItem => resolve({ success: true, savePath: dlItem.getSavePath() }), reject);
       });
-      return { success: true, savePath: dlItem.getSavePath() };
     });
     ipcMain.handle('get-app-version', (event) => {
       assertMainRendererSender(event)
@@ -7474,6 +7869,10 @@ app.on('before-quit', async (event) => {
     }
     unregisterDesktopCoreIpc();
     unregisterApplicationSettingsIpc();
+    unregisterAppearancePreferencesIpc();
+    unregisterConversationFilesIpc();
+    unregisterConversationSubagentIpc();
+    unregisterCompletionNoticeIpc();
     unregisterApplicationAuthIpc();
     unregisterApplicationAccessIpc();
     unregisterApplicationProvidersIpc();
@@ -7498,9 +7897,12 @@ app.on('before-quit', async (event) => {
     unregisterApplicationEnterpriseRuntimeIpc();
     unregisterApplicationAgentTeamsRuntimeIpc();
     unregisterApplicationCompetitionRuntimeIpc();
+    unregisterApplicationCompetitionConnectionIpc();
+    unregisterApplicationCompetitionLiveConnectionIpc();
     unregisterApplicationEnterpriseInsightsRuntimeIpc();
     unregisterApplicationKernelRuntimeIpc();
     unregisterApplicationModelAssetIpc();
+    unregisterApplicationOllamaRuntimeIpc();
     unregisterApplicationRecallRuntimeIpc();
     unregisterApplicationMemoryManagementIpc();
     unregisterApplicationSynapxnetMemoryIpc();

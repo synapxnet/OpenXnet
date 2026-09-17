@@ -1,0 +1,82 @@
+/*
+Copyright (C) 2026 Synapxnet. All rights reserved.
+This file is Synapxnet Proprietary and Confidential. It is strictly
+forbidden to copy, distribute, or use without explicit authorization.
+用途：窄桌面窗口的紧凑主导航，保留原生名称与宽屏展开偏好。
+Purpose: Compact navigation for narrow desktop windows with native labels and wide-window preferences preserved.
+Author: maoyo | Department: 研发部 | Date: 2026-09-14
+Version: 1.0.0 | Security Level: INTERNAL
+__version__: 1.0.0 | __author__: maoyo | __copyright__: Copyright 2026 Synapxnet
+__maintainer__: maoyo | __email__: synapxnet@gmail.com
+*/
+
+/* 桌面窄窗强制图标导航；按钮的 title/aria-label 保留，展开偏好在宽窗继续生效。
+   Narrow desktop windows always use icons; native title/aria-label remain, and the expansion preference resumes on wider windows.
+   :has 只匹配真实图标导航，不改变触屏抽屉、助手模式或胶囊模式。
+   :has scopes these rules to the actual icon rail without changing touch drawers, assistant mode or capsule mode. */
+@media (max-width: 680px) {
+  #app.openxnet-redesign-app .main-container > .sidebar.el-aside:not(.mobile-sidebar):has(> .ox-sidebar.ox-prototype-rail-shell) {
+    --ox-narrow-rail-size: 52px;
+    flex: 0 0 var(--ox-narrow-rail-size) !important;
+    width: var(--ox-narrow-rail-size) !important;
+    min-width: var(--ox-narrow-rail-size) !important;
+    max-width: var(--ox-narrow-rail-size) !important;
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
+
+  #app.openxnet-redesign-app .main-container > .sidebar.el-aside:not(.mobile-sidebar) > .ox-sidebar.ox-prototype-rail-shell {
+    width: var(--ox-narrow-rail-size) !important;
+    min-width: var(--ox-narrow-rail-size) !important;
+    max-width: var(--ox-narrow-rail-size) !important;
+    padding: 0 !important;
+  }
+
+  #app.openxnet-redesign-app .main-container > .sidebar.el-aside:not(.mobile-sidebar) > .ox-sidebar.ox-prototype-rail-shell .ox-sidebar__nav {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 8px 6px !important;
+    align-items: center !important;
+    gap: 3px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  #app.openxnet-redesign-app .main-container > .sidebar.el-aside:not(.mobile-sidebar) > .ox-sidebar.ox-prototype-rail-shell .ox-nav-item {
+    flex: 0 0 auto !important;
+    width: 38px !important;
+    min-width: 38px !important;
+    max-width: 38px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+    gap: 0 !important;
+  }
+
+  #app.openxnet-redesign-app .main-container > .sidebar.el-aside:not(.mobile-sidebar) > .ox-sidebar.ox-prototype-rail-shell .ox-nav-item__label,
+  #app.openxnet-redesign-app .main-container > .sidebar.el-aside:not(.mobile-sidebar) > .ox-sidebar.ox-prototype-rail-shell .ox-sidebar__section-label {
+    display: none !important;
+  }
+
+  #app.openxnet-redesign-app .main-container > .sidebar.el-aside:not(.mobile-sidebar) > .ox-sidebar.ox-prototype-rail-shell .ox-sidebar__divider {
+    width: 24px !important;
+    margin: 6px 0 !important;
+  }
+
+  #app.openxnet-redesign-app .main-container > .sidebar.el-aside:not(.mobile-sidebar) > .ox-sidebar.ox-prototype-rail-shell .ox-nav-item.ox-nav-item--active::before {
+    left: 50% !important;
+    top: auto !important;
+    bottom: 1px !important;
+    width: 14px !important;
+    height: 2px !important;
+    border-radius: var(--ox-radius-xs, 2px) !important;
+    transform: translateX(-50%) !important;
+  }
+
+  #app.openxnet-redesign-app .main-container:has(> .sidebar.el-aside:not(.mobile-sidebar) > .ox-sidebar.ox-prototype-rail-shell) > .content {
+    min-width: 0 !important;
+    flex: 1 1 0 !important;
+  }
+}

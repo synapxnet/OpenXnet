@@ -9,6 +9,7 @@ import type {
   ApplicationCompetitionAuditReceipt,
   ApplicationCompetitionEvidence,
   ApplicationCompetitionIncident,
+  ApplicationCompetitionResidentContext,
 } from "../contracts/application-competition-runtime";
 import type { ApplicationCompetitionTeamPreparationResult } from "./application-competition-runtime";
 import { COMPETITION_TOOL_REGISTRY, type CompetitionToolName } from "./competition-tool-registry";
@@ -108,6 +109,8 @@ export interface CompetitionAgentTeamsTaskInput {
   readonly evidence: readonly ApplicationCompetitionEvidence[];
   readonly proposedPlan: CompetitionAgentTeamsPlanReference | null;
   readonly action: CompetitionAgentTeamsActionReference | null;
+  /** 控制面生成的本平台最小上下文；旧服务可暂不接收该扩展。 / Control-plane generated minimal platform contexts. */
+  readonly residentContexts?: readonly ApplicationCompetitionResidentContext[];
 }
 
 /** Leader 路由产生的可审计摘要。 */
@@ -176,6 +179,8 @@ export interface CompetitionAgentTeamsDelegationContext {
 export interface HttpCompetitionAgentTeamsAdapterOptions {
   readonly resolveEndpoint: () => Promise<string>;
   readonly resolveDelegationToken: (context: CompetitionAgentTeamsDelegationContext) => Promise<string>;
+  /** Main 提供实际运行模式，访问码授权不能由 Renderer 改写。 / Main supplies the actual execution mode for access-code authorization. */
+  readonly resolveExecutionMode?: () => Promise<"fixture" | "live">;
   readonly fetchResource?: typeof fetch;
   readonly timeoutMs?: number;
   readonly prepareRetryDelayMs?: number;
@@ -218,6 +223,7 @@ export class HttpCompetitionAgentTeamsAdapter {
     const endpoint = this.requireEndpoint(await this.options.resolveEndpoint());
     const token = (await this.options.resolveDelegationToken(context)).trim();
     if (token.length < 64) throw new Error("AgentTeams delegation token is not configured.");
+    const executionMode = await this.options.resolveExecutionMode?.();
     const cardsById = new Map(resolvedTemplate.roleCards.map((card) => [card.id, card] as const));
     const body = {
       schema: PREPARE_REQUEST_SCHEMA,
@@ -245,6 +251,7 @@ export class HttpCompetitionAgentTeamsAdapter {
             "X-OpenXnet-Workspace-Id": incident.workspaceId,
             "X-OpenXnet-Incident-Id": incident.incidentId,
             "X-OpenXnet-Trace-Id": traceId,
+            ...(executionMode ? { "X-OpenXnet-Execution-Mode": executionMode } : {}),
           },
           body: JSON.stringify(body),
         });
@@ -268,7 +275,7 @@ export class HttpCompetitionAgentTeamsAdapter {
     }
   }
 
-  /** 派发真实 AgentTeams 阶段任务；输入事件、Binding、Skill 和证据上下文，返回身份化结果。 */
+  /** 派发真实 AgentTeams 任务及驻场上下文并校验身份化结果。 / Dispatch AgentTeams tasks with resident contexts and validate identity-bound results. */
   public async dispatch(input: CompetitionAgentTeamsTaskInput): Promise<CompetitionAgentTeamsTaskResult> {
     if (
       input.binding.runtime !== "agentteams"
@@ -303,6 +310,7 @@ export class HttpCompetitionAgentTeamsAdapter {
           scenario: input.incident.scenario,
         },
         availableTools: [...input.availableToolNames],
+        ...(input.residentContexts === undefined ? {} : { residentContexts: input.residentContexts }),
         evidence: input.evidence.map((item) => ({
           evidenceId: item.evidenceId,
           toolName: item.toolName,
@@ -330,6 +338,7 @@ export class HttpCompetitionAgentTeamsAdapter {
     const endpoint = this.requireEndpoint(await this.options.resolveEndpoint());
     const token = (await this.options.resolveDelegationToken(context)).trim();
     if (token.length < 64) throw new Error("AgentTeams delegation token is not configured.");
+    const executionMode = await this.options.resolveExecutionMode?.();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.taskTimeoutMs);
     try {
@@ -345,6 +354,7 @@ export class HttpCompetitionAgentTeamsAdapter {
           "X-OpenXnet-Workspace-Id": input.incident.workspaceId,
           "X-OpenXnet-Incident-Id": input.incident.incidentId,
           "X-OpenXnet-Trace-Id": input.traceId,
+          ...(executionMode ? { "X-OpenXnet-Execution-Mode": executionMode } : {}),
         },
         body: JSON.stringify(body),
       });

@@ -32,6 +32,19 @@ export type ApplicationCompetitionReleaseProfile =
 export interface ApplicationCompetitionUiProfile {
   readonly releaseProfile: ApplicationCompetitionReleaseProfile;
   readonly rehearsalEnabled: boolean;
+  /** 协同配置就绪仅表示本机配置完整，不代替在线健康。 / Local configuration readiness does not imply service health. */
+  readonly agentTeamsConfigured?: boolean;
+  /** 分项只读状态，不包含地址或密钥。 / Individual read-only flags contain no endpoint or secret. */
+  readonly agentTeamsEnabled?: boolean;
+  readonly agentTeamsEndpointConfigured?: boolean;
+  readonly agentTeamsDelegationConfigured?: boolean;
+  readonly agentTeamsUnavailableReason?: string;
+  readonly liveExecutionConfigured?: boolean;
+  readonly liveExecutionUnavailableReason?: string;
+  /** 已保存授权要求的协作方式。 / Team runtime required by the saved Live authorization. */
+  readonly liveRequiredTeamRuntime?: "agentteams" | null;
+  /** 已保存 Live 授权的工作空间。 / Workspace bound to the saved Live authorization. */
+  readonly liveWorkspaceId?: string;
 }
 
 /** 解析事件中心发布配置；输入包配置和环境覆盖，返回有界且不含凭据的界面能力。 */
@@ -115,6 +128,69 @@ export type ApplicationCompetitionPlatform =
 export type ApplicationCompetitionScenarioType =
   (typeof APPLICATION_COMPETITION_SCENARIO_TYPES)[number];
 
+/** 驻场 Agent 的固定平台能力；只能产生证据、诊断或协同请求。 / Fixed resident-agent capabilities limited to evidence, diagnosis, or escalation. */
+export type ApplicationCompetitionResidentCapability =
+  | "health.preflight"
+  | "evidence.collect"
+  | "diagnosis.explain"
+  | "collaboration.request"
+  | "local.check"
+  | "chat.respond";
+
+/** 三个平台驻场 Agent 的身份和只读工具边界。 / Identity and read-only tool boundary for a platform resident agent. */
+export interface ApplicationCompetitionResidentAgent {
+  readonly agentId: string;
+  readonly platform: ApplicationCompetitionPlatform;
+  readonly role: "AIOPS_RESIDENT_AGENT" | "DATAOPS_RESIDENT_AGENT" | "MLOPS_RESIDENT_AGENT";
+  readonly displayName: string;
+  readonly agentVersion: string;
+  readonly contractVersion: string;
+  readonly status: "REGISTERED" | "ONLINE" | "DEGRADED" | "OFFLINE";
+  readonly capabilities: readonly ApplicationCompetitionResidentCapability[];
+  readonly allowedTools: readonly string[];
+}
+
+/** 驻场 Agent 单次 Run 的最小上下文；不包含任何平台凭据。 / Minimal credential-free resident-agent context for one run. */
+export interface ApplicationCompetitionResidentContext {
+  readonly workspaceId: string;
+  readonly environment: "staging" | "production";
+  readonly source: "LIVE-STAGING" | "REPLAY" | "SIMULATION";
+  readonly runId: string;
+  readonly incidentId: string;
+  readonly traceId: string;
+  readonly agentId: string;
+  readonly platform: ApplicationCompetitionPlatform;
+  readonly contextVersion: string;
+  readonly contextTtl: string;
+  readonly evidenceRefs: readonly string[];
+  readonly allowedTools: readonly string[];
+}
+
+/** 驻场事件范围和事件类型；平台本地事件不得直接关闭跨平台 Incident。 / Resident event scope and types; local events cannot close a cross-platform incident. */
+export interface ApplicationCompetitionResidentEvent {
+  readonly eventId: string;
+  readonly scope: "PLATFORM_LOCAL" | "CROSS_PLATFORM";
+  readonly eventType: "HEALTH_PREFLIGHT" | "EVIDENCE_COLLECTED" | "DIAGNOSIS_EXPLAINED" | "COLLABORATION_REQUESTED" | "LOCAL_CHECK_COMPLETED" | "CHAT_RESPONDED";
+  readonly workspaceId: string;
+  readonly environment: "staging" | "production";
+  readonly source: "LIVE-STAGING" | "REPLAY" | "SIMULATION";
+  readonly runId: string;
+  readonly incidentId: string;
+  readonly traceId: string;
+  readonly agentId: string;
+  readonly platform: ApplicationCompetitionPlatform;
+  readonly contextVersion: string;
+  readonly contextTtl: string;
+  readonly evidenceRefs: readonly string[];
+  readonly reason: string;
+  readonly occurredAt: string;
+}
+
+/** 按平台隔离的实际资源版本，仅由本轮可信调查填充。 / Actual resource versions isolated by platform and populated only by trusted current investigation. */
+export type ApplicationCompetitionResourceVersions = Readonly<Partial<Record<
+  ApplicationCompetitionPlatform, Readonly<Record<string, string>>
+>>>;
+
 /** 竞赛固定演示场景使用的跨平台资源引用。 */
 export interface ApplicationCompetitionScenarioContext {
   readonly scenarioType: ApplicationCompetitionScenarioType;
@@ -131,6 +207,8 @@ export interface ApplicationCompetitionScenarioContext {
   readonly targetRevision: number;
   readonly rollbackRevision?: number;
   readonly expectedResourceVersion: string;
+  /** 内部调查结果，不接受 Renderer 创建请求注入。 / Internal investigation result; rejected in renderer creation requests. */
+  readonly governedResourceVersions?: ApplicationCompetitionResourceVersions;
   readonly testDatasetRef: string;
 }
 
@@ -303,6 +381,14 @@ export interface ApplicationCompetitionAuditReceipt {
   readonly resourceVersionAfter: string;
   readonly outcome: "ACCEPTED" | "SUCCEEDED" | "FAILED";
   readonly recordedAt: string;
+  /** 实际独立验证的范围和结论；旧回执不自动补造。 / Scope and conclusion from actual independent verification; never synthesized for old receipts. */
+  readonly verification?: {
+    readonly runtime: "builtin" | "agentteams";
+    readonly actionId: string;
+    readonly decision: "CLOSE" | "ROLLBACK_REQUIRED";
+    readonly evidenceIds: readonly string[];
+    readonly errorCode: string | null;
+  };
 }
 
 /** Incident 启动取证时固化的企业角色卡快照。 */
@@ -537,6 +623,12 @@ export interface ApplicationCompetitionSnapshot {
   readonly taskGraphs: readonly ApplicationCompetitionTaskGraph[];
   readonly reasoningDecisions: readonly ApplicationCompetitionReasoningDecision[];
   readonly skillEvolutionRuns: readonly ApplicationCompetitionSkillEvolutionRun[];
+  /** 当前决赛三平台驻场 Agent 注册表；旧快照缺省迁移为 V1.3.0 默认值。 / Finals resident-agent registry, defaulted during legacy snapshot migration. */
+  readonly residentAgents: readonly ApplicationCompetitionResidentAgent[];
+  /** 按 Run 固化的最小上下文。 / Minimal contexts captured per Run. */
+  readonly residentContexts: readonly ApplicationCompetitionResidentContext[];
+  /** 驻场 Agent 产生的本地事件和协同升级请求。 / Resident local events and collaboration escalation requests. */
+  readonly residentEvents: readonly ApplicationCompetitionResidentEvent[];
   readonly updatedAt: string;
 }
 

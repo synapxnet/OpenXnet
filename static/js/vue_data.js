@@ -56,6 +56,8 @@ if (isElectron) {
   const protocol = window.location.protocol;
   const backendURL = `${window.location.protocol}//${window.location.host}`;
 let vue_data = {
+    toolkitConfigDialogOpen: false,
+    toolkitConfigDialogTab: '',
     isMac: false,
     isWindows: false,
     partyURL:`${window.location.protocol}//${window.location.host}`,
@@ -192,9 +194,9 @@ let vue_data = {
     })(),
     sidebarRailExpanded: (() => {
       try {
-        return window.localStorage?.getItem('openxnet-rail-expanded-v1') === '1';
+        return window.localStorage?.getItem('openxnet-rail-expanded-v1') !== '0';
       } catch (error) {
-        return false;
+        return true;
       }
     })(),
     showHomeCommandPanel: false,
@@ -578,6 +580,8 @@ let vue_data = {
     },
     abortController: null, // 用于中断请求的控制器
     isSending: false, // 是否正在发送
+    conversationConnectionStates: {},
+    conversationNetworkOnline: typeof navigator === 'undefined' || navigator.onLine !== false,
     liveGuidanceMode: 'auto',
     liveGuidanceModes: ['auto', 'soft', 'constraint', 'safety'],
     liveGuidanceSending: false,
@@ -1783,6 +1787,11 @@ let vue_data = {
     maxTrendTokens: 1,
     // --- [v0.5.3] Enterprise Role Cards ---
     enterpriseRoleCards: [],
+    enterpriseRoleCardsLoading: false,
+    enterpriseRoleCardsError: '',
+    enterpriseRoleCardsGeneration: 0,
+    staffRoleSaving: false,
+    staffRoleBusyIds: [],
     showRoleCardForm: false,
     editingRoleCard: null,
     newRoleCard: { name: '', description: '', system_prompt: '', permissions: [], tools: [], enabled: true },
@@ -1816,6 +1825,8 @@ let vue_data = {
     enterpriseSkills: [],
     enterpriseSkillBindings: [],
     enterpriseSkillsLoading: false,
+    enterpriseSkillsError: '',
+    enterpriseSkillsGeneration: 0,
     enterpriseSkillWorkspaceId: 'ws_goai_demo',
     enterpriseViewMode: '2d',
     selected3DAgent: null,
@@ -1823,6 +1834,11 @@ let vue_data = {
     sandboxLevel: 0,
     sandboxCurrentWs: null,
     sandboxCurrentProject: null,
+    sandboxDetailsOpen: false,
+    sandboxNavigatorOpen: false,
+    sandboxPresentationStyle: 'studio',
+    sandboxPresentationOpen: false,
+    sandboxPresentationError: '',
     sandboxWorkspaceId: '__all__',
     showSandboxFloatPanel: false,
     showSandboxChatPanel: false,
@@ -1909,11 +1925,13 @@ let vue_data = {
         department: '事件治理',
         icon: 'fa-solid fa-tower-broadcast',
         accent: ['#2563eb', '#2563eb'],
-        summaryZh: '统筹事件、分派任务并汇总最终结论。',
-        summaryEn: 'Coordinates incidents, delegates work, and owns the final summary.',
-        skills: ['任务分派', '审批决策', '结果汇总'],
-        permissions: ['delegate', 'approve', 'summarize'],
-        system_prompt: '你是 Incident Commander，负责统一分析事件、向取证与验证角色分派边界清晰的任务、检查审批条件，并基于真实协同结果形成最终总结。不得代替 Worker 伪造执行结果。',
+        summaryZh: '统筹事件、分派调查，比较计划并申请人工审批。',
+        summaryEn: 'Routes investigations, compares plans, and requests human approval.',
+        skills: ['任务分派', '申请人工审批', 'goai-change-execute'],
+        skill_ids: ['goai-change-execute'],
+        permissions: ['delegate', 'request_approval', 'summarize'],
+        tools: [],
+        system_prompt: '你是 Incident Commander / Leader，负责分析事件、向取证与独立验证角色分派有界任务，依据证据比较固定计划并申请独立人工审批。阶段 Skill 为 goai-change-execute，版本由运行时确定。不得自批、直接调用平台写工具或伪造执行结果；Controlled Executor 是审批后的治理组件，不是第四 Agent。',
       },
       {
         id: 'goai-evidence-agent',
@@ -1923,9 +1941,11 @@ let vue_data = {
         accent: ['#0f766e', '#0f766e'],
         summaryZh: '调用三平台工具收集并归档结构化证据。',
         summaryEn: 'Collects and records structured evidence across three platforms.',
-        skills: ['跨域取证', '证据归档', '工具调用'],
-        permissions: ['collect_evidence', 'use_tools'],
-        system_prompt: '你是 Evidence Agent，负责按 Leader 的委派调用 XnetAIops、XnetDataops 与 XnetMLops 工具，返回带来源、资源版本和观察时间的结构化证据。不得执行审批、回滚或最终验证。',
+        skills: ['只读取证', '证据归档', 'goai-evidence-collect'],
+        skill_ids: ['goai-evidence-collect'],
+        permissions: ['collect_evidence', 'read_evidence'],
+        tools: [],
+        system_prompt: '你是 Evidence Agent / Worker，按 Leader 委派及允许的只读工具，在限定 Workspace/Project 范围从 XnetAIOps、XnetDataOps 与 XnetMLOps 收集证据，返回来源、资源版本、观察时间与缺口。阶段 Skill 为 goai-evidence-collect，版本由运行时确定。不得写平台、自批、执行补救或把缺失证据当成成功。',
       },
       {
         id: 'goai-verification-agent',
@@ -1933,11 +1953,13 @@ let vue_data = {
         department: '独立验证',
         icon: 'fa-solid fa-vial-circle-check',
         accent: ['#b45309', '#b45309'],
-        summaryZh: '在回滚后独立核验服务和工作负载状态。',
-        summaryEn: 'Independently verifies service and workload health after rollback.',
-        skills: ['独立验证', '健康检查', '风险复核'],
+        summaryZh: '完整处置后独立重取证，决定关闭或要求回滚。',
+        summaryEn: 'Independently gathers fresh evidence after remediation to close or require rollback.',
+        skills: ['独立验证', '客观阈值', 'goai-service-verify'],
+        skill_ids: ['goai-service-verify'],
         permissions: ['verify', 'read_evidence'],
-        system_prompt: '你是 Verification Agent，负责在回滚完成后独立检查推理探针、服务健康与工作负载状态，并给出可审计的验证结论。你不能与回滚执行者为同一职责，也不得修改既有证据。',
+        tools: [],
+        system_prompt: '你是 Verification Agent / Verifier，完整处置后独立重取证，按场景客观阈值输出 CLOSE 或 ROLLBACK_REQUIRED。阶段 Skill 为 goai-service-verify，版本由运行时确定。不得仅凭 Executor 成功回执关闭事件，不得修改既有证据、审批或执行补救。失败或未验证链不能晋级可执行 Skill；保留原生 Memory V3 来源与权限。',
       },
     ],
     staffRoleTemplates: {
@@ -2487,10 +2509,18 @@ let vue_data = {
     sandboxScene: null,
     // --- [v0.6.0] Xnet Services 集成 ---
     xnetServices: {
-      dataops: { name: 'XnetDataOps', url: '', status: 'offline', last_check: '', auto_connect: false },
-      mlops: { name: 'XnetMLOps', url: '', status: 'offline', last_check: '', auto_connect: false },
-      aiops: { name: 'XnetAIOps', url: '', status: 'offline', last_check: '', auto_connect: false }
+      dataops: { name: 'XnetDataOps', url: '', status: 'offline', last_check: '', auto_connect: false, connectionStatus: 'unchecked', identityStatus: 'pending', identityPlatform: null, identitySource: null },
+      mlops: { name: 'XnetMLOps', url: '', status: 'offline', last_check: '', auto_connect: false, connectionStatus: 'unchecked', identityStatus: 'pending', identityPlatform: null, identitySource: null },
+      aiops: { name: 'XnetAIOps', url: '', status: 'offline', last_check: '', auto_connect: false, connectionStatus: 'unchecked', identityStatus: 'pending', identityPlatform: null, identitySource: null }
     },
+    xnetServiceDrafts: {
+      dataops: { url: '', auto_connect: false },
+      mlops: { url: '', auto_connect: false },
+      aiops: { url: '', auto_connect: false }
+    },
+    xnetServiceErrors: { dataops: '', mlops: '', aiops: '' },
+    xnetServiceRequestVersions: { dataops: 0, mlops: 0, aiops: 0 },
+    xnetServicesLoadVersion: 0,
     xnetServicesLoading: false,
     xnetCheckingAll: false,
     xnetServiceBusy: {
@@ -2518,14 +2548,45 @@ let vue_data = {
       updatedAt: ''
     },
     competitionLoading: false,
+    // 正式指挥台独立筛选与详情状态。 / Persistent operations filters and detail state.
+    operationsWorkspaceFilter: 'all',
+    operationsStatusFilter: 'all',
+    operationsSearch: '',
+    operationsDetailVisible: false,
+    operationsShowSetup: false,
+    operationsNoticeBaseline: null,
     competitionBusyAction: '',
+    competitionSelectedIncidentId: '',
+    competitionApprovalDrafts: {},
+    competitionRollbackKeys: {},
     competitionProgressPollTimer: null,
     competitionProgressPollGeneration: 0,
     competitionMemoryLoading: false,
+    competitionMemoryGeneration: 0,
     competitionMemoryStatus: null,
     competitionMemoryRecords: [],
     competitionMemoryError: '',
     competitionReleaseProfile: 'production',
+    // 运行时配置页的当前定位区段；由 GOAI 前置检查导航写入。 / Focus section for runtime configuration pages.
+    competitionRuntimeConfigSection: 'runtime',
+    competitionRuntimeConfigReadError: false,
+    competitionRuntimeConfigCheckedAt: '',
+    competitionConnectionSnapshot: null,
+    competitionConnectionForm: { endpoint: 'https://goai.xnetaiops.synapxnet.online/agentteams-adapter/', workspaceId: '', enabled: true },
+    competitionConnectionBusy: '',
+    competitionConnectionResult: null,
+    competitionConnectionClearConfirm: false,
+    // Live 接入独立于演示授权；凭据仅存在临时密码框。 / Live setup is separate from demo access; credentials stay in the temporary password input.
+    competitionLiveConnectionSnapshot: null,
+    competitionLiveConnectionForm: { endpoint: '', workspaceId: '', enabled: true },
+    competitionLiveConnectionBusy: '',
+    competitionLiveConnectionLoading: false,
+    competitionLiveConnectionLoaded: false,
+    competitionLiveConnectionResult: null,
+    competitionLiveConnectionClearConfirm: false,
+    competitionLiveConnectionRevision: 0,
+    competitionLiveConnectionLoadVersion: 0,
+    competitionRuntimeReadiness: { agentTeamsConfigured: false, agentTeamsUnavailableReason: '', liveExecutionConfigured: false, liveExecutionUnavailableReason: '' },
     competitionRehearsalAvailable: false,
     competitionRehearsalVisible: false,
     competitionTeamRuntime: 'builtin',
@@ -2640,7 +2701,7 @@ let vue_data = {
     vendorLogoList: {
       'custom': 'source/icon.png',
       'OpenAI': 'source/providers/openai.jpeg',
-      'CC Switch': 'source/providers/cc-switch.png',
+      'CC Switch': 'source/providers/cc-switch.svg',
       'Ollama': 'source/providers/ollama.png',
       'Vllm': 'source/providers/vllm.png',
       'LMstudio': 'source/providers/lmstudio.png',
@@ -3419,7 +3480,14 @@ main();`,
     activeCLITab: 'config', // 确保这个已存在
     activeSkillCenterTab: 'library',
     skillsList: [],
+    skillsLoading: false,
+    skillCatalogError: '',
+    skillCatalogGeneration: 0,
+    projectSkillsLoading: false,
+    projectSkillsError: '',
+    projectSkillsGeneration: 0,
     skillLifecycleLoading: false,
+    skillLifecycleError: '',
     skillLifecycleRunning: false,
     skillLifecycleFilter: 'all',
     skillLifecycleSummary: {
@@ -3449,7 +3517,10 @@ main();`,
     skillsPollingTimer: null, 
     showSkillPreviewDialog: false,
     skillPreviewLoading: false,
+    skillPreviewError: '',
+    skillPreviewGeneration: 0,
     activeSkillPreviewId: '',
+    activeSkillPreviewSource: 'global',
     renderedSkillContent: '',
     extensionsPollingTimer: null,
     skillsInProject: [], 

@@ -34,7 +34,7 @@ def create_team_request() -> dict[str, object]:
                 {
                     "name": "incident-leader",
                     "role": "team_leader",
-                    "model": "qwen3.5-plus",
+                    "model": "qwen3.8-max",
                     "runtime": "copaw",
                     "identity": "事件指挥 Agent",
                     "instructions": "拆解任务并汇总证据，不直接执行生产变更。",
@@ -43,7 +43,7 @@ def create_team_request() -> dict[str, object]:
                 {
                     "name": "diagnosis-worker",
                     "role": "worker",
-                    "model": "qwen3.5-plus",
+                    "model": "qwen3.8-max",
                     "runtime": "copaw",
                     "identity": "诊断分析 Agent",
                     "instructions": "跨系统收集证据并输出可证伪根因。",
@@ -52,7 +52,7 @@ def create_team_request() -> dict[str, object]:
                 {
                     "name": "verification-worker",
                     "role": "worker",
-                    "model": "qwen3.5-plus",
+                    "model": "qwen3.8-max",
                     "runtime": "copaw",
                     "identity": "验证审计 Agent",
                     "instructions": "独立验证恢复结果并生成审计报告。",
