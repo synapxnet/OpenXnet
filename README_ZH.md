@@ -19,7 +19,7 @@ Maintainer: maoyo | Email: synapxnet@gmail.com
 
 ## 先找到正确版本
 
-GOAI 决赛版为 **v1.3.0**，主场景固定为“跨域特征漂移恢复”。发布标签对应提交 `c841ef841da8477fc312e27cd390aecac8ed2d7e`；源码 ZIP、安装包与 SHA256 校验文件均在发布页。当前分支会继续追加文档修订，固定版本复现请以发布标签及附件为准。
+GOAI 决赛版为 **v1.3.0**，主场景固定为“跨域特征漂移恢复”。`v1.3.0` 标签与[源码 ZIP](https://github.com/synapxnet/OpenXnet/releases/download/v1.3.0/OpenXnet-v1.3.0-source.zip)已纳入修订的 README、演示地址与部署说明。已验证的程序基线为 `c841ef841da8477fc312e27cd390aecac8ed2d7e`，保留在 `v1.3.0-code-baseline`；此后的差异仅为 README。源码、安装包与 SHA256 校验文件均在发布页。
 
 本次提供 Windows x64 安装包。历史上游的 0.3.8 安装包、便携版和其他系统制品不是本次 GOAI 交付，请勿用它们复现 v1.3.0。当前发布页列出已验证范围和已知限制。
 
@@ -66,7 +66,7 @@ GOAI 决赛版为 **v1.3.0**，主场景固定为“跨域特征漂移恢复”�
 
 以上登录信息仅用于三平台；OpenXnet 账号、AgentTeams 演示访问码、工作空间 Live 授权和模型 API Key 是不同凭据。AgentTeams 连接地址为 `https://goai.xnetaiops.synapxnet.online/agentteams-adapter/`，访问码和 Live 授权由管理员单独发放。驻场 Agent 在线与 AgentTeams 团队已绑定也不是同一状态，本轮 DataOps 回读的自动跨域移交状态仍为待接入，跨域 Demo 由 OpenXnet / AgentTeams 编排。
 
-固定标签内的 README 保留发行时内容。当前演示地址、认证方式和部署修订以配套仓库 `GOAI-Competition` 的 README 及 Release 顶部使用指南为准。
+七个 `v1.3.0` 源码页与源码包均纳入本次修订的 README。各发布页分别列明已验证的程序基线和文档修订；本次修订不改变程序代码与安装包。
 
 ## 配套平台 v1.3.0
 

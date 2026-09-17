@@ -19,7 +19,7 @@ Maintainer: maoyo | Email: synapxnet@gmail.com
 
 ## Current GOAI release
 
-The GOAI Agent Infra finals release is **v1.3.0**, centered on cross-domain feature drift recovery. Its tag pins commit `c841ef841da8477fc312e27cd390aecac8ed2d7e`. The release includes the Windows x64 installer, the reviewed source archive, and SHA256 checksums. This branch may receive later documentation updates; use the tag and published assets for a fixed reproduction baseline.
+The GOAI Agent Infra finals release is **v1.3.0**, centered on cross-domain feature drift recovery. The `v1.3.0` tag and source archive include the corrected README, demo endpoints and setup instructions. The reviewed application code baseline is `c841ef841da8477fc312e27cd390aecac8ed2d7e`, retained as `v1.3.0-code-baseline`; changes from that baseline are README-only. The release includes the Windows x64 installer, [source archive](https://github.com/synapxnet/OpenXnet/releases/download/v1.3.0/OpenXnet-v1.3.0-source.zip), and SHA256 checksums.
 
 Historical upstream 0.3.8 installers, portable packages, and artifacts for other operating systems are not this release. Use the release page linked above for the current downloads and verification boundaries.
 
@@ -66,7 +66,7 @@ For all three platform demos, use phone **17870171303** and six-digit demo code 
 
 These credentials are for the three platforms only. OpenXnet accounts, AgentTeams demo access codes, workspace Live authorization and model API keys are distinct. The AgentTeams endpoint is `https://goai.xnetaiops.synapxnet.online/agentteams-adapter/`; its access code and Live grants are provided separately. An online resident agent does not mean an AgentTeams team is bound. DataOps currently reports automatic platform-to-platform handoff as pending integration; OpenXnet / AgentTeams orchestrate the cross-domain demo.
 
-The fixed tags retain the original release README. For corrected deployment instructions and current access details, use each companion repository's `GOAI-Competition` README or the guide linked at the top of its release page.
+All seven `v1.3.0` source pages and archives include the corrected documentation. Release notes distinguish the tested application baseline from the README corrections; the installer and runtime code are unchanged by this documentation revision.
 
 ## Companion platform releases
 
