@@ -94,6 +94,31 @@ __maintainer__: maoyo | __email__: synapxnet@gmail.com
 #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-task,
 #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-send { position: static; flex: 0 0 auto; width: auto; height: auto; min-height: 40px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 14px; border-radius: var(--ox-radius-sm, 9px); font: inherit; font-size: 12px; line-height: 20px; white-space: nowrap; box-shadow: none; }
 #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-send { color: #fff; background: var(--ec-accent); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-mention-purpose { margin: 0 6px 3px; color: var(--ec-muted); font-size: 11px; line-height: 1.6; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-chat-input__recipients { display: flex; flex-wrap: wrap; gap: 6px; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-recipient-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; min-height: 30px; padding: 3px 9px; border: 1px solid var(--ec-border); border-radius: 8px; background: var(--ec-soft); color: var(--ec-accent); font: inherit; font-size: 11px; text-align: left; cursor: pointer; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-recipient-chip span { white-space: normal; overflow-wrap: anywhere; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-recipient-chip:hover { border-color: var(--ec-accent); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-source-toggle { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; min-height: 36px; margin-top: 4px; padding: 3px 0; border: 0; background: transparent; color: var(--ec-muted); font: inherit; font-size: 11px; text-align: left; cursor: pointer; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-source-toggle:hover { color: var(--ec-accent); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-source-toggle span + span { color: var(--ec-accent); }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-source-details { margin: 6px 0; padding: 8px 12px; border-left: 2px solid var(--ec-border); color: var(--ec-muted); font-size: 11px; line-height: 1.7; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-source-details > div { display: grid; grid-template-columns: minmax(75px, 110px) minmax(0, 1fr); gap: 12px; padding: 4px 0; }
+#enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-chat-source-details dd { margin: 0; color: var(--ec-text); overflow-wrap: anywhere; white-space: pre-wrap; }
+/* 浮层传送到 body，使用全局皮肤变量避免阅读区裁切。 Teleport the menu to body and use global skin variables to avoid reader clipping. */
+.enterprise-chat-mentions-popover.el-popper { --mention-accent: var(--ox-accent, #008ac2); --mention-muted: var(--ox-text-muted, #66768b); --mention-border: var(--ox-border, #dce4ee); --mention-soft: color-mix(in srgb, var(--mention-accent) 10%, var(--ox-bg-surface, #fff)); box-sizing: border-box; width: min(380px, calc(100vw - 24px)) !important; max-width: calc(100vw - 24px); padding: 8px !important; border: 1px solid var(--mention-border) !important; border-radius: var(--ox-radius, 14px) !important; background: var(--ox-bg-surface, #fff) !important; color: var(--ox-text-primary, #203046) !important; box-shadow: 0 12px 36px #0a234024 !important; overflow: hidden; }
+.enterprise-chat-mentions-popover .enterprise-chat-mentions-heading { display: flex; justify-content: space-between; gap: 12px; padding: 6px 8px 10px; color: var(--mention-muted); font-size: 11px; }
+.enterprise-chat-mentions-popover .enterprise-chat-mentions-heading strong { color: var(--ox-text-primary, #203046); font-size: 12px; font-weight: 600; }
+.enterprise-chat-mentions-popover .enterprise-chat-mentions-list { position: relative; max-height: min(256px, calc(100vh - 200px)); min-height: 42px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.enterprise-chat-mentions-popover .enterprise-chat-mention-option { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; margin: 0; padding: 8px; box-sizing: border-box; border: 1px solid transparent; border-radius: 9px; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; transition: background .12s ease, border-color .12s ease; }
+.enterprise-chat-mentions-popover .enterprise-chat-mention-option.is-active { border-color: color-mix(in srgb, var(--mention-accent) 32%, transparent); background: var(--mention-soft); }
+.enterprise-chat-mentions-popover .enterprise-chat-mention-option:focus-visible { outline: 2px solid var(--mention-accent); outline-offset: -2px; }
+.enterprise-chat-mentions-popover .enterprise-chat-mention-avatar { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border-radius: 8px; color: var(--mention-accent); background: var(--mention-soft); overflow: hidden; }
+.enterprise-chat-mentions-popover .enterprise-chat-mention-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.enterprise-chat-mentions-popover .enterprise-chat-mention-name { min-width: 0; flex: 1; white-space: normal; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
+.enterprise-chat-mentions-popover .enterprise-chat-mention-selected { color: var(--mention-accent); font-size: 11px; }
+.enterprise-chat-mentions-popover .enterprise-chat-mentions-empty { margin: 0; padding: 14px 9px; color: var(--mention-muted); font-size: 12px; line-height: 1.7; }
+.enterprise-chat-mentions-popover .enterprise-chat-mentions-help { margin: 7px 0 0; padding: 9px 8px 3px; border-top: 1px solid var(--mention-border); color: var(--mention-muted); font-size: 10px; }
 #enterprise-sandbox-studio:has(.enterprise-sandbox-panel--chat) .enterprise-sandbox-topbar { flex-basis: 44px; min-height: 44px; }
 @media (max-width: 680px) {
   #enterprise-sandbox-studio .enterprise-sandbox-panel--chat .enterprise-sandbox-panel__header { padding-inline: 8px; }
@@ -121,4 +146,5 @@ __maintainer__: maoyo | __email__: synapxnet@gmail.com
 }
 @media (prefers-reduced-motion: reduce) {
   #enterprise-sandbox-studio .enterprise-sandbox-panel--chat * { scroll-behavior: auto; transition: none; }
+  .enterprise-chat-mentions-popover * { transition: none !important; }
 }

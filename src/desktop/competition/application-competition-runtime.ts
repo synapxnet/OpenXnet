@@ -3,6 +3,7 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { resolveCompetitionMemoryAccess, type ApplicationCompetitionMemoryAccess } from "./competition-memory-access";
 import { resolveIndependentVerification } from "./competition-verification";
+import { buildCompetitionAgentConversation } from "./competition-agent-conversation";
 
 import {
   parseCreateApplicationCompetitionIncidentRequest,
@@ -44,7 +45,7 @@ import {
   type ApplicationCompetitionResidentEvent,
   type ExecuteApplicationCompetitionRollbackRequest,
 } from "../contracts/application-competition-runtime";
-import type { ApplicationEnterpriseResolvedTeamTemplate } from "../contracts/application-enterprise-runtime";
+import type { ApplicationEnterpriseMessage, ApplicationEnterpriseResolvedTeamTemplate } from "../contracts/application-enterprise-runtime";
 import {
   APPLICATION_COMPETITION_KNOWLEDGE_SCHEMA,
   type ApplicationCompetitionKnowledgeProjectionRequest,
@@ -245,6 +246,8 @@ export interface ApplicationCompetitionRuntimeServiceOptions {
     input: CompetitionAgentTeamsTaskInput,
     task: CompetitionAgentTeamsTaskResult,
   ) => Promise<void>;
+  /** 持久决策生成的可信群聊批次。 / Trusted conversation batches derived from persisted decisions. */
+  readonly recordAgentConversationProjection?: (messages: readonly ApplicationEnterpriseMessage[]) => Promise<number>;
   readonly recordEnterpriseTaskConversation?: (
     input: ApplicationCompetitionEnterpriseTaskConversationInput,
   ) => Promise<void>;
@@ -531,6 +534,21 @@ export class ApplicationCompetitionRuntimeService {
       if (await this.persistResolvedIncidentMemory(snapshot, incident)) reconciled += 1;
     }
     return reconciled;
+  }
+
+  /** 补齐指定群的历史真实 Agent 消息，不访问模型、平台或改变审批状态。 / Reconcile actual Agent history for one group without model/platform calls or approval mutations. */
+  public async reconcileAgentConversations(scope: { readonly workspaceId: string; readonly projectId: string | null }): Promise<{ readonly projected: number; readonly failed: number }> {
+    const snapshot = await this.store.read();
+    let projected = 0;
+    let failed = 0;
+    if (!this.options.recordAgentConversationProjection) return { projected, failed };
+    const incidents = new Set(snapshot.incidents.filter(/** 严格按群所属空间和项目隔离。 / Strictly isolate the group's workspace and project. */ item => item.workspaceId === scope.workspaceId && item.projectId === scope.projectId).map(/** 提取允许的事件。 / Extract allowed incidents. */ item => item.incidentId));
+    for (const decision of snapshot.agentDecisions) {
+      if (decision.workspaceId !== scope.workspaceId || !incidents.has(decision.incidentId)) continue;
+      try { projected += await this.options.recordAgentConversationProjection(buildCompetitionAgentConversation(snapshot, decision)); }
+      catch { failed += 1; this.logger.warn("Persisted Agent conversation projection is pending; governance state is unchanged."); }
+    }
+    return { projected, failed };
   }
 
   /** 重置竞赛演示控制面；输入固定确认标记，清除事件链路但保留已导出的复盘 Skill。 */
@@ -987,7 +1005,7 @@ export class ApplicationCompetitionRuntimeService {
     }
   }
 
-  /** 提交人工审批决策；输入审批、决策人和原因，返回职责分离后的最新状态。 */
+  /** 在当前运行与计划范围内提交人工审批，保持审批和执行分离。 / Decide within the current run and plan while preserving approval/execution separation. */
   public async decideApproval(
     value: unknown,
     automaticActors?: ApplicationCompetitionAutomaticExecutionActors,
@@ -1009,6 +1027,7 @@ export class ApplicationCompetitionRuntimeService {
         throw new ApplicationCompetitionRuntimeError("SEPARATION_OF_DUTIES_REQUIRED", "审批人不能是审批申请人。");
       }
       const incident = requireIncident(current, approval.incidentId);
+      this.assertApprovalDecisionCurrent(current, approval, incident, request.expectedPlanDigest);
       const nextApproval: ApplicationCompetitionApproval = {
         ...approval,
         status: request.decision,
@@ -2639,7 +2658,7 @@ export class ApplicationCompetitionRuntimeService {
         throw new Error("AgentTeams result scope is invalid.");
       }
       try {
-        await this.options.recordAgentTeamConversation?.(dispatchInput, result);
+        if (!this.options.recordAgentConversationProjection) await this.options.recordAgentTeamConversation?.(dispatchInput, result);
       } catch {
         this.logger.warn("AgentTeams enterprise conversation projection failed; the accepted task result remains unchanged.");
       }
@@ -2723,7 +2742,7 @@ export class ApplicationCompetitionRuntimeService {
   ): Promise<ApplicationCompetitionAgentDecision> {
     const timestamp = this.now().toISOString();
     let recorded: ApplicationCompetitionAgentDecision | null = null;
-    await this.store.update((current) => {
+    const persistedSnapshot = await this.store.update((current) => {
       const decision: ApplicationCompetitionAgentDecision = {
           decisionId: this.id("decision"),
           taskId: task.taskId,
@@ -2761,6 +2780,11 @@ export class ApplicationCompetitionRuntimeService {
       };
     });
     if (recorded === null) throw new Error("AgentTeams decision was not persisted.");
+    try {
+      if (this.options.recordAgentConversationProjection) await this.options.recordAgentConversationProjection(buildCompetitionAgentConversation(persistedSnapshot, recorded));
+    } catch {
+      this.logger.warn("Persisted Agent conversation projection is pending; the accepted task result remains unchanged.");
+    }
     return recorded;
   }
 
@@ -2983,6 +3007,45 @@ export class ApplicationCompetitionRuntimeService {
       steps: executionPlan.steps.map(projectStep),
       compensationSteps: executionPlan.compensationSteps.map(projectStep),
     };
+  }
+
+  /** 原子决策前核对当前运行、用户所见摘要和计划边界。 / Validate the current run, reviewed digest and plan boundaries before an atomic decision. */
+  private assertApprovalDecisionCurrent(
+    snapshot: ApplicationCompetitionSnapshot,
+    approval: ApplicationCompetitionApproval,
+    incident: ApplicationCompetitionIncident,
+    expectedPlanDigest?: string,
+  ): void {
+    const trace = snapshot.traces.find((item) => item.traceId === approval.traceId);
+    if (
+      incident.activeApprovalId !== approval.approvalId
+      || incident.activeTraceId !== approval.traceId
+      || incident.workspaceId !== approval.workspaceId
+      || incident.status !== "AWAITING_APPROVAL"
+      || incident.activeActionId !== null
+      || trace === undefined
+      || trace.workspaceId !== approval.workspaceId
+      || trace.incidentId !== approval.incidentId
+      || trace.status !== "AWAITING_APPROVAL"
+    ) {
+      throw new ApplicationCompetitionRuntimeError("APPROVAL_SCOPE_MISMATCH", "该审批已不属于当前待审批运行，请刷新后查看当前审批。");
+    }
+    if (expectedPlanDigest !== undefined && approval.planDigest !== expectedPlanDigest) {
+      throw new ApplicationCompetitionRuntimeError("APPROVAL_SCOPE_MISMATCH", "审批计划已发生变化，请重新审阅后决定。");
+    }
+    const plan = getCompetitionScenarioProfile(incident.scenario).executionPlan;
+    const primaryStep = plan.steps.find((step) => step.kind === "WRITE");
+    if (
+      primaryStep === undefined
+      || approval.planId !== plan.planId
+      || approval.toolName !== primaryStep.toolName
+      || approval.resourceId !== primaryStep.resourceId
+      || approval.targetRevision !== primaryStep.targetRevision
+      || approval.expectedResourceVersion !== primaryStep.expectedResourceVersion
+    ) {
+      throw new ApplicationCompetitionRuntimeError("APPROVAL_SCOPE_MISMATCH", "审批计划或资源版本已变化，请重新生成审批。");
+    }
+    this.assertApprovalPlanMatches(approval, plan.steps, plan.compensationSteps);
   }
 
   /** 校验审批与当前有序执行计划完全一致；输入审批、主步骤和补偿步骤，无返回，不匹配时拒绝执行。 */

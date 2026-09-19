@@ -159,6 +159,14 @@ const OPENXNET_APP_NAME = 'OpenXnet'
 const OPENXNET_APP_ID = 'com.openxnet.desktop'
 const GOAI_STAGING_MEMORY_BOOTSTRAP_MANIFEST = 'b0a7a9fd7ecb78c035007aa2b33b6bb87e1eb93586bad155461ffb5fe3171546'
 const DESKTOP_PROCESS_STARTED_AT = Date.now()
+// 独立报告验收不修改系统集成；普通启动保持原行为。 / Isolated report checks preserve system integrations; normal startup keeps its behavior.
+const IS_ISOLATED_STARTUP_CHECK = Boolean(
+  process.env.OPENXNET_STARTUP_REPORT
+  && process.env.OPENXNET_EXIT_AFTER_STARTUP_REPORT === '1'
+  && process.env.OPENXNET_USER_DATA_DIR
+  && path.resolve(process.env.OPENXNET_USER_DATA_DIR).toLowerCase()
+    !== path.join(app.getPath('appData'), OPENXNET_APP_NAME).toLowerCase()
+)
 const OPENXNET_WINDOW_ICON = path.join(
   __dirname,
   process.platform === 'win32' ? 'static/source/icon.ico' : 'static/source/icon.png'
@@ -2151,6 +2159,8 @@ const unregisterApplicationSkillRuntimeIpc = registerApplicationSkillRuntimeIpc(
 const applicationEnterpriseRuntime = new ApplicationEnterpriseRuntimeService({
   userDataDirectory: app.getPath('userData'),
   logger: console,
+  /** 查询群消息时补齐同范围历史运行，不重跑模型或工具。 / Reconcile scoped run history on chat reads without rerunning models or tools. */
+  reconcileAgentConversations: (scope) => applicationCompetitionRuntime.reconcileAgentConversations(scope),
   /** 从 Main-owned 登录态生成稳定领导身份；无凭据和令牌会进入消息记录。 */
   resolveLeaderIdentity: () => {
     const profile = applicationAuth.getSession().authState.profile
@@ -2679,96 +2689,13 @@ function buildCompetitionGovernanceOperation(event) {
 }
 
 /**
- * 将 Matrix 事件映射到企业群聊身份与收件人。
- *
- * @param {object} event 已通过 Desktop 契约校验的脱敏传输事件。
- * @param {object} task AgentTeams 阶段任务回执。
- * @returns {{senderType: 'agent'|'system', senderId: string, senderName: string, recipientIds: string[]}} 群聊身份映射。
+ * 将 Matrix 事件的已持久阶段结论投影为企业群聊，身份由运行绑定快照确认。
+ * Project persisted Matrix stage conclusions into enterprise chat using run-bound identities.
+ * @param {object[]} messages 已校验且不含原始提示词的稳定消息批次。
+ * @returns {Promise<number>} 新投影数量；失败交由 Runtime 标记待同步。
  */
-function resolveCompetitionTransportConversationIdentity(event, task) {
-  if (event.direction === 'INBOUND' && event.kind === 'ROUTE_RESPONSE' && task.route) {
-    return {
-      senderType: 'agent',
-      senderId: task.route.leaderRoleCardId,
-      senderName: task.route.leaderName,
-      recipientIds: [task.route.assigneeRoleCardId],
-    }
-  }
-  if (event.direction === 'INBOUND' && event.kind === 'TASK_RESPONSE') {
-    return {
-      senderType: 'agent',
-      senderId: task.result.roleCardId,
-      senderName: task.result.agentName,
-      recipientIds: [],
-    }
-  }
-  const recipientIds = event.kind === 'ROUTE_REQUEST' && task.route
-    ? [task.route.leaderRoleCardId]
-    : event.kind === 'TASK_REQUEST' ? [task.result.roleCardId] : []
-  return {
-    senderType: 'system',
-    senderId: 'openxnet-agentteams-gateway',
-    senderName: 'AgentTeams Gateway',
-    recipientIds,
-  }
-}
-
-/**
- * 把真实 AgentTeams 路由和执行回执投影到企业协作群。
- *
- * @param {object} input AgentTeams 阶段输入，包含 Workspace、Trace 和团队绑定。
- * @param {object} task 已完成且通过身份校验的 AgentTeams 任务回执。
- * @returns {Promise<void>} 消息写入完成；投影失败仅记录诊断，不反向伪造或改变任务结果。
- */
-async function recordCompetitionAgentTeamConversation(input, task) {
-  try {
-    if (Array.isArray(task.transportEvents) && task.transportEvents.length > 0) {
-      for (const event of task.transportEvents) {
-        const identity = resolveCompetitionTransportConversationIdentity(event, task)
-        await applicationEnterpriseRuntime.recordTrustedMessage({
-          workspaceId: input.incident.workspaceId,
-          projectId: input.incident.projectId,
-          taskId: task.taskId,
-          traceId: input.traceId,
-          senderType: identity.senderType,
-          senderId: identity.senderId,
-          senderName: identity.senderName,
-          recipientIds: identity.recipientIds,
-          content: `[Matrix ${event.kind} · ${event.eventId}]\n${event.redactedBody}`.slice(0, 16000),
-          operation: event.kind === 'TASK_RESPONSE' ? buildCompetitionAgentOperation(input, task) : null,
-          status: 'delivered',
-        })
-      }
-      return
-    }
-    if (task.route) {
-      await applicationEnterpriseRuntime.recordTrustedMessage({
-        workspaceId: input.incident.workspaceId,
-        projectId: input.incident.projectId,
-        taskId: task.taskId,
-        traceId: input.traceId,
-        senderType: 'agent',
-        senderId: task.route.leaderRoleCardId,
-        senderName: task.route.leaderName,
-        recipientIds: [task.route.assigneeRoleCardId],
-        content: `已分派 ${task.stage} 阶段任务，任务摘要 ${task.route.taskBriefDigest.slice(0, 12)}。`,
-      })
-    }
-    await applicationEnterpriseRuntime.recordTrustedMessage({
-      workspaceId: input.incident.workspaceId,
-      projectId: input.incident.projectId,
-      taskId: task.taskId,
-      traceId: input.traceId,
-      senderType: 'agent',
-      senderId: task.result.roleCardId,
-      senderName: task.result.agentName,
-      content: task.result.summary,
-      operation: buildCompetitionAgentOperation(input, task),
-      status: 'delivered',
-    })
-  } catch (error) {
-    console.warn('AgentTeams enterprise conversation projection failed; the task result remains unchanged.', error)
-  }
+async function recordCompetitionAgentConversationProjection(messages) {
+  return applicationEnterpriseRuntime.recordAgentConversationProjection(messages)
 }
 
 /** 把治理状态变化投影为系统操作卡；输入审批、执行或验证事件，无返回。 */
@@ -2784,7 +2711,8 @@ async function recordCompetitionOperationConversation(event) {
     senderName: 'OpenXnet Governance',
     content: event.summary,
     operation,
-    status: event.eventType === 'VERIFICATION_FAILED' ? 'failed' : 'delivered',
+    // 业务失败属于操作阶段；成功写入群记录即已送达。 / Business failure belongs to the operation phase; persisted messages are delivered.
+    status: 'delivered',
   })
 }
 
@@ -3028,8 +2956,8 @@ const applicationCompetitionRuntime = new ApplicationCompetitionRuntimeService({
   isAgentTeamsIsolatedServiceEnabled: () => readCompetitionAgentTeamsConfiguration('fixture').enabled || readCompetitionAgentTeamsConfiguration('live').enabled,
   prepareAgentTeam: (incident, traceId, teamTemplate) => competitionAgentTeamsAdapter.prepare(incident, traceId, teamTemplate),
   dispatchAgentTeamTask: (input) => competitionAgentTeamsAdapter.dispatch(input),
-  /** 把竞赛 Runtime 已接受的 AgentTeams 回执写入企业协作轨迹。 */
-  recordAgentTeamConversation: (input, task) => recordCompetitionAgentTeamConversation(input, task),
+  /** 在决策落盘后同步真实角色消息，支持同来源幂等恢复。 / Sync actual role messages after decision persistence with source-idempotent recovery. */
+  recordAgentConversationProjection: (messages) => recordCompetitionAgentConversationProjection(messages),
   /** 把领导的受控任务消息写入对应项目群，并用 Incident ID 作为初始任务引用。 */
   recordEnterpriseTaskConversation: (input) => applicationEnterpriseRuntime.postMessage({
     workspaceId: input.workspaceId,
@@ -5028,7 +4956,7 @@ function updateLoginItemSettings({ enabled = false, startMinimized = false } = {
   const openAtLogin = Boolean(enabled)
   const openHidden = Boolean(startMinimized)
   const args = openAtLogin && openHidden ? ['--hidden'] : []
-  if (typeof app.setLoginItemSettings === 'function') {
+  if (!IS_ISOLATED_STARTUP_CHECK && typeof app.setLoginItemSettings === 'function') {
     app.setLoginItemSettings({
       openAtLogin,
       openAsHidden: openHidden,
@@ -6567,12 +6495,14 @@ app.on('second-instance', (event, commandLine) => {
 });
 
 // 注册协议（只在第一个实例中执行）
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+if (!IS_ISOLATED_STARTUP_CHECK) {
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+    }
+  } else {
+    app.setAsDefaultProtocolClient(PROTOCOL);
   }
-} else {
-  app.setAsDefaultProtocolClient(PROTOCOL);
 }
 
 ipcMain.handle('get-window-size', (event) => {
@@ -6597,7 +6527,7 @@ app.whenReady().then(async () => {
     await startCompetitionMcpGateway()
     await startLocalUiGateway()
     void beginTaskScheduler()
-    registerGlobalShortcuts();
+    if (!IS_ISOLATED_STARTUP_CHECK) registerGlobalShortcuts();
     const mainSession = session.fromPartition('persist:main-session');
 
     // DEV: clear main session cache to ensure CSS updates are loaded
@@ -7254,7 +7184,7 @@ app.whenReady().then(async () => {
       updatecontextMenu();
     });
     // 创建系统托盘
-    createTray();
+    if (!IS_ISOLATED_STARTUP_CHECK) createTray();
     updatecontextMenu();
     // ★ 下面这段就是你要放的「主进程 IPC + 默认配置」
     ipcMain.handle('set-vmc-config', async (event, cfg) => {

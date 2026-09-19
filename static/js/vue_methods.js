@@ -38787,7 +38787,12 @@ async handleRefreshSkills() {
 
   /** 读取事件治理中心发布配置；无输入，更新生产/比赛演练边界并返回公开能力。 */
   async loadCompetitionUiProfile() {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     const profile = await this.getApplicationCompetitionRuntime().getApplicationCompetitionUiProfile();
+    if (!isCurrentCompetitionSession()) return false;
     this.competitionRuntimeReadiness = {
       agentTeamsConfigured: profile?.agentTeamsConfigured === true,
       agentTeamsSetup: {
@@ -38811,6 +38816,10 @@ async handleRefreshSkills() {
 
   /** 读取持久化竞赛快照；无输入，更新工作台状态，失败时显示安全通知。 */
   async loadCompetitionSnapshot() {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     this.competitionLoading = true;
     try {
       const runtime = this.getApplicationCompetitionRuntime();
@@ -38818,6 +38827,7 @@ async handleRefreshSkills() {
         runtime.getApplicationCompetitionSnapshot(),
         runtime.getApplicationCompetitionUiProfile()
       ]);
+      if (!isCurrentCompetitionSession()) return false;
       this.applyOperationsRuntimeSnapshot(snapshot);
       this.competitionRuntimeReadiness = {
       agentTeamsConfigured: profile?.agentTeamsConfigured === true,
@@ -38840,16 +38850,24 @@ async handleRefreshSkills() {
       this.competitionRehearsalAvailable = profile?.rehearsalEnabled === true;
       if (!this.competitionRehearsalAvailable) this.competitionRehearsalVisible = false;
       await this.loadCompetitionMemoryArtifacts(false);
+      if (!isCurrentCompetitionSession()) return false;
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return false;
       console.error('[Competition] Snapshot load failed:', error);
       showNotification(error?.message || '竞赛控制面暂时不可用', 'error');
     } finally {
-      this.competitionLoading = false;
+      if (isCurrentCompetitionSession()) {
+        this.competitionLoading = false;
+      }
     }
   },
 
   /** 重置竞赛演示数据；无输入，二次确认后清空控制面并保留账号、配置和复盘 Skill。 */
   async resetCompetitionDemoData() {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     const isZh = this.isCurrentLanguageZh();
     const message = isZh
       ? '这会清除全部比赛事件、证据、工具调用、审批、处置动作、审计回执和团队绑定。登录状态、角色卡、团队模板、模型配置、三平台 URL、全局 Skill 及企业启用关系会保留。是否继续？'
@@ -38862,17 +38880,21 @@ async handleRefreshSkills() {
           type: 'warning',
           closeOnClickModal: false
         });
+        if (!isCurrentCompetitionSession()) return false;
       } else if (!window.confirm(message)) {
         return;
       }
     } catch {
+      if (!isCurrentCompetitionSession()) return false;
       return;
     }
+    if (!isCurrentCompetitionSession()) return false;
     this.competitionBusyAction = 'reset';
     try {
       const snapshot = await this.getApplicationCompetitionRuntime().resetApplicationCompetitionDemoData({
         confirmation: 'RESET_DEMO_DATA'
       });
+      if (!isCurrentCompetitionSession()) return false;
       this.applyOperationsRuntimeSnapshot(snapshot);
       this.competitionAdapterMode = snapshot.adapterMode;
       this.competitionTeamRuntime = 'builtin';
@@ -38884,11 +38906,15 @@ async handleRefreshSkills() {
       this.competitionRollbackIdempotencyKey = '';
       this.competitionDemoScenarioMode = 'recovery';
       await this.loadCompetitionMemoryArtifacts(false);
+      if (!isCurrentCompetitionSession()) return false;
       showNotification(isZh ? '演示数据已重置' : 'Demo data reset', 'success');
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return false;
       showNotification(error?.message || (isZh ? '重置演示数据失败' : 'Failed to reset demo data'), 'error');
     } finally {
-      this.competitionBusyAction = '';
+      if (isCurrentCompetitionSession()) {
+        this.competitionBusyAction = '';
+      }
     }
   },
 
@@ -38959,6 +38985,7 @@ async handleRefreshSkills() {
       .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
       .replace(/(["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|passwd|secret|authorization)["']?\s*[:=]\s*)(?:["'][^"'\r\n]*["']|[^\s,;\r\n}]+)/gi, '$1[redacted]')
       .replace(/\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{16,})\b/g, '[redacted]')
+      .replace(/\b(?:oxdemo|oxlive)_[A-Za-z0-9_-]{24,}/gi, '[redacted]')
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, limit);
   },
 
@@ -39152,10 +39179,16 @@ async handleRefreshSkills() {
 
   /** 在正式指挥台打开真实详情；仅导航，不审批或执行。 / Open an actual run in Operations Control without approving or executing it. */
   async openOperationsRun(incidentId, approvalId = '') {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     if (!this.canUseEnterprise || this.competitionBusyAction) return false;
     if (this.enterpriseTab !== 'ops-control') await this.openEnterpriseTab('ops-control');
+    if (!isCurrentCompetitionSession()) return false;
     if (approvalId && !this.getOperationsPendingApprovals().some(/** 避免过期队列指向新的审批。 / Prevent stale queue entries from targeting a replacement approval. */ row => row.incident.incidentId === incidentId && row.approval.approvalId === approvalId)) return false;
     if (!await this.selectCompetitionIncident(incidentId)) return false;
+    if (!isCurrentCompetitionSession()) return false;
     if (approvalId && (this.getCompetitionActiveApproval()?.approvalId !== approvalId || this.getCompetitionActiveApproval()?.status !== 'PENDING')) return false;
     this.operationsDetailVisible = true;
     this.competitionRehearsalVisible = false;
@@ -39681,6 +39714,7 @@ async handleRefreshSkills() {
     const previous = this.operationsNoticeBaseline;
     const baseline = {};
     this.competitionSnapshot = snapshot;
+    this.syncEnterpriseApprovalNotices?.(snapshot);
     for (const incident of snapshot?.incidents || []) {
       const key = `${incident.workspaceId}:${incident.incidentId}:${incident.activeTraceId || ''}`;
       baseline[key] = incident.status;
@@ -39705,29 +39739,41 @@ async handleRefreshSkills() {
   scheduleOperationsRuntimePoll() {
     if (this.competitionProgressPollTimer || typeof window.setTimeout !== 'function' || !this.canUseEnterprise) return;
     const active = (this.competitionSnapshot?.incidents || []).some(/** 审批和活动任务需要继续观察。 / Keep observing approvals and active work. */ item => ['INVESTIGATING', 'MITIGATING', 'VERIFYING', 'AWAITING_APPROVAL'].includes(item.status));
-    if (!active && !this.competitionBusyAction && !['ops-control', 'competition'].includes(this.enterpriseTab)) return;
+    const generation = this.competitionProgressPollGeneration;
     this.competitionProgressPollTimer = window.setTimeout(/** 每次读取后重新判断页面和运行生命周期。 / Recheck page and run lifecycle after every read. */ async () => {
       this.competitionProgressPollTimer = null;
-      if (!this.canUseEnterprise) return;
-      try { this.applyOperationsRuntimeSnapshot(await this.getApplicationCompetitionRuntime().getApplicationCompetitionSnapshot()); }
-      catch { this.scheduleOperationsRuntimePoll(); }
-    }, 3000);
+      if (!this.canUseEnterprise || generation !== this.competitionProgressPollGeneration) return;
+      try {
+        const snapshot = await this.getApplicationCompetitionRuntime().getApplicationCompetitionSnapshot();
+        if (this.canUseEnterprise && generation === this.competitionProgressPollGeneration) this.applyOperationsRuntimeSnapshot(snapshot);
+      } catch {
+        if (generation === this.competitionProgressPollGeneration) this.scheduleOperationsRuntimePoll();
+      }
+    }, active || this.competitionBusyAction ? 3000 : 15000);
   },
 
   /** 通知定位前重新读取并严格核对三个身份，不批准或执行。 / Refresh and verify all three identities before navigation; never approve or execute. */
   async openOperationsNoticeTarget(target) {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     if (!this.canUseEnterprise || this.competitionBusyAction || !target?.incidentId || !target.workspaceId || !target.traceId) return false;
     try {
       const snapshot = await this.getApplicationCompetitionRuntime().getApplicationCompetitionSnapshot();
+      if (!isCurrentCompetitionSession()) return false;
       const incident = (snapshot?.incidents || []).find(/** 通知只能指向原运行。 / A notification can target only its original run. */ item => item.incidentId === target.incidentId && item.workspaceId === target.workspaceId && item.activeTraceId === target.traceId);
       if (!incident) return false;
       this.applyOperationsRuntimeSnapshot(snapshot);
       if (!await this.openOperationsRun(incident.incidentId)) return false;
+      if (!isCurrentCompetitionSession()) return false;
       const selected = this.getCompetitionActiveIncident();
       if (selected?.incidentId !== target.incidentId || selected.workspaceId !== target.workspaceId || selected.activeTraceId !== target.traceId) { this.operationsDetailVisible = false; return false; }
       this.activeMenu = 'enterprise';
       return true;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   },
 
   /** 返回指定或当前 Workspace 可使用的团队模板；输入可选 Workspace ID，返回启用模板列表。 */
@@ -39886,8 +39932,13 @@ async handleRefreshSkills() {
 
   /** 打开比赛 Staging 演练面板；无输入，仅在发布配置明确允许时展示演练控制。 */
   async openCompetitionRehearsal() {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     try {
       await this.loadCompetitionUiProfile();
+      if (!isCurrentCompetitionSession()) return false;
       if (!this.competitionRehearsalAvailable) {
         showNotification(
           this.isCurrentLanguageZh() ? '当前生产版本未启用比赛演练入口' : 'Competition rehearsal is disabled in this production build',
@@ -39897,6 +39948,7 @@ async handleRefreshSkills() {
       }
       this.competitionRehearsalVisible = true;
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return false;
       showNotification(error?.message || '比赛演练配置读取失败', 'error');
     }
   },
@@ -39930,6 +39982,10 @@ async handleRefreshSkills() {
 
   /** 按事件读取真实记忆，旧异步回执不能覆盖新选择。 / Read real incident memories without allowing stale async receipts to overwrite a new selection. */
   async loadCompetitionMemoryArtifacts(notifyOnError = false) {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     const incident = this.getCompetitionActiveIncident();
     const incidentId = incident?.incidentId || '';
     const generation = this.competitionMemoryGeneration = (this.competitionMemoryGeneration || 0) + 1;
@@ -39962,6 +40018,7 @@ async handleRefreshSkills() {
           limit: 100
         })
       ]);
+      if (!isCurrentCompetitionSession()) return [];
       if (generation !== this.competitionMemoryGeneration || this.getCompetitionActiveIncident()?.incidentId !== incidentId) return [];
       const taskId = `incident:${incidentId}`;
       this.competitionMemoryStatus = status;
@@ -39970,6 +40027,7 @@ async handleRefreshSkills() {
         .sort(/** 以实际提交时间排序。 / Sort by actual commit time. */ (left, right) => String(right.committedAtUtc).localeCompare(String(left.committedAtUtc)));
       return this.competitionMemoryRecords;
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return [];
       if (generation !== this.competitionMemoryGeneration || this.getCompetitionActiveIncident()?.incidentId !== incidentId) return [];
       this.competitionMemoryStatus = null;
       this.competitionMemoryRecords = [];
@@ -39977,7 +40035,9 @@ async handleRefreshSkills() {
       if (notifyOnError) showNotification(this.competitionMemoryError, 'error');
       return [];
     } finally {
-      if (generation === this.competitionMemoryGeneration && this.getCompetitionActiveIncident()?.incidentId === incidentId) this.competitionMemoryLoading = false;
+      if (isCurrentCompetitionSession()) {
+        if (generation === this.competitionMemoryGeneration && this.getCompetitionActiveIncident()?.incidentId === incidentId) this.competitionMemoryLoading = false;
+      }
     }
   },
 
@@ -40424,6 +40484,10 @@ async handleRefreshSkills() {
 
   /** 按明确草稿新增演示事件，保留旧事件并拦截不受支持的失败注入。 / Add an incident from the explicit draft, preserving older incidents and blocking unsupported failure injection. */
   async createCompetitionDemoIncident() {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     if (!this.competitionRehearsalAvailable || !this.competitionRehearsalVisible || this.competitionBusyAction || this.competitionLoading) return false;
     const failureRequested = this.competitionDemoScenarioMode === 'verification-failure' || this.competitionDemoForm?.scenario?.testDatasetRef === 'fixture://goai/verification-failure-v1';
     if (!['recovery', 'verification-failure'].includes(this.competitionDemoScenarioMode) || (failureRequested && (this.competitionDemoScenarioMode !== 'verification-failure' || !this.canUseCompetitionVerificationFailure()))) {
@@ -40446,6 +40510,7 @@ async handleRefreshSkills() {
         workspaceId: resolvedWorkspaceId,
         scenario
       });
+      if (!isCurrentCompetitionSession()) return false;
       if (!result?.incidentId || !result.snapshot?.incidents?.some(/** 确认创建回执包含真实事件。 / Require the created incident in the actual receipt. */ item => item.incidentId === result.incidentId)) throw new Error('The incident creation receipt is incomplete.');
       const previous = this.getCompetitionActiveIncident();
       if (previous) {
@@ -40457,21 +40522,29 @@ async handleRefreshSkills() {
       this.competitionApprovalReason = '';
       this.competitionRollbackIdempotencyKey = '';
       await this.loadCompetitionMemoryArtifacts(false);
+      if (!isCurrentCompetitionSession()) return false;
       showNotification('演示事件已创建', 'success');
       this.enterpriseTab = 'ops-control';
       this.operationsDetailVisible = true;
       this.competitionRehearsalVisible = false;
       return true;
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return false;
       showNotification(error?.message || '创建事件失败', 'error');
       return false;
     } finally {
-      this.competitionBusyAction = '';
+      if (isCurrentCompetitionSession()) {
+        this.competitionBusyAction = '';
+      }
     }
   },
 
   /** 启动九项跨域取证；无输入，发送当前 Team Runtime 与模板 ID 并刷新待审批状态。 */
   async runCompetitionInvestigation() {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     const incident = this.getCompetitionActiveIncident();
     if (!incident || this.competitionBusyAction) return;
     const blocker = this.getCompetitionInvestigationBlocker();
@@ -40483,18 +40556,27 @@ async handleRefreshSkills() {
         teamRuntime: this.competitionTeamRuntime,
         teamTemplateId: this.competitionTeamTemplateId || null
       });
+      if (!isCurrentCompetitionSession()) return false;
       this.applyOperationsRuntimeSnapshot(result.snapshot);
       showNotification('跨域取证已完成，等待人工审批', 'success');
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return false;
       await this.loadCompetitionSnapshot();
+      if (!isCurrentCompetitionSession()) return false;
       showNotification(error?.message || '跨域取证失败', 'error');
     } finally {
-      this.competitionBusyAction = '';
+      if (isCurrentCompetitionSession()) {
+        this.competitionBusyAction = '';
+      }
     }
   },
 
   /** 提交明确的审批模式，拒绝与失败不在界面续跑动作。 / Submit the explicit approval mode without continuing actions in the UI after rejection or failure. */
   async decideCompetitionApproval(decision) {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     const approval = this.getCompetitionActiveApproval();
     if (!approval || approval.status !== 'PENDING' || this.competitionBusyAction || !['APPROVED', 'REJECTED'].includes(decision)) return;
     const executionMode = decision === 'APPROVED' && this.competitionExecutionMode === 'automatic' ? 'automatic' : 'step';
@@ -40504,21 +40586,32 @@ async handleRefreshSkills() {
         approvalId: approval.approvalId,
         decision,
         reason: this.competitionApprovalReason,
-        executionMode
+        executionMode,
+        ...(typeof approval.planDigest === 'string' ? { expectedPlanDigest: approval.planDigest } : {})
       });
+      if (!isCurrentCompetitionSession()) return false;
       this.applyOperationsRuntimeSnapshot(result.snapshot);
       if (decision === 'APPROVED' && executionMode === 'automatic') await this.loadCompetitionMemoryArtifacts(false);
+      if (!isCurrentCompetitionSession()) return false;
       showNotification(decision === 'APPROVED' ? '处置审批已通过' : '处置审批已拒绝', decision === 'APPROVED' ? 'success' : 'warning');
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return false;
       await this.loadCompetitionSnapshot();
+      if (!isCurrentCompetitionSession()) return false;
       showNotification(error?.message || '审批提交失败', 'error');
     } finally {
-      this.competitionBusyAction = '';
+      if (isCurrentCompetitionSession()) {
+        this.competitionBusyAction = '';
+      }
     }
   },
 
   /** 执行回滚预检或正式动作；输入 dryRun，复用稳定幂等键并刷新审计状态。 */
   async executeCompetitionRollback(dryRun) {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     const approval = this.getCompetitionActiveApproval();
     if (!approval) return;
     if (!this.competitionRollbackIdempotencyKey || dryRun) {
@@ -40535,18 +40628,27 @@ async handleRefreshSkills() {
         idempotencyKey,
         dryRun: Boolean(dryRun)
       });
+      if (!isCurrentCompetitionSession()) return false;
       this.applyOperationsRuntimeSnapshot(result.snapshot);
       showNotification(dryRun ? '处置预检通过' : '处置动作已受理', 'success');
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return false;
       await this.loadCompetitionSnapshot();
+      if (!isCurrentCompetitionSession()) return false;
       showNotification(error?.message || '处置计划执行失败', 'error');
     } finally {
-      this.competitionBusyAction = '';
+      if (isCurrentCompetitionSession()) {
+        this.competitionBusyAction = '';
+      }
     }
   },
 
   /** 执行三项独立验证；无输入，使用不同验证人并刷新最终状态。 */
   async verifyCompetitionRemediation() {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     const action = this.getCompetitionActiveAction();
     if (!action) return;
     this.competitionBusyAction = 'verify';
@@ -40554,14 +40656,20 @@ async handleRefreshSkills() {
       const result = await this.getApplicationCompetitionRuntime().verifyApplicationCompetitionRemediation({
         actionId: action.actionId
       });
+      if (!isCurrentCompetitionSession()) return false;
       this.applyOperationsRuntimeSnapshot(result.snapshot);
       await this.loadCompetitionMemoryArtifacts(false);
+      if (!isCurrentCompetitionSession()) return false;
       showNotification('独立验证通过，事件已解决', 'success');
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return false;
       await this.loadCompetitionSnapshot();
+      if (!isCurrentCompetitionSession()) return false;
       showNotification(error?.message || '独立验证失败', 'error');
     } finally {
-      this.competitionBusyAction = '';
+      if (isCurrentCompetitionSession()) {
+        this.competitionBusyAction = '';
+      }
     }
   },
 
@@ -40591,16 +40699,24 @@ async handleRefreshSkills() {
 
   /** 切换 Fixture/Live Adapter；输入固定模式，持久化并刷新工作台。 */
   async setCompetitionAdapterMode(mode) {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     this.competitionBusyAction = 'adapter';
     try {
       const snapshot = await this.getApplicationCompetitionRuntime().setApplicationCompetitionAdapterMode({ mode });
+      if (!isCurrentCompetitionSession()) return false;
       this.applyOperationsRuntimeSnapshot(snapshot);
       this.competitionAdapterMode = snapshot.adapterMode;
       showNotification(mode === 'live' ? '已切换到 Live Adapter' : '已切换到 Fixture Adapter', 'success');
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return false;
       showNotification(error?.message || 'Adapter 切换失败', 'error');
     } finally {
-      this.competitionBusyAction = '';
+      if (isCurrentCompetitionSession()) {
+        this.competitionBusyAction = '';
+      }
     }
   },
 
@@ -43288,11 +43404,7 @@ async handleRefreshSkills() {
     this.enterpriseChatRecipientIds = this.enterpriseChatRecipientIds.filter(id => availableIds.has(String(id)));
     if (role?.id) {
       this.selected3DAgent = role;
-      this.enterpriseChatRecipientIds = [String(role.id)];
-      const mention = `@${String(role.name || '').trim()}`;
-      if (mention !== '@' && !this.enterpriseChatInput.includes(mention)) {
-        this.enterpriseChatInput = `${mention} ${this.enterpriseChatInput}`.trimStart();
-      }
+      this.addEnterpriseChatRecipient(role);
     }
     this.showSandboxChatPanel = true;
     await this.loadEnterpriseMessages({ scrollToBottom: true });
@@ -43341,6 +43453,7 @@ async handleRefreshSkills() {
     const request = ++this.enterpriseChatLoadGeneration;
     if (!scope.workspaceId) {
       this.enterpriseMessages = [];
+      this.enterpriseChatProjectionWarning = '';
       return [];
     }
     if (!options.silent) this.enterpriseChatLoading = true;
@@ -43358,6 +43471,8 @@ async handleRefreshSkills() {
       const added = nextMessages.filter(message => !previousIds.has(message.id)).length;
       this.enterpriseMessages = nextMessages;
       this.enterpriseChatLoadError = '';
+      this.enterpriseChatProjectionWarning = typeof result.projectionWarning === 'string'
+        ? result.projectionWarning : '';
       if (!nextMessages.some(message => message.id === this.enterpriseChatDetailId)) this.enterpriseChatDetailId = '';
       if (options.scrollToBottom || this.enterpriseChatPinned) this.scrollEnterpriseChatToBottom();
       else this.enterpriseChatNewCount += added;
@@ -43383,25 +43498,9 @@ async handleRefreshSkills() {
     });
   },
 
-  /** 切换一个 @员工；输入角色卡，更新接收 ID，并在首次选择时写入可见 @标记。 */
+  /** 同步切换可见提及和收件人身份。 Toggle a visible mention together with its recipient identity. */
   toggleEnterpriseChatRecipient(role) {
-    const roleId = String(role?.id || '').trim();
-    if (!roleId) return;
-    const selected = this.enterpriseChatRecipientIds.includes(roleId);
-    this.enterpriseChatRecipientIds = selected
-      ? this.enterpriseChatRecipientIds.filter(id => id !== roleId)
-      : [...this.enterpriseChatRecipientIds, roleId];
-    const mention = `@${String(role?.name || '').trim()}`;
-    if (selected && mention !== '@') {
-      this.enterpriseChatInput = this.enterpriseChatInput
-        .replace(`${mention} `, '')
-        .replace(mention, '')
-        .trimStart();
-    } else if (!selected) {
-      if (mention !== '@' && !this.enterpriseChatInput.includes(mention)) {
-        this.enterpriseChatInput = `${mention} ${this.enterpriseChatInput}`.trimStart();
-      }
-    }
+    return this.toggleEnterpriseChatMention(role);
   },
 
   /** 判断员工是否已被 @；输入角色 ID，返回当前接收列表中的选择状态。 */
@@ -43412,6 +43511,7 @@ async handleRefreshSkills() {
   /** 发布真实消息并只更新原范围的未改动草稿。 Publish a real message and update only its unchanged originating draft. */
   async sendEnterpriseMessage() {
     const scope = this.ensureEnterpriseChatScope();
+    this.reconcileEnterpriseChatMentions?.();
     const draft = String(this.enterpriseChatInput || '');
     const content = String(this.enterpriseChatInput || '').trim();
     if (!content || !scope.workspaceId || this.enterpriseChatSending || this.enterpriseChatTaskStarting) return;
@@ -43440,6 +43540,7 @@ async handleRefreshSkills() {
       if (this.enterpriseChatInput === draft) {
         this.enterpriseChatInput = '';
         this.enterpriseChatRecipientIds = [];
+        this.clearEnterpriseChatMentionState?.();
       }
       this.scrollEnterpriseChatToBottom();
     } catch (error) {
@@ -43453,7 +43554,12 @@ async handleRefreshSkills() {
 
   /** 从明确范围发起受控任务，切换后不覆盖新范围状态。 Start a governed task in an explicit scope without overwriting a later scope. */
   async startEnterpriseCompetitionTask() {
+    const sessionGeneration = this.competitionProgressPollGeneration;
+    const sessionAccountKey = this.enterpriseApprovalAccountKey;
+    /** 迟到响应不能修改切换后的账户界面。 / Late responses must not mutate the UI of a replacement account. */
+    const isCurrentCompetitionSession = () => sessionGeneration === this.competitionProgressPollGeneration && sessionAccountKey === this.enterpriseApprovalAccountKey;
     const scope = this.ensureEnterpriseChatScope();
+    this.reconcileEnterpriseChatMentions?.();
     const draft = String(this.enterpriseChatInput || '');
     const content = String(this.enterpriseChatInput || '').trim();
     const teamTemplateId = String(this.competitionTeamTemplateId || '').trim();
@@ -43475,6 +43581,7 @@ async handleRefreshSkills() {
         teamRuntime: this.competitionTeamRuntime,
         teamTemplateId: this.competitionTeamRuntime === 'agentteams' ? teamTemplateId : null,
       });
+      if (!isCurrentCompetitionSession()) return false;
       if (!this.isEnterpriseChatScopeCurrent(scope)) return;
       const incident = result?.snapshot?.incidents?.find(item => item.incidentId === result.incidentId && item.workspaceId === scope.workspaceId && (item.projectId || null) === scope.projectId);
       if (!incident) throw new Error(this.enterpriseChatText('任务未返回当前范围的可核验记录，草稿已保留。', 'No verifiable task record was returned for this scope. Your draft is preserved.'));
@@ -43488,17 +43595,23 @@ async handleRefreshSkills() {
       if (this.enterpriseChatInput === draft) {
         this.enterpriseChatInput = '';
         this.enterpriseChatRecipientIds = [];
+        this.clearEnterpriseChatMentionState?.();
       }
       await this.loadEnterpriseMessages({ scrollToBottom: true });
+      if (!isCurrentCompetitionSession()) return false;
     } catch (error) {
+      if (!isCurrentCompetitionSession()) return false;
       console.error('[Enterprise] Failed to start governed competition task:', error);
       this.setEnterpriseChatActionError(scope, error?.message || this.enterpriseChatText('协同任务发起失败', 'Failed to start task'));
       if (this.isEnterpriseChatScopeCurrent(scope)) {
         await this.loadEnterpriseMessages({ silent: true });
+        if (!isCurrentCompetitionSession()) return false;
       }
     } finally {
-      delete this.enterpriseChatPending[scope.key];
-      if (this.enterpriseChatScopeKey === scope.key) this.enterpriseChatTaskStarting = false;
+      if (isCurrentCompetitionSession()) {
+        delete this.enterpriseChatPending[scope.key];
+        if (this.enterpriseChatScopeKey === scope.key) this.enterpriseChatTaskStarting = false;
+      }
     }
   },
 
@@ -43754,12 +43867,26 @@ async handleRefreshSkills() {
     });
   },
 
-  /** 返回企业消息作者类型标签；输入消息，返回领导、员工或系统的本地化文本。 */
+  /** 保留绑定快照中的协作职责，同时区分企业用户和系统。 Preserve the bound collaboration role while distinguishing users and system notices. */
   getEnterpriseMessageSenderLabel(message) {
+    if (message?.senderType === 'agent' && message.collaboration?.teamRole) {
+      const roles = this.isCurrentLanguageZh()
+        ? { leader: '团队负责人', worker: '取证专员', verifier: '独立验证员' }
+        : { leader: 'Team leader', worker: 'Evidence worker', verifier: 'Independent verifier' };
+      if (roles[message.collaboration.teamRole]) return roles[message.collaboration.teamRole];
+    }
     const labels = this.isCurrentLanguageZh()
       ? { leader: '领导', agent: '员工', system: '系统' }
       : { leader: 'Leader', agent: 'Staff', system: 'System' };
     return labels[message?.senderType] || labels.system;
+  },
+
+  /** 旧治理失败卡已投递，业务失败仅由操作结果表达。 Legacy failed governance cards were delivered; their operation carries the business failure. */
+  getEnterpriseMessageDeliveryFailure(message) {
+    if (message?.status !== 'failed') return false;
+    return !(message.senderType === 'system'
+      && message.senderId === 'openxnet-governance'
+      && message.operation?.phase === 'FAILED');
   },
 
   /** 返回操作事件风险样式；输入 RK 等级，输出不依赖自由文本的固定类名。 */

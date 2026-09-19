@@ -33,9 +33,10 @@ function createHost(overrides = {}, browser = {}) {
     enterpriseMessages: [], enterpriseChatInput: '', enterpriseChatRecipientIds: [], enterpriseChatLoading: false, enterpriseChatSending: false, enterpriseChatTaskStarting: false,
     enterpriseWorkspaces: [], enterpriseProjects: [], staffRoles: [], competitionSnapshot: {}, competitionTeamRuntime: 'builtin',
     enterpriseCompetitionScenarioType: 'feature-drift',
+    /** 隔离任务快照接线，不调用其他页面的副作用。 Isolate task snapshot wiring without side effects in unrelated pages. */ applyOperationsRuntimeSnapshot(snapshot) { this.competitionSnapshot = snapshot; },
     /** 隔离测试夹具与断言回调。 Isolated test fixture or assertion callback. */ isCurrentLanguageZh() { return true; }, /** 隔离测试夹具与断言回调。 Isolated test fixture or assertion callback. */ $nextTick(callback) { if (callback) callback(); },
   };
-  for (const name of ['getEnterpriseChatWorkspaceId', 'getEnterpriseChatProjectId', 'loadEnterpriseMessages', 'scrollEnterpriseChatToBottom', 'sendEnterpriseMessage', 'startEnterpriseCompetitionTask', 'getEnterpriseMessageInvocations', 'getEnterpriseSandboxIncidents', 'getEnterpriseInvocationActorLabel', 'getEnterpriseInvocationEvidence', 'getEnterpriseInvocationReceipt', 'getEnterpriseInvocationDuration']) {
+  for (const name of ['getEnterpriseChatWorkspaceId', 'getEnterpriseChatProjectId', 'getEnterpriseChatAvailableStaff', 'getEnterpriseMessageDeliveryFailure', 'getEnterpriseMessageSenderLabel', 'loadEnterpriseMessages', 'scrollEnterpriseChatToBottom', 'sendEnterpriseMessage', 'startEnterpriseCompetitionTask', 'getEnterpriseMessageInvocations', 'getEnterpriseSandboxIncidents', 'getEnterpriseInvocationActorLabel', 'getEnterpriseInvocationEvidence', 'getEnterpriseInvocationReceipt', 'getEnterpriseInvocationDuration']) {
     const node = methods.find(/** 查找需要测试的真实方法。 Find the actual method under test. */ item => item.key?.name === name);
     host[name] = vm.runInContext(`({${source.slice(node.start, node.end)}})`, context)[name];
   }
@@ -241,4 +242,215 @@ test('VR projection keeps stable identity and parent announcements while excludi
   assert.equal(safe.messages[0].identity.name, 'Evidence'); assert.equal(safe.messages[0].identity.image, '/uploaded_files/a.png');
   assert.doesNotMatch(JSON.stringify(safe), /Public announcement|PRIVATE|Wrong identity/);
   assert.equal(host.getEnterpriseConversationProjection({ includeTextPreview: true }).messages[0].textPreview, 'Public announcement');
+});
+
+/** 创建真实宿主成员过滤和可控光标的输入夹具。 Create a composer fixture with actual host membership filtering and a controllable caret. */
+function createMentionHost(overrides = {}) {
+  const input = { tagName: 'TEXTAREA', value: '', selectionStart: 0, selectionEnd: 0, focused: false,
+    /** 记录实际插入后的光标。 Record the caret after insertion. */ setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
+    /** 记录选择后的焦点恢复。 Record focus restoration after selection. */ focus() { this.focused = true; },
+  };
+  const host = createHost({ sandboxCurrentProject: 'project-a', $refs: { enterpriseChatComposer: { textarea: input } },
+    enterpriseProjects: [{ id: 'project-a', workspaceId: 'workspace-a' }, { id: 'project-other', workspaceId: 'workspace-a' }, { id: 'project-b', workspaceId: 'workspace-b' }],
+    staffRoles: [
+      { id: 'leader', name: 'GOAI Leader', assignedWorkspace: 'workspace-a', projectId: 'project-a' },
+      { id: 'evidence', name: 'GOAI Evidence Worker', assignedWorkspace: 'workspace-a', projectId: 'project-a' },
+      { id: 'verifier', name: 'GOAI Independent Verifier', assignedWorkspace: 'workspace-a', projectId: 'project-a' },
+      { id: 'zh', name: '数据分析员', assignedWorkspace: 'workspace-a', projectId: 'project-a' },
+      { id: 'disabled', name: 'Disabled', assignedWorkspace: 'workspace-a', projectId: 'project-a', enabled: false },
+      { id: 'other-project', name: 'Other project', assignedWorkspace: 'workspace-a', projectId: 'project-other' },
+      { id: 'other-workspace', name: 'Foreign', assignedWorkspace: 'workspace-b', projectId: 'project-b' },
+    ], ...overrides });
+  return { host, input };
+}
+
+/** 模拟文本控件提交输入并更新真实光标。 Simulate the text control committing input and updating its caret. */
+function typeMentionText(host, input, text, cursor = text.length) {
+  input.value = text; input.selectionStart = cursor; input.selectionEnd = cursor;
+  host.handleEnterpriseComposerInput(text);
+}
+
+/** 创建可观察是否被消费的键盘事件。 Create a keyboard event that records whether the composer consumed it. */
+function mentionKey(key, extras = {}) {
+  return { key, prevented: false, stopped: false,
+    /** 记录按键默认行为被阻止。 Record prevention of the default key action. */ preventDefault() { this.prevented = true; },
+    /** 记录按键未冒泡到宿主快捷键。 Record suppression of host keyboard shortcuts. */ stopPropagation() { this.stopped = true; }, ...extras };
+}
+
+test('mention suggestions use scoped enabled staff and match Chinese and multiword names', /** 核验真实成员来源和名称筛选。 Verify actual membership and name matching. */ () => {
+  const { host, input } = createMentionHost();
+  typeMentionText(host, input, '@');
+  assert.equal(host.isEnterpriseMentionMenuVisible(), true);
+  assert.deepEqual(plain(host.getEnterpriseMentionCandidates().map(/** 提取身份用于断言。 Extract identities for assertions. */ role => role.id)), ['leader', 'evidence', 'verifier', 'zh']);
+  typeMentionText(host, input, '@goai evidence w');
+  assert.equal(host.getEnterpriseMentionCandidates()[0].id, 'evidence');
+  typeMentionText(host, input, '请@数据');
+  assert.equal(host.getEnterpriseMentionCandidates()[0].id, 'zh');
+  typeMentionText(host, input, 'mail@example.com');
+  assert.equal(host.isEnterpriseMentionMenuVisible(), false);
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), []);
+});
+
+test('arrows navigate and Enter or Tab select a member without sending', /** 核验候选按键不误发消息。 Verify suggestion keys cannot accidentally send a message. */ () => {
+  const { host, input } = createMentionHost(); let sends = 0;
+  host.sendEnterpriseMessage = /** 捕获发送次数。 Count sends. */ () => { sends += 1; };
+  typeMentionText(host, input, '@');
+  host.handleEnterpriseComposerKeydown(mentionKey('ArrowDown'));
+  assert.equal(host.enterpriseChatMentionIndex, 1);
+  host.handleEnterpriseComposerKeydown(mentionKey('ArrowUp'));
+  assert.equal(host.enterpriseChatMentionIndex, 0);
+  host.handleEnterpriseComposerKeydown(mentionKey('ArrowUp'));
+  assert.equal(host.enterpriseChatMentionIndex, 3);
+  host.handleEnterpriseComposerKeydown(mentionKey('Enter'));
+  assert.equal(sends, 0); assert.equal(host.enterpriseChatInput, '@数据分析员 ');
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), ['zh']);
+  typeMentionText(host, input, host.enterpriseChatInput + '@goai evidence');
+  host.handleEnterpriseComposerKeydown(mentionKey('Tab'));
+  assert.equal(sends, 0); assert.match(host.enterpriseChatInput, /@GOAI Evidence Worker $/);
+  const shifted = mentionKey('Enter', { shiftKey: true }); host.handleEnterpriseComposerKeydown(shifted);
+  assert.equal(shifted.prevented, false); assert.equal(sends, 0);
+  host.handleEnterpriseComposerKeydown(mentionKey('Enter'));
+  assert.equal(sends, 1);
+});
+
+test('pointer selection replaces only the query and preserves trailing text and caret', /** 核验鼠标选择的光标插入位置。 Verify pointer selection inserts at the caret. */ () => {
+  const { host, input } = createMentionHost();
+  typeMentionText(host, input, '请 @GOAI E 检查证据', 9);
+  assert.equal(host.enterpriseChatMentionQuery.query, 'GOAI E');
+  assert.equal(host.selectEnterpriseChatMention(host.getEnterpriseMentionCandidates()[0]), true);
+  assert.equal(host.enterpriseChatInput, '请 @GOAI Evidence Worker  检查证据');
+  assert.equal(input.selectionStart, '请 @GOAI Evidence Worker '.length);
+  assert.equal(input.focused, true);
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), ['evidence']);
+});
+
+test('explicit mentions survive surrounding edits but deletion or renaming cancels recipients', /** 核验编辑正文与接收人不会失联。 Verify edits cannot leave stale recipients behind. */ () => {
+  const { host, input } = createMentionHost();
+  typeMentionText(host, input, '@Evidence'); host.selectEnterpriseChatMention(host.getEnterpriseMentionCandidates()[0]);
+  typeMentionText(host, input, `请 ${host.enterpriseChatInput}`);
+  typeMentionText(host, input, `${host.enterpriseChatInput}检查数据`);
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), ['evidence']);
+  assert.equal(host.enterpriseChatMentions[0].start, 2);
+  typeMentionText(host, input, host.enterpriseChatInput.replace('Evidence', 'Unknown'));
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), []);
+  typeMentionText(host, input, '@GOAI Evidence Worker 请检查');
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), [], 'typing a full name is still plain text');
+  host.addEnterpriseChatRecipient(host.staffRoles[0]);
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), ['leader']);
+  host.removeEnterpriseChatRecipient(host.staffRoles[0]);
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), []);
+  assert.equal(host.enterpriseChatInput.includes('@GOAI Leader'), false);
+});
+
+test('IME confirmation never chooses a candidate or sends a draft', /** 核验中文输入法确认键仅作用于输入法。 Verify IME confirmation only affects composition. */ () => {
+  const { host, input } = createMentionHost(); let sends = 0;
+  host.sendEnterpriseMessage = /** 捕获发送次数。 Count sends. */ () => { sends += 1; };
+  typeMentionText(host, input, '@');
+  host.handleEnterpriseComposerComposition({ target: input }, true);
+  typeMentionText(host, input, '@shu');
+  host.handleEnterpriseComposerKeydown(mentionKey('Enter', { isComposing: true }));
+  assert.equal(sends, 0); assert.equal(host.isEnterpriseMentionMenuVisible(), false);
+  input.value = '@数据'; input.selectionStart = input.value.length; input.selectionEnd = input.value.length;
+  host.handleEnterpriseComposerComposition({ target: input }, false);
+  assert.equal(host.getEnterpriseMentionCandidates()[0].id, 'zh');
+  const ime = mentionKey('Enter', { keyCode: 229 }); host.handleEnterpriseComposerKeydown(ime);
+  assert.equal(ime.prevented, false); assert.deepEqual(plain(host.enterpriseChatRecipientIds), []);
+});
+
+test('escape and empty results stay recoverable without sending or inventing members', /** 核验空状态和关闭候选不会产生隐式动作。 Verify empty states and dismissal never create implicit actions. */ () => {
+  const { host, input } = createMentionHost(); let sends = 0;
+  host.sendEnterpriseMessage = /** 捕获发送次数。 Count sends. */ () => { sends += 1; };
+  typeMentionText(host, input, '@missing');
+  assert.equal(host.isEnterpriseMentionMenuVisible(), true); assert.equal(host.getEnterpriseMentionCandidates().length, 0);
+  host.handleEnterpriseComposerKeydown(mentionKey('Enter'));
+  assert.equal(sends, 0);
+  host.handleEnterpriseComposerKeydown(mentionKey('Escape'));
+  assert.equal(host.isEnterpriseMentionMenuVisible(), false); assert.equal(host.enterpriseChatInput, '@missing');
+  host.staffRoles = []; typeMentionText(host, input, '@');
+  assert.equal(host.getEnterpriseMentionMembers().length, 0); assert.equal(host.isEnterpriseMentionMenuVisible(), true);
+  assert.equal(host.selectEnterpriseChatMention({ id: 'invented', name: 'Invented' }), false);
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), []);
+});
+
+test('switching groups closes stale candidates and restores only that group explicit mentions', /** 核验群间草稿与提及范围隔离。 Verify group-specific drafts and mention isolation. */ () => {
+  const { host, input } = createMentionHost();
+  typeMentionText(host, input, '@Evidence'); host.selectEnterpriseChatMention(host.getEnterpriseMentionCandidates()[0]);
+  const saved = host.enterpriseChatInput;
+  typeMentionText(host, input, saved + '@');
+  const stale = host.getEnterpriseMentionCandidates()[0];
+  host.sandboxCurrentWs = 'workspace-b'; host.sandboxCurrentProject = 'project-b';
+  assert.equal(host.selectEnterpriseChatMention(stale), false);
+  host.ensureEnterpriseChatScope();
+  assert.equal(host.enterpriseChatInput, ''); assert.deepEqual(plain(host.enterpriseChatRecipientIds), []);
+  assert.equal(host.isEnterpriseMentionMenuVisible(), false);
+  typeMentionText(host, input, '@'); host.selectEnterpriseChatMention(host.getEnterpriseMentionCandidates()[0]);
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), ['other-workspace']);
+  host.sandboxCurrentWs = 'workspace-a'; host.sandboxCurrentProject = 'project-a'; host.ensureEnterpriseChatScope();
+  assert.equal(host.enterpriseChatInput, saved + '@'); assert.deepEqual(plain(host.enterpriseChatRecipientIds), ['evidence']);
+  assert.equal(host.isEnterpriseMentionMenuVisible(), false);
+  host.staffRoles[1].enabled = false; host.reconcileEnterpriseChatMentions();
+  assert.deepEqual(plain(host.enterpriseChatRecipientIds), []);
+});
+
+test('queued input and composition callbacks cannot reopen menus after a scope change', /** 核验延迟渲染回调不会跨群。 Verify delayed render callbacks cannot cross groups. */ () => {
+  const callbacks = [];
+  const { host, input } = createMentionHost({ /** 收集排队回调。 Collect queued callbacks. */ $nextTick(callback) { callbacks.push(callback); } });
+  typeMentionText(host, input, '@'); host.handleEnterpriseComposerComposition({ target: input }, false);
+  host.sandboxCurrentWs = 'workspace-b'; host.sandboxCurrentProject = 'project-b'; host.ensureEnterpriseChatScope();
+  for (const callback of callbacks) callback();
+  assert.equal(host.enterpriseChatInput, ''); assert.equal(host.isEnterpriseMentionMenuVisible(), false);
+});
+
+test('late composition completion cannot reopen suggestions after the composer loses focus', /** 核验输入法失焦结束不会重新弹出候选。 Verify IME completion after blur cannot reopen suggestions. */ () => {
+  const { host, input } = createMentionHost();
+  input.ownerDocument = { activeElement: input }; typeMentionText(host, input, '@');
+  assert.equal(host.isEnterpriseMentionMenuVisible(), true);
+  input.ownerDocument.activeElement = null;
+  host.handleEnterpriseComposerComposition({ target: input }, false);
+  assert.equal(host.isEnterpriseMentionMenuVisible(), false);
+});
+
+test('real send forwards only selected member IDs and remains a message rather than a task', /** 核验发送契约只携带显式选择且不启动任务。 Verify sends carry only explicit selections and never start tasks. */ async () => {
+  const requests = [];
+  const { host, input } = createMentionHost({
+    /** 提供隔离的真实消息契约边界。 Provide the isolated real message contract boundary. */ getApplicationEnterpriseRuntime() {
+      return { /** 捕获发送数据并返回当前群回执。 Capture the request and return a current-group receipt. */ async postApplicationEnterpriseMessage(request) {
+        requests.push(plain(request));
+        return { success: true, message: message('sent-' + requests.length, request.workspaceId, request.projectId) };
+      } };
+    },
+    /** 若普通消息错误进入任务通道则立即失败。 Fail if a normal message enters the task channel. */ getApplicationCompetitionRuntime() { throw new Error('A mention cannot start a task'); },
+  });
+  typeMentionText(host, input, '@Evidence'); host.selectEnterpriseChatMention(host.getEnterpriseMentionCandidates()[0]);
+  await host.sendEnterpriseMessage();
+  assert.deepEqual(requests[0].recipientIds, ['evidence']); assert.equal(requests[0].taskId, null);
+  assert.equal(host.enterpriseChatMentions.length, 0); assert.equal(host.enterpriseChatInput, '');
+  typeMentionText(host, input, '@GOAI Leader 请检查'); host.enterpriseChatRecipientIds = ['leader'];
+  await host.sendEnterpriseMessage();
+  assert.deepEqual(requests[1].recipientIds, [], 'a raw recipient ID without an explicit selection must not survive');
+});
+
+test('governance business failure is distinct from a failed message delivery', /** 区分业务验证失败与真实发送失败。 Distinguish business verification failure from actual delivery failure. */ () => {
+  const host = createHost();
+  const governance = message('governance', 'workspace-a', null, { senderType: 'system', senderId: 'openxnet-governance', status: 'failed', operation: { phase: 'FAILED' } });
+  assert.equal(host.getEnterpriseMessageDeliveryFailure(governance), false);
+  assert.equal(host.getEnterpriseMessageDeliveryFailure(message('failed-user', 'workspace-a', null, { senderType: 'leader', status: 'failed' })), true);
+  assert.equal(host.getEnterpriseMessageDeliveryFailure({ ...governance, senderId: 'another-system' }), true);
+  assert.equal(host.getEnterpriseMessageDeliveryFailure({ ...governance, operation: null }), true);
+});
+
+test('collaboration messages show scoped provenance and distinct role icons without inventing dialogue', /** 核验真实角色来源、身份和展开。 Verify real role provenance, identities and expansion. */ () => {
+  const host = createHost();
+  const collaboration = { kind: 'result', incidentId: 'incident-a', bindingId: 'binding-a', decisionId: 'decision-a', stage: 'VERIFICATION_CONCLUSION', teamRole: 'verifier', decision: 'REJECTED', evidenceIds: ['evidence-a'], toolNames: ['read-state'], eventId: 'event-a', outputDigest: 'sha256-test' };
+  const recorded = message('decision', 'workspace-a', null, { traceId: 'trace-a', taskId: 'task-a', collaboration });
+  assert.equal(host.getEnterpriseCollaborationSource(recorded).stage, '独立验证');
+  assert.match(host.getEnterpriseCollaborationSource(recorded).label, /阶段结果/);
+  const identity = host.getEnterpriseMessageIdentity(recorded);
+  assert.equal(identity.icon, 'fa-solid fa-shield-halved'); assert.equal(identity.name, 'Evidence');
+  host.toggleEnterpriseMessageDetails(recorded); assert.equal(host.enterpriseChatDetailId, 'decision');
+  host.toggleEnterpriseMessageDetails(recorded); assert.equal(host.enterpriseChatDetailId, '');
+  assert.equal(host.getEnterpriseCollaborationSource({ ...recorded, workspaceId: 'workspace-b' }), null);
+  assert.equal(host.getEnterpriseCollaborationSource({ ...recorded, taskId: null }), null);
+  assert.equal(host.getEnterpriseCollaborationSource({ ...recorded, senderType: 'system' }), null);
+  assert.equal(host.getEnterpriseCollaborationSource({ ...recorded, collaboration: { ...collaboration, stage: 'MADE_UP' } }), null);
 });

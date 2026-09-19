@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -11,6 +11,7 @@ import {
   type ApplicationEnterpriseKnowledgeBaseVersionListResult,
   type ApplicationEnterpriseKnowledgeBaseWriteResult,
   type ApplicationEnterpriseMessage,
+  type ApplicationEnterpriseAgentConversationSource,
   type ApplicationEnterpriseMessageKind,
   type ApplicationEnterpriseMessageListResult,
   type ApplicationEnterpriseMessageSenderType,
@@ -108,6 +109,8 @@ export interface ApplicationEnterpriseRuntimeOptions {
   readonly now?: () => Date;
   readonly createId?: () => string;
   readonly resolveLeaderIdentity?: () => ApplicationEnterpriseLeaderIdentity;
+  /** 读取群消息前补齐同范围的可信运行记录。 / Reconcile trusted run records in the same scope before listing messages. */
+  readonly reconcileAgentConversations?: (scope: { readonly workspaceId: string; readonly projectId: string | null }) => Promise<{ readonly failed: number }>;
 }
 
 /** Main 从认证边界解析出的企业领导公开身份。 */
@@ -232,6 +235,23 @@ function requireEnterpriseId(value: unknown, label: string): string {
   const normalized = requireText(value, label, 128, true);
   if (!ENTERPRISE_ID_PATTERN.test(normalized)) throw new Error(`${label} is invalid.`);
   return normalized;
+}
+
+/** 读取白名单协作来源，丢弃任何额外内部内容。 / Read allowlisted collaboration provenance without retaining extra internal fields. */
+function parseAgentConversationSource(value: unknown): ApplicationEnterpriseAgentConversationSource | null {
+  if (value === undefined || value === null) return null;
+  if (!isPlainRecord(value) || !["handoff", "result"].includes(String(value.kind))
+    || !["INVESTIGATION_PLAN", "INVESTIGATION_CONCLUSION", "VERIFICATION_CONCLUSION"].includes(String(value.stage))
+    || !["leader", "worker", "verifier"].includes(String(value.teamRole))
+    || !/^[a-f0-9]{64}$/iu.test(String(value.outputDigest))) throw new Error("Enterprise Agent conversation source is invalid.");
+  return {
+    kind: value.kind as ApplicationEnterpriseAgentConversationSource["kind"],
+    incidentId: requireEnterpriseId(value.incidentId, "Source incident id"), bindingId: requireEnterpriseId(value.bindingId, "Source binding id"),
+    decisionId: requireEnterpriseId(value.decisionId, "Source decision id"), stage: value.stage as ApplicationEnterpriseAgentConversationSource["stage"],
+    teamRole: value.teamRole as ApplicationEnterpriseAgentConversationSource["teamRole"], decision: requireText(value.decision, "Source decision", 64, true),
+    evidenceIds: requireTextList(value.evidenceIds, "Source evidence ids"), toolNames: requireTextList(value.toolNames, "Source tool names"),
+    eventId: value.eventId === null ? null : requireText(value.eventId, "Source event id", 512, true), outputDigest: String(value.outputDigest),
+  };
 }
 
 /** 读取安全数字；输入值、默认值和范围，返回范围内数值，非法时使用默认值。 */
@@ -661,17 +681,72 @@ export class ApplicationEnterpriseRuntimeService {
   public async listMessages(request: unknown): Promise<ApplicationEnterpriseMessageListResult> {
     const scope = this.parseMessageScope(request);
     await this.requireMessageScope(scope.workspaceId, scope.projectId);
+    let projectionWarning: string | undefined;
+    try {
+      const result = await this.options.reconcileAgentConversations?.(scope);
+      if (result?.failed) projectionWarning = "部分 Agent 运行记录尚未同步到协作群，刷新后可重试；任务与审批结果保持不变。";
+    } catch {
+      projectionWarning = "Agent 运行记录暂未同步到协作群，请刷新重试；已保存的群消息仍可查看。";
+      this.logger.warn("Enterprise Agent conversation reconciliation failed.");
+    }
     const messages = (await this.readMessages()).filter((message) => (
       message.workspaceId === scope.workspaceId
       && (scope.projectId === null
         ? message.projectId === null
-        : message.projectId === null || message.projectId === scope.projectId)
+        : (message.projectId === null && !message.collaboration) || message.projectId === scope.projectId)
     ));
     return {
       schema: APPLICATION_ENTERPRISE_RUNTIME_SCHEMA,
       success: true,
       messages: messages.slice(-scope.limit),
+      ...(projectionWarning ? { projectionWarning } : {}),
     };
+  }
+
+  /** 原子幂等写入 Main 根据不可变运行快照生成的 Agent 消息，不注册为公开 IPC。 / Atomically persist Main-projected Agent messages idempotently; never expose this method through IPC. */
+  public recordAgentConversationProjection(inputs: readonly ApplicationEnterpriseMessage[]): Promise<number> {
+    return this.enqueueOperation(async () => {
+      if (!Array.isArray(inputs) || inputs.length > 2) throw new Error("Enterprise Agent projection batch is invalid.");
+      let messages = [...await this.readMessages()];
+      let written = 0;
+      for (const rawInput of inputs) {
+        const input: ApplicationEnterpriseMessage = rawInput;
+        const workspaceId = requireEnterpriseId(input.workspaceId, "Message workspace id");
+        const projectId = this.parseOptionalId(input.projectId, "Message project id");
+        await this.requireMessageScope(workspaceId, projectId);
+        const collaboration = parseAgentConversationSource(input.collaboration);
+        if (!collaboration || input.senderType !== "agent" || !input.id.startsWith("agentmsg_") || !input.taskId || !input.traceId) throw new Error("Enterprise Agent projection identity is invalid.");
+        const expectedId = `agentmsg_${createHash("sha256").update(JSON.stringify([workspaceId, projectId, collaboration.incidentId, input.traceId, input.taskId, collaboration.decisionId, collaboration.kind])).digest("hex")}`;
+        if (input.id !== expectedId) throw new Error("Enterprise Agent projection source key is invalid.");
+        const recipientIds = this.parseRecipientIds(input.recipientIds);
+        const mentions = input.mentions.map(/** 保留经过运行绑定验证的历史收件人快照。 / Preserve historical recipients validated against the run binding. */ item => ({ roleCardId: requireEnterpriseId(item.roleCardId, "Mention role id"), name: requireText(item.name, "Mention name", 256, true) }));
+        if (mentions.length !== recipientIds.length || mentions.some(/** 固定收件人与快照顺序。 / Bind recipient order to snapshots. */ (item, index) => item.roleCardId !== recipientIds[index])) throw new Error("Enterprise Agent projection recipients are invalid.");
+        const message: ApplicationEnterpriseMessage = {
+          id: requireEnterpriseId(input.id, "Message id"), workspaceId, projectId,
+          taskId: this.parseOptionalReference(input.taskId, "Message task id"), traceId: this.parseOptionalReference(input.traceId, "Message trace id"),
+          senderType: "agent", senderId: requireEnterpriseId(input.senderId, "Agent sender id"), senderName: requireText(input.senderName, "Agent sender name", 256, true),
+          recipientIds, mentions, kind: "text", content: requireText(input.content, "Message content", 16_000, true), operation: null, status: "delivered",
+          createdAt: readTimestamp(input.createdAt, this.now().toISOString()), collaboration,
+        };
+        const existing = messages.find(/** 稳定来源键保证刷新和重启不重复。 / Stable source keys prevent refresh/restart duplicates. */ item => item.id === message.id);
+        if (existing) {
+          if (existing.senderId !== message.senderId || existing.workspaceId !== workspaceId || existing.projectId !== projectId
+            || existing.taskId !== message.taskId || existing.traceId !== message.traceId || existing.collaboration?.outputDigest !== collaboration.outputDigest) throw new Error("Enterprise Agent projection conflicts with persisted provenance.");
+          continue;
+        }
+        messages = messages.filter(/** 仅替换完全同源的旧 Agent 投影，保留普通留言与治理通知。 / Replace only exact-source legacy Agent projections, preserving chat and governance messages. */ item => !(
+          !item.collaboration && item.senderType === "agent" && item.workspaceId === workspaceId && item.projectId === projectId
+          && item.traceId === message.traceId && item.taskId === message.taskId && item.senderId === message.senderId
+          && ((collaboration.eventId && item.content.startsWith(`[Matrix ${collaboration.kind === "handoff" ? "ROUTE_RESPONSE" : "TASK_RESPONSE"} · ${collaboration.eventId}]`))
+            || (collaboration.kind === "result" && item.content === message.content.split("\n").slice(1).join("\n")))
+        ));
+        if (messages.length >= MAX_ENTERPRISE_MESSAGES) throw new Error("Enterprise message audit capacity is full.");
+        messages.push(message);
+        written += 1;
+      }
+      if (written) await this.writeJsonFile(this.messagePath, messages, "Enterprise messages");
+      return written;
+    });
   }
 
   /** 发布企业领导消息；输入内容和接收员工 ID，由 Main 绑定认证身份、时间与 @员工快照。 */
@@ -1374,6 +1449,7 @@ export class ApplicationEnterpriseRuntimeService {
           operation,
           status,
           createdAt: readTimestamp(value.createdAt, this.now().toISOString()),
+          ...(value.collaboration ? { collaboration: parseAgentConversationSource(value.collaboration) } : {}),
         }];
       } catch (error) {
         this.logger.warn("Ignored invalid enterprise message.", error);

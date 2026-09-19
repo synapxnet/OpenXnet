@@ -833,7 +833,7 @@ handleAction(item, extraValue) {
 // ==========================================
 const app = Vue.createApp({
   render: window.openxnetCompiledRender,
-  mixins: [window.OpenXnetSkinWorkbench || {}],
+  mixins: [window.OpenXnetSkinWorkbench || {}, window.OpenXnetEnterpriseApprovalLifecycle || {}],
   data() {
     return vue_data
   },

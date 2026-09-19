@@ -13,6 +13,7 @@
 const { createHmac } = require("node:crypto");
 const { PublicError } = require("./contracts");
 const { teamName } = require("./agentteams-cli");
+const { FeatureDriftPreparation } = require("./feature-drift-preparation");
 const { canonical, digest, exact, identifier, reject } = require("./live-access-store");
 const catalog = require("./live-tool-catalog");
 const PLATFORMS = ["aiops", "dataops", "mlops"];
@@ -111,6 +112,7 @@ class LiveGateway {
     this.fetch = options.fetch || fetch;
     this.now = options.now || (() => new Date());
     this.allowHttp = options.allowHttp === true;
+    this.featureDrift = options.featureDrift || null;
   }
 
   /** 有界读取响应，不跟随重定向也不泄漏上游错误体。 / Read bounded responses without redirects or leaked upstream error bodies. */
@@ -290,13 +292,20 @@ class LiveGateway {
           if (request.teamName !== run.teamName || request.teamTemplateId !== run.teamTemplateId || request.teamTemplateVersion !== run.teamTemplateVersion) reject("LIVE_TEAM_MISMATCH");
           const scenario = request.context.incident.scenario.scenarioType;
           if (!grant.allowedScenarios.includes(scenario) || run.scenario && run.scenario !== scenario) reject("LIVE_SCENARIO_FORBIDDEN");
+          if (this.featureDrift && scenario === "feature-drift") {
+            const context = request.context.incident.scenario;
+            this.store.resources(grant, { deploymentUid: context.deploymentUid, assetUid: context.assetUid });
+          }
           if (request.context.availableTools.some(tool => !grant.allowedTools.includes(tool))) reject("LIVE_TOOL_FORBIDDEN");
           const contexts = request.context.residentContexts;
           if (!Array.isArray(contexts) || contexts.length !== 3 || contexts.some(item => item.source !== "LIVE-STAGING" || item.environment !== "staging")) reject("LIVE_MODE_FORBIDDEN");
           if (request.stage === "INVESTIGATION_CONCLUSION" && run.plan && canonical(run.plan) !== canonical(request.context.proposedPlan)) reject("LIVE_PLAN_CONFLICT", 409);
         }
       },
-      /** 使用授权ID隔离团队名称，禁止客户端选择其他授权团队。 / Isolate team names by grant ID and prevent cross-grant team selection. */ grantId => operation({ ...request, accessGrantId: grantId }),
+      /** 授权后准备隔离演练环境，再以授权ID隔离团队。 / Prepare isolated staging after authorization, then isolate the team by grant ID. */ async grantId => {
+        if (this.featureDrift && operationName === "dispatch" && request.stage === "INVESTIGATION_PLAN" && request.context.incident.scenario.scenarioType === "feature-drift") await this.featureDrift.ensure(request);
+        return operation({ ...request, accessGrantId: grantId });
+      },
       /** 阶段成功后固化运行、场景和被接受的冻结计划。 / Persist the run, scenario and accepted frozen plan after a successful stage. */ (grant, result) => {
         if (operationName === "prepare") grant.runs[request.traceId] ||= { incidentId: request.incidentId, teamTemplateId: request.teamTemplateId, teamTemplateVersion: request.teamTemplateVersion,
           teamName: result.teamName || teamName({ ...request, accessGrantId: grant.id }), memberDigest: digest(canonical(request.members)), members: request.members.map(member => ({ roleCardId: member.roleCardId, teamRole: member.teamRole })) };
@@ -322,7 +331,8 @@ function createLiveGateway(environment, store) {
     return [platform, { baseUrl: environment[`${prefix}_BASE_URL`] || "", identityUrl: environment[`${prefix}_IDENTITY_URL`] || "",
       secret: environment[`${prefix}_DELEGATION_SECRET`] || "", token: environment[`${prefix}_ADAPTER_TOKEN`] || "" }];
   }));
-  return new LiveGateway({ store, platforms, approval: { baseUrl: environment.OPENXNET_LIVE_APPROVAL_BASE_URL || "", token: environment.OPENXNET_LIVE_APPROVAL_ISSUER_TOKEN || "" }, allowHttp: environment.OPENXNET_LIVE_ALLOW_HTTP_UPSTREAMS === "1" });
+  const featureDrift = environment.OPENXNET_FEATURE_DRIFT_REAL_ENABLED === "1" ? new FeatureDriftPreparation({ baseUrl: environment.OPENXNET_FEATURE_DRIFT_RUNTIME_URL || "", tokenFile: environment.OPENXNET_FEATURE_DRIFT_TOKEN_FILE || "", faultPlanFile: environment.OPENXNET_FEATURE_DRIFT_FAULT_PLAN_FILE || "", allowHttp: environment.OPENXNET_LIVE_ALLOW_HTTP_UPSTREAMS === "1" }) : null;
+  return new LiveGateway({ store, platforms, featureDrift, approval: { baseUrl: environment.OPENXNET_LIVE_APPROVAL_BASE_URL || "", token: environment.OPENXNET_LIVE_APPROVAL_ISSUER_TOKEN || "" }, allowHttp: environment.OPENXNET_LIVE_ALLOW_HTTP_UPSTREAMS === "1" });
 }
 
 module.exports = { LiveGateway, createLiveGateway, parseToolRequest, planScopes, schemaValue, endpoint };

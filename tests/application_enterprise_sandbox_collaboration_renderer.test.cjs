@@ -4,6 +4,7 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const THREE = require("../static/libs/three/build/three.cjs");
+const enterpriseChatExperience = require("../static/js/openxnet-enterprise-chat-experience.js");
 
 /** 读取仓库内 UTF-8 文本；输入相对路径，返回完整内容。 */
 function readProjectFile(relativePath) {
@@ -22,6 +23,33 @@ function loadSandboxMethod(name, nextName, globals = {}) {
   const end = source.indexOf(`  ${nextName}(`, start);
   assert.ok(start >= 0 && end > start);
   return vm.runInNewContext(`({${source.slice(start, end)}})`, globals)[name.replace(/^async /, "")];
+}
+
+/** 使用真实提及方法构建隔离输入宿主，不发送企业消息。 / Build an isolated composer with real mention methods without sending enterprise messages. */
+function createEnterpriseComposerHost(overrides = {}) {
+  const input = {
+    tagName: "TEXTAREA", selectionStart: 0, selectionEnd: 0,
+    /** 模拟输入控件聚焦，无外部副作用。 / Simulate composer focus without external side effects. */
+    focus() {},
+    /** 保存真实方法要求的光标范围。 / Store the caret range requested by the real methods. */
+    setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
+  };
+  const app = {
+    ...enterpriseChatExperience.createState(), ...enterpriseChatExperience.methods,
+    enterpriseChatInput: "", enterpriseChatRecipientIds: [], enterpriseMessages: [], enterpriseChatSending: false, enterpriseChatTaskStarting: false,
+    $refs: { enterpriseChatComposer: { textarea: input } },
+    /** 提供固定隔离空间。 / Provide the fixed isolated workspace. */
+    getEnterpriseChatWorkspaceId() { return "workspace-current"; },
+    /** 保留空间公告群范围。 / Preserve the workspace announcement scope. */
+    getEnterpriseChatProjectId() { return null; },
+    /** 只提供当前群合法成员。 / Provide valid members of the current group only. */
+    getEnterpriseChatAvailableStaff() { return [{ id: "staff-one", name: "Alex", enabled: true }]; },
+    /** 立即执行隔离渲染回调。 / Execute isolated rendering callbacks immediately. */
+    $nextTick(callback) { callback(); },
+    ...overrides,
+  };
+  app.ensureEnterpriseChatScope();
+  return { app, input };
 }
 
 test("opening a project form from the compact directory reveals its stage and preserves workspace scope", () => {
@@ -63,25 +91,22 @@ test("opening enterprise chat from compact navigation reveals it before messages
   const open = loadSandboxMethod("async openEnterpriseChat", "closeEnterpriseChat", {
     document: { querySelector: () => null },
   });
-  const app = {
+  const { app } = createEnterpriseComposerHost({
     sandboxNavigatorOpen: true,
     sandboxDetailsOpen: true,
-    enterpriseChatRecipientIds: [],
     enterpriseChatInput: "draft",
-    getEnterpriseChatWorkspaceId: () => "workspace-current",
-    getEnterpriseChatAvailableStaff: () => [{ id: "staff-one", name: "Alex" }],
     async loadEnterpriseMessages() {
       assert.equal(this.sandboxNavigatorOpen, false);
       assert.equal(this.sandboxDetailsOpen, false);
       assert.equal(this.showSandboxChatPanel, true);
     },
     startEnterpriseChatRefresh() {},
-    $nextTick: callback => callback(),
-  };
+  });
   await open.call(app, { id: "staff-one", name: "Alex" });
   assert.equal(app.selected3DAgent.id, "staff-one");
   assert.deepEqual(Array.from(app.enterpriseChatRecipientIds), ["staff-one"]);
   assert.equal(app.enterpriseChatInput, "@Alex draft");
+  assert.deepEqual(app.enterpriseChatMentions, [{ id: "staff-one", text: "@Alex", start: 0, end: 5 }]);
 });
 
 test("leaving the sandbox releases its scene before switching enterprise modules", async () => {
@@ -333,7 +358,34 @@ test("enterprise sandbox persists project floors and isolates auditable group ch
   assert.match(chatBlock, /getEnterpriseOperationDecisionLabel\(message\.operation\.decision\)/u);
   assert.match(chatBlock, /message\.operation\.toolNames/u);
   assert.match(chatBlock, /message\.operation\.evidenceIds/u);
-  assert.match(chatBlock, /@keydown\.enter\.exact="handleEnterpriseComposerEnter"/u);
+  assert.match(chatBlock, /@keydown="handleEnterpriseComposerKeydown"/u);
+  assert.doesNotMatch(chatBlock, /@keydown\.enter(?:\.[a-z]+)*=/u);
+  let sentMessages = 0;
+  const { app: composer, input } = createEnterpriseComposerHost({
+    /** 统计发送调用，不连接真实消息服务。 / Count send calls without connecting to the real message service. */
+    sendEnterpriseMessage() { sentMessages += 1; },
+  });
+  input.selectionStart = 1; input.selectionEnd = 1;
+  composer.handleEnterpriseComposerInput("@");
+  assert.equal(composer.isEnterpriseMentionMenuVisible(), true);
+  const enter = {
+    key: "Enter", prevented: false, stopped: false,
+    /** 记录候选消费默认动作。 / Record the picker consuming the default action. */
+    preventDefault() { this.prevented = true; },
+    /** 记录候选阻止事件冒泡。 / Record the picker stopping propagation. */
+    stopPropagation() { this.stopped = true; },
+  };
+  composer.handleEnterpriseComposerKeydown(enter);
+  assert.equal(enter.prevented, true);
+  assert.equal(enter.stopped, true);
+  assert.equal(composer.enterpriseChatInput, "@Alex ");
+  assert.deepEqual(composer.enterpriseChatRecipientIds, ["staff-one"]);
+  assert.equal(composer.isEnterpriseMentionMenuVisible(), false);
+  assert.equal(sentMessages, 0, "Enter must select a member without sending the draft");
+  composer.handleEnterpriseComposerKeydown({ ...enter, shiftKey: true });
+  assert.equal(sentMessages, 0, "Shift+Enter remains a newline after the picker closes");
+  composer.handleEnterpriseComposerKeydown(enter);
+  assert.equal(sentMessages, 1, "A separate Enter sends only after the picker closes");
   assert.match(chatBlock, /@click="startEnterpriseCompetitionTask\(\)"/u);
   assert.doesNotMatch(chatBlock, /v-for="\(message, index\) in messages"/u);
   assert.doesNotMatch(chatBlock, /v-model="userInput"/u);

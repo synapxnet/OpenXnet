@@ -88,7 +88,8 @@ class WindowFixture extends EventEmitter {
 /** 连接真实菜单、场景、preload和主进程IPC，外部依赖全部隔离。 / Connect actual menu, scene, preload, and main IPC with isolated external dependencies. */
 function createHarness(state = 'maximized') {
   const win = new WindowFixture(state); const handlers = {}; const timers = []; const requests = [];
-  const documentNode = { classList: { /** 页面类名更新不改变窗口。 / Page class changes do not mutate native windows. */ toggle() {} } };
+  const documentNode = { scrollTop: 73, classList: { /** 页面类名更新不改变窗口。 / Page class changes do not mutate native windows. */ toggle() {} } };
+  const contentPanel = { scrollTop: 420 };
   const context = vm.createContext({
     console, process: { platform: 'win32' }, mainWindow: win, dynamicIslandWindow: null, floatingTaskHudWindow: null,
     MAIN_WINDOW_MIN_WIDTH: 1024, MAIN_WINDOW_MIN_HEIGHT: 700, isMac: false,
@@ -98,7 +99,10 @@ function createHarness(state = 'maximized') {
     /** 仅保留原有尺寸限制。 / Retain the existing size limits. */ clampDynamicIslandMetric(value, minimum, maximum, fallback) { return Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, value)) : fallback; },
     /** 排队定时回调而不等待真实时间。 / Queue callbacks without waiting on wall time. */ setTimeout(callback) { timers.push(callback); return timers.length; },
     /** 不执行任何动画。 / Do not execute animations. */ cancelAnimationFrame() {},
-    document: { documentElement: documentNode, body: documentNode, /** 隔离事件清理。 / Isolate event cleanup. */ removeEventListener() {} },
+    document: { documentElement: documentNode, body: documentNode, /** 隔离事件清理。 / Isolate event cleanup. */ removeEventListener() {},
+      /** 只允许真实导航方法定位内容面板。 / Allow the real navigation method to locate only the content panel. */
+      querySelector(selector) { assert.equal(selector, '.ox-enterprise-detail-content'); return contentPanel; },
+    },
     ipcMain: { /** 注册源码中的真实IPC处理器。 / Register the actual IPC handler from source. */ handle(name, callback) { handlers[name] = callback; } },
     ipcRenderer: { /** 将preload请求转交真实主进程处理器。 / Forward preload requests to the actual main handler. */ invoke(channel, payload) { requests.push([channel, payload]); return Promise.resolve(handlers[channel]({ sender: win.webContents }, payload)); } },
     window: { /** 隔离页面事件清理。 / Isolate page event cleanup. */ removeEventListener() {} },
@@ -129,6 +133,8 @@ function createHarness(state = 'maximized') {
     /** 不创建或调整真实画布。 / Never create or resize a real canvas. */ resize() {},
   });
   const host = { enterpriseTab: 'enterprise-sandbox', canUseEnterprise: true, enterprise3DScene: scene,
+    /** 保留渲染后回调语义，让真实内容滚动逻辑执行。 / Preserve post-render callback semantics so the real content scrolling logic runs. */
+    $nextTick(callback) { if (callback) timers.push(callback); return Promise.resolve(); },
     /** 不调用真实会话服务。 / Do not call a real conversation service. */ closeEnterpriseChat() {},
     /** 不请求真实工作空间。 / Do not request real workspaces. */ async loadWorkspaceEnvs() { this.workspacesLoaded = true; },
   };
@@ -136,7 +142,7 @@ function createHarness(state = 'maximized') {
     const node = findNode(hostAst, /** 查找真实宿主方法。 / Find the actual host method. */ item => item.type === 'ObjectMethod' && item.key?.name === name);
     assert.ok(node, name); host[name] = vm.runInContext('({' + hostSource.slice(node.start, node.end) + '})', context)[name];
   }
-  return { win, handlers, requests, scene, host, context, /** 立即执行排队回调。 / Execute queued callbacks immediately. */ flushTimers() { while (timers.length) timers.shift()(); } };
+  return { win, handlers, requests, scene, host, context, documentNode, contentPanel, /** 立即执行排队回调。 / Execute queued callbacks immediately. */ flushTimers() { while (timers.length) timers.shift()(); } };
 }
 
 for (const state of ['normal', 'maximized', 'fullscreen']) {
@@ -145,6 +151,7 @@ for (const state of ['normal', 'maximized', 'fullscreen']) {
     await h.host.openEnterpriseTab('enterprise-workspaces'); h.flushTimers();
     assert.equal(h.host.enterpriseTab, 'enterprise-workspaces'); assert.equal(h.host.workspacesLoaded, true);
     assert.equal(h.host.enterprise3DScene, null); assert.equal(h.scene._disposed, true);
+    assert.equal(h.contentPanel.scrollTop, 0); assert.equal(h.documentNode.scrollTop, 73);
     assert.deepEqual(h.requests, []); assert.deepEqual(h.win.calls, []); assert.deepEqual(h.win.getBounds(), before);
     assert.equal(h.win.isMaximized(), state === 'maximized'); assert.equal(h.win.isFullScreen(), state === 'fullscreen');
   });
@@ -154,6 +161,7 @@ test('disposing an expanded sandbox clears page chrome while preserving native f
   const h = createHarness('fullscreen'); h.scene._isFullscreen = true;
   await h.host.openEnterpriseTab('enterprise-workspaces'); h.flushTimers();
   assert.equal(h.scene.pageFullscreen, false); assert.equal(h.win.isFullScreen(), true); assert.deepEqual(h.requests, []);
+  assert.equal(h.contentPanel.scrollTop, 0); assert.equal(h.documentNode.scrollTop, 73);
 });
 
 test('redundant exit-fullscreen IPC preserves maximized and ordinary windows', /** 验证主进程幂等边界。 / Verify the idempotent main-process boundary. */ async () => {

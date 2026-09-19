@@ -186,6 +186,9 @@ build.bat
 test*
 !tests/
 tests/*
+!tests/enterprise_approval_notices.test.cjs
+!tests/enterprise_approval_session_boundaries.test.cjs
+!tests/enterprise_approval_lifecycle.test.cjs
 !tests/test_*.py
 !tests/renderer_startup_bootstrap.test.cjs
 !tests/openxnet_skins.test.cjs
@@ -285,3 +288,5 @@ release-secrets/
 !tests/packaged_npm_resources.test.cjs
 !services/openxnet-agentteams-adapter/test/
 !services/openxnet-agentteams-adapter/test/*.test.js
+!services/feature-drift-runtime/test_*.py
+!services/feature-drift-runtime/TEST_RESULTS.md

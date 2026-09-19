@@ -69,6 +69,28 @@ test("namespaces platforms and leaves quality-gate versions unchanged", () => {
   assert.equal(profile.executionPlan.steps.find((step) => step.stepId === "repaired-dataset-gate")?.resourceId, "asset_rec/backfill");
 });
 
+/** 发布路由会推进父部署，回滚必须冻结发布后的版本。 / Route publication advances the parent deployment, so rollback must freeze its post-release version. */
+test("binds drift rollback to both actual deployment traffic transitions before approval", () => {
+  const drift = { ...scenario, scenarioType: "feature-drift" as const, deploymentUid: "deploy_risk_prod", assetUid: "asset_risk_features_prod", targetRevision: 19, failingRevision: 18, rollbackRevision: 17 };
+  const profile = getCompetitionScenarioProfile(drift);
+  const mlops = { deploy_risk_prod: "81", "deploy_risk_prod/traffic": "107", "deploy_risk_prod/feature-set": "23", "deploy_risk_prod/revisions/19": "31", experiment_risk_19: "63" };
+  const dataops = { "asset_risk_features_prod/backfill": "51" };
+  const before = structuredClone(profile);
+  const bound = bindCompetitionResourceVersions(profile, { mlops, dataops });
+  assert.equal(bound.executionPlan.steps.find((step) => step.stepId === "risk-canary-release")?.expectedResourceVersion, "107");
+  assert.equal(bound.executionPlan.steps.find((step) => step.stepId === "risk-full-promotion")?.expectedResourceVersion, "108");
+  assert.equal(bound.executionPlan.compensationSteps[0]?.expectedResourceVersion, "83");
+  assert.equal(bound.executionPlan.compensationSteps[1]?.expectedResourceVersion, "25");
+  assert.deepEqual(profile, before);
+  assert.equal(mlops.deploy_risk_prod, "81");
+  const { deploy_risk_prod: _parent, ...missingParent } = mlops;
+  assert.throws(() => bindCompetitionResourceVersions(profile, { mlops: missingParent, dataops }), /parent resource version evidence/u);
+  const mismatched = structuredClone(profile);
+  const steps = mismatched.executionPlan.steps.map((step) => step.stepId === "risk-canary-release"
+    ? { ...step, arguments: { ...step.arguments, deploymentUid: "another-deployment" } } : step);
+  assert.throws(() => bindCompetitionResourceVersions({ ...mismatched, executionPlan: { ...mismatched.executionPlan, steps } }, { mlops, dataops }), /parent resource version evidence/u);
+});
+
 /** 聚合只信任工具描述符的平台身份。 / Collection trusts the tool descriptor's platform identity only. */
 test("collects version evidence by actual platform and rejects conflicting or malformed maps", () => {
   const aiops = sample("aiops.inference.metrics.get", { same: "44" });

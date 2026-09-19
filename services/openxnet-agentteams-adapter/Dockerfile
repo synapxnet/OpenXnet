@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # 驻场上下文增量镜像 / Resident-context incremental image.
 # Author: maoyo (maintenance) | Department: 研发部 | Date: 2026-09-17
-# Version: 1.3.0-live.4 | Security Level: INTERNAL
+# Version: 1.3.0-live.5 | Security Level: INTERNAL
 # __maintainer__: maoyo | __email__: synapxnet@gmail.com
 # Original LICENSE and THIRD_PARTY_NOTICES.md remain authoritative and unchanged.
 
@@ -13,7 +13,7 @@ ARG ADAPTER_BASE_IMAGE=synapxnet/openxnet-agentteams-adapter:1.1.1-workerlease.6
 FROM ${ADAPTER_BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="OpenXnet AgentTeams Adapter" \
-      org.opencontainers.image.version="1.3.0-live.4" \
+      org.opencontainers.image.version="1.3.0-live.5" \
       org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.vendor="Synapxnet" \
       org.opencontainers.image.base.name="synapxnet/openxnet-agentteams-adapter:1.1.1-workerlease.6" \
@@ -36,6 +36,7 @@ RUN node --check src/contracts.js \
     && node --check src/access-grant-store.js \
     && node --check src/live-access-store.js \
     && node --check src/live-gateway.js \
+    && node --check src/feature-drift-preparation.js \
     && node --check src/live-tool-catalog.js \
     && node --check src/matrix-client.js \
     && node --check src/agentteams-cli.js \
@@ -47,4 +48,4 @@ RUN node --check src/contracts.js \
     && node --check src/worker-lifecycle-cli.js \
     && node --check src/worker-lifecycle-bootstrap.js \
     && node -e "require('./src/skill-bundle').validateStageSkillBundle().catch(() => process.exit(1))" \
-    && node -e "if(require('./package.json').version !== '1.3.0-live.4') process.exit(1)"
+    && node -e "if(require('./package.json').version !== '1.3.0-live.5') process.exit(1)"

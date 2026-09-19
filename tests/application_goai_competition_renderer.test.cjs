@@ -430,7 +430,7 @@ test('actual approval handler sends selected execution mode once and rejection a
     });
     host.competitionExecutionMode = selection;
     await host.decideCompetitionApproval(decision);
-    assert.deepEqual(requests, [{ approvalId: 'approval-a', decision, reason: 'Reviewed original scopes', executionMode: expected }]);
+    assert.deepEqual(requests, [{ approvalId: 'approval-a', decision, reason: 'Reviewed original scopes', executionMode: expected, expectedPlanDigest: host.approval.planDigest }]);
     assert.equal(host.competitionBusyAction, '');
     assert.deepEqual(host.calls, expected === 'automatic' ? ['memory'] : []);
   }

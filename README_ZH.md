@@ -17,9 +17,13 @@ Maintainer: maoyo | Email: synapxnet@gmail.com
 
 **[下载 Windows v1.3.0](https://github.com/synapxnet/OpenXnet/releases/download/v1.3.0/OpenXnet-Setup-1.3.0-goai-submission-win-x64.exe) · [发布说明与源码](https://github.com/synapxnet/OpenXnet/releases/tag/v1.3.0) · [English](README.md) · [SynapXnet 官网](https://openxnet.synapxnet.com/index.html)**
 
-## 先找到正确版本
+## 最新 1.3.0 源码
 
-GOAI 决赛版为 **v1.3.0**，主场景固定为“跨域特征漂移恢复”。`v1.3.0` 标签与[源码 ZIP](https://github.com/synapxnet/OpenXnet/releases/download/v1.3.0/OpenXnet-v1.3.0-source.zip)已纳入修订的 README、演示地址与部署说明。已验证的程序基线为 `c841ef841da8477fc312e27cd390aecac8ed2d7e`，保留在 `v1.3.0-code-baseline`；此后的差异仅为 README。源码、安装包与 SHA256 校验文件均在发布页。
+[v1.3.0 源码分支](https://github.com/synapxnet/OpenXnet/tree/refs/heads/v1.3.0)包含 9 月 19 日提交的真实 CPU 特征漂移执行器、驻场证据读取、企业群角色消息与 @ 选择、审批通知及补偿资源版本修复。验证范围见[本次源码更新说明](docs/V1.3.0-SOURCE-UPDATE-20260919.md)。该分支晚于已有的同名发布标签；此次源码提交没有替换旧标签或发布页中的安装包。
+
+## 已发布安装包
+
+GOAI 决赛版为 **v1.3.0**，主场景固定为“跨域特征漂移恢复”。已有 `v1.3.0` 标签与[源码 ZIP](https://github.com/synapxnet/OpenXnet/releases/download/v1.3.0/OpenXnet-v1.3.0-source.zip)已纳入修订的 README、演示地址与部署说明。该发布快照的程序基线为 `c841ef841da8477fc312e27cd390aecac8ed2d7e`，保留在 `v1.3.0-code-baseline`；该快照相对基线的差异仅为 README。源码、安装包与 SHA256 校验文件均在发布页。
 
 本次提供 Windows x64 安装包。历史上游的 0.3.8 安装包、便携版和其他系统制品不是本次 GOAI 交付，请勿用它们复现 v1.3.0。当前发布页列出已验证范围和已知限制。
 

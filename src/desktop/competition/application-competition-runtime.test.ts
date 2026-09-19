@@ -32,6 +32,7 @@ import type {
 import { getCompetitionScenarioProfile } from "./competition-scenario-registry";
 import { getCompetitionToolDescriptor } from "./competition-tool-registry";
 import { resolveIndependentVerification } from "./competition-verification";
+import { parseDecideApplicationCompetitionApprovalRequest } from "../contracts/application-competition-runtime";
 
 /** 创建完整竞赛演示请求；输入 Workspace 和操作者，返回固定跨域场景。 */
 function createIncidentRequest(workspaceId = "ws_goai_demo", actorId = "incident-commander") {
@@ -955,6 +956,117 @@ test("competition runtime records AgentTeams degradation and blocks false builti
   }
 });
 
+/** 新摘要字段精确解析且不削弱旧请求的边界。 / Parse the reviewed digest exactly while preserving legacy request boundaries. */
+test("approval decision contract accepts bounded reviewed digests and rejects malformed or extra fields", () => {
+  const legacy = { approvalId: "approval-contract", actorId: "human-reviewer", decision: "APPROVED", reason: "Reviewed" };
+  assert.deepEqual(parseDecideApplicationCompetitionApprovalRequest(legacy), { ...legacy, executionMode: "step" });
+  const expectedPlanDigest = "a".repeat(64);
+  assert.equal(parseDecideApplicationCompetitionApprovalRequest({ ...legacy, expectedPlanDigest }).expectedPlanDigest, expectedPlanDigest);
+  assert.equal(parseDecideApplicationCompetitionApprovalRequest({ ...legacy, executionMode: "automatic", expectedPlanDigest }).executionMode, "automatic");
+  for (const invalid of ["", "a".repeat(63), "A".repeat(64), "g".repeat(64), ` ${expectedPlanDigest}`, null, undefined, 7]) {
+    assert.throws(() => parseDecideApplicationCompetitionApprovalRequest({ ...legacy, expectedPlanDigest: invalid }), TypeError);
+  }
+  assert.throws(() => parseDecideApplicationCompetitionApprovalRequest({ ...legacy, expectedPlanDigest, workspaceId: "forged-workspace" }), TypeError);
+});
+
+/** 旧运行的待批记录不能通过批准或拒绝改变新的运行。 / Neither approving nor rejecting an old pending approval can change the replacement run. */
+test("replaced-run pending approvals cannot approve or reject the active run", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-stale-approval-"));
+  try {
+    const runtime = createRuntime(directory);
+    const created = await runtime.createIncident(createIncidentRequest());
+    const request = { incidentId: created.incidentId, actorId: "incident-commander", teamRuntime: "builtin" };
+    const oldRun = await runtime.runInvestigation(request);
+    const storedPath = path.join(directory, "competition", "control-plane.v1.json");
+    const failed = JSON.parse(await readFile(storedPath, "utf8"));
+    // 模拟运行结束而历史审批仍未决的持久化状态，再通过正式入口重试。 / Simulate a terminated run retaining its pending approval, then retry through the real entry point.
+    failed.incidents[0].status = "FAILED";
+    failed.traces[0].status = "FAILED";
+    await writeFile(storedPath, JSON.stringify(failed));
+    const replacement = await runtime.runInvestigation(request);
+    assert.notEqual(replacement.approvalId, oldRun.approvalId);
+    const before = await readFile(storedPath, "utf8");
+    for (const decision of ["APPROVED", "REJECTED"]) {
+      await assert.rejects(runtime.decideApproval({ approvalId: oldRun.approvalId, actorId: "human-reviewer", decision, reason: "Stale review" }),
+        (error: unknown) => hasRuntimeCode(error, "APPROVAL_SCOPE_MISMATCH"));
+      assert.equal(await readFile(storedPath, "utf8"), before, `Old ${decision} must not mutate the active run`);
+    }
+    const currentApproval = replacement.snapshot.approvals.find((item) => item.approvalId === replacement.approvalId)!;
+    const accepted = await runtime.decideApproval({ approvalId: currentApproval.approvalId, actorId: "human-reviewer", decision: "APPROVED", reason: "Current plan reviewed", executionMode: "step", expectedPlanDigest: currentApproval.planDigest });
+    assert.equal(accepted.snapshot.approvals.find((item) => item.approvalId === oldRun.approvalId)?.status, "PENDING");
+    assert.equal(accepted.snapshot.approvals.find((item) => item.approvalId === currentApproval.approvalId)?.status, "APPROVED");
+    assert.equal(accepted.snapshot.actions.length, 0, "Only approval is recorded in step mode");
+    assert.equal(accepted.snapshot.invocations.length, replacement.snapshot.invocations.length);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+/** 每种身份、状态及计划失配都在同一事务中失败且不写入状态。 / Reject every scope, state and plan mismatch atomically without changing persisted state. */
+test("approval decisions reject changed scopes and plans without changing current state", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-approval-scope-"));
+  try {
+    const runtime = createRuntime(directory);
+    const created = await runtime.createIncident(createIncidentRequest());
+    const investigated = await runtime.runInvestigation({ incidentId: created.incidentId, actorId: "incident-commander", teamRuntime: "builtin" });
+    const storedPath = path.join(directory, "competition", "control-plane.v1.json");
+    const original = await readFile(storedPath, "utf8");
+    for (const variant of ["active-approval", "active-trace", "workspace", "trace-workspace", "trace-incident", "missing-trace", "incident-closed", "trace-closed", "action-started", "plan-id", "primary-tool", "primary-resource", "target-revision", "resource-version", "scope-arguments", "scope-compensation", "scope-order", "plan-digest", "arguments-digest", "scenario-changed", "reviewed-digest"]) {
+      const stored = JSON.parse(original);
+      const approval = stored.approvals[0];
+      if (variant === "active-approval") stored.incidents[0].activeApprovalId = "approval-replacement";
+      if (variant === "active-trace") stored.incidents[0].activeTraceId = "trace-replacement";
+      if (variant === "workspace") approval.workspaceId = "foreign-workspace";
+      if (variant === "trace-workspace") stored.traces[0].workspaceId = "foreign-workspace";
+      if (variant === "trace-incident") stored.traces[0].incidentId = "foreign-incident";
+      if (variant === "missing-trace") stored.traces = [];
+      if (variant === "incident-closed") stored.incidents[0].status = "FAILED";
+      if (variant === "trace-closed") stored.traces[0].status = "FAILED";
+      if (variant === "action-started") stored.incidents[0].activeActionId = "action-running";
+      if (variant === "plan-id") approval.planId = "replacement-plan";
+      if (variant === "primary-tool") approval.toolName = "mlops.deployment.get";
+      if (variant === "primary-resource") approval.resourceId = "replacement-resource";
+      if (variant === "target-revision") approval.targetRevision += 1;
+      if (variant === "resource-version") approval.expectedResourceVersion = "999";
+      if (variant === "scope-arguments") approval.scopes[0].argumentsDigest = "f".repeat(64);
+      if (variant === "scope-compensation") approval.scopes[0].compensation = !approval.scopes[0].compensation;
+      if (variant === "scope-order") approval.scopes.reverse();
+      if (variant === "plan-digest") approval.planDigest = "f".repeat(64);
+      if (variant === "arguments-digest") approval.argumentsDigest = "f".repeat(64);
+      if (variant === "scenario-changed") stored.incidents[0].scenario.targetRevision += 1;
+      const changed = JSON.stringify(stored);
+      await writeFile(storedPath, changed);
+      for (const decision of ["APPROVED", "REJECTED"]) {
+        await assert.rejects(runtime.decideApproval({ approvalId: investigated.approvalId, actorId: "human-reviewer", decision, reason: "Review current plan",
+          ...(variant === "reviewed-digest" ? { expectedPlanDigest: "f".repeat(64) } : {}) }),
+        (error: unknown) => hasRuntimeCode(error, "APPROVAL_SCOPE_MISMATCH"), `${variant}: ${decision}`);
+        assert.equal(await readFile(storedPath, "utf8"), changed, `${variant}: ${decision} must leave all state intact`);
+      }
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+/** 并发提交只能有一个决定，后一请求不能覆盖或触发执行。 / Concurrent submissions produce one decision; the loser cannot overwrite it or trigger execution. */
+test("concurrent approval decisions are serialized and keep step mode free of execution", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-approval-race-"));
+  try {
+    const runtime = createRuntime(directory);
+    const created = await runtime.createIncident(createIncidentRequest());
+    const investigated = await runtime.runInvestigation({ incidentId: created.incidentId, actorId: "incident-commander", teamRuntime: "builtin" });
+    const request = { approvalId: investigated.approvalId, actorId: "human-reviewer", reason: "Reviewed plan", expectedPlanDigest: investigated.snapshot.approvals[0]!.planDigest };
+    const results = await Promise.allSettled([
+      runtime.decideApproval({ ...request, decision: "APPROVED" }),
+      runtime.decideApproval({ ...request, decision: "REJECTED" }),
+    ]);
+    assert.equal(results[0]?.status, "fulfilled");
+    const rejected = results[1];
+    assert.equal(rejected?.status, "rejected");
+    if (rejected?.status === "rejected") assert.equal(hasRuntimeCode(rejected.reason, "APPROVAL_STATE_INVALID"), true);
+    const snapshot = await runtime.getSnapshot();
+    assert.equal(snapshot.approvals[0]?.status, "APPROVED");
+    assert.equal(snapshot.actions.length, 0);
+    assert.equal(snapshot.invocations.length, investigated.snapshot.invocations.length);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("competition runtime keeps a rejected approval closed to execution", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "openxnet-competition-rejected-"));
   try {
@@ -1190,8 +1302,14 @@ test("competition runtime persists immutable enterprise team-template role snaps
       persistResolvedIncidentMemory: async (request) => { teamMemories.push(request); },
       /** 捕获同一团队的 Skill 发布授权。 / Capture Skill publication authorization for the same team. */
       publishRetrospectiveSkill: async (request) => { teamSkillMemories.push(request); return { skillId: request.skillId }; },
-      recordAgentTeamConversation: async (_input, task) => {
-        projectedConversationStages.push(task.stage);
+      /** 群投影只能在决策落盘后读取，且一次只记录一个结构化结果。 / Chat projection must observe a persisted decision and record one structured result per stage. */
+      recordAgentConversationProjection: async (messages) => {
+        const saved = JSON.parse(await readFile(path.join(directory, "competition", "control-plane.v1.json"), "utf8"));
+        for (const message of messages) {
+          assert.equal(saved.agentDecisions.some(/** 确认消息先有持久来源。 / Confirm a persisted source precedes the message. */ (item: { decisionId: string }) => item.decisionId === message.collaboration?.decisionId), true);
+          if (message.collaboration?.kind === "result") projectedConversationStages.push(message.collaboration.stage);
+        }
+        return messages.length;
       },
       recordOperationConversation: async (event) => {
         projectedOperationEvents.push(event.eventType);

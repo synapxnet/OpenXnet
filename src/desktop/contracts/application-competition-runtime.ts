@@ -669,6 +669,8 @@ export interface DecideApplicationCompetitionApprovalRequest {
   readonly actorId: string;
   readonly reason: string;
   readonly executionMode: "step" | "automatic";
+  /** 用户实际审阅的计划摘要；旧调用可省略。 / Digest of the plan actually reviewed; optional for legacy callers. */
+  readonly expectedPlanDigest?: string;
 }
 
 /** 执行已经审批的 MLOps 回滚请求。 */
@@ -899,17 +901,22 @@ export function parseRunApplicationCompetitionInvestigationRequest(
   };
 }
 
-/** 解析审批决策；输入 IPC 未知值，返回有界决策，无效时抛出 TypeError。 */
+/** 解析审批决策并校验用户所见计划摘要；无效时抛出 TypeError。 / Parse bounded decisions and the reviewed plan digest; reject invalid input. */
 export function parseDecideApplicationCompetitionApprovalRequest(
   value: unknown,
 ): DecideApplicationCompetitionApprovalRequest {
   if (!isRecord(value)) throw new TypeError("Competition approval decision is invalid.");
   const hasExecutionMode = Object.hasOwn(value, "executionMode");
+  const hasExpectedPlanDigest = Object.hasOwn(value, "expectedPlanDigest");
   requireFields(
     value,
-    ["approvalId", "decision", "actorId", "reason", ...(hasExecutionMode ? ["executionMode"] : [])],
+    ["approvalId", "decision", "actorId", "reason", ...(hasExecutionMode ? ["executionMode"] : []),
+      ...(hasExpectedPlanDigest ? ["expectedPlanDigest"] : [])],
     "Competition approval decision",
   );
+  if (hasExpectedPlanDigest && (typeof value.expectedPlanDigest !== "string" || !/^[a-f0-9]{64}$/u.test(value.expectedPlanDigest))) {
+    throw new TypeError("Approval expected plan digest is invalid.");
+  }
   return {
     approvalId: requireText(value.approvalId, "Approval ID", 128),
     decision: requireEnum(value.decision, ["APPROVED", "REJECTED"] as const, "Approval decision"),
@@ -918,6 +925,7 @@ export function parseDecideApplicationCompetitionApprovalRequest(
     executionMode: hasExecutionMode
       ? requireEnum(value.executionMode, ["step", "automatic"] as const, "Approval execution mode")
       : "step",
+    ...(hasExpectedPlanDigest ? { expectedPlanDigest: value.expectedPlanDigest as string } : {}),
   };
 }
 

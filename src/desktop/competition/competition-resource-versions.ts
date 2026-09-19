@@ -79,7 +79,21 @@ export function bindCompetitionResourceVersions(
     const key = JSON.stringify([platform, step.resourceId]);
     const count = writes.get(key) ?? 0;
     const bound = { ...step, expectedResourceVersion: String(base + count) };
-    if (step.kind === "WRITE") writes.set(key, count + 1);
+    if (step.kind === "WRITE") {
+      writes.set(key, count + 1);
+      // 灰度和提升同时推进父部署；补偿须绑定发布后的真实版本。
+      // Canary and promotion also advance the parent deployment; compensation binds its post-release version.
+      if (step.toolName === "mlops.deployment.canary.apply" || step.toolName === "mlops.deployment.promote") {
+        const deploymentUid = step.arguments.deploymentUid;
+        if (typeof deploymentUid !== "string" || step.resourceId !== `${deploymentUid}/traffic`
+          || !Object.hasOwn(platformVersions, deploymentUid)) {
+          throw new TypeError("Deployment traffic writes require matching parent resource version evidence.");
+        }
+        versionNumber(platformVersions[deploymentUid]);
+        const parentKey = JSON.stringify([platform, deploymentUid]);
+        writes.set(parentKey, (writes.get(parentKey) ?? 0) + 1);
+      }
+    }
     return bound;
   };
   const steps = profile.executionPlan.steps.map(bindStep);

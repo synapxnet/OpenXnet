@@ -346,6 +346,21 @@ export interface ApplicationEnterpriseMessageMention {
   readonly name: string;
 }
 
+/** 已校验的 AgentTeams 来源，只包含公开运行事实。 / Verified AgentTeams provenance containing public run facts only. */
+export interface ApplicationEnterpriseAgentConversationSource {
+  readonly kind: "handoff" | "result";
+  readonly incidentId: string;
+  readonly bindingId: string;
+  readonly decisionId: string;
+  readonly stage: "INVESTIGATION_PLAN" | "INVESTIGATION_CONCLUSION" | "VERIFICATION_CONCLUSION";
+  readonly teamRole: "leader" | "worker" | "verifier";
+  readonly decision: string;
+  readonly evidenceIds: readonly string[];
+  readonly toolNames: readonly string[];
+  readonly eventId: string | null;
+  readonly outputDigest: string;
+}
+
 /** 已持久化的企业协作消息和执行轨迹。 */
 export interface ApplicationEnterpriseMessage {
   readonly id: string;
@@ -363,6 +378,7 @@ export interface ApplicationEnterpriseMessage {
   readonly operation: ApplicationNeuroSymbolicOperationEvent | null;
   readonly status: ApplicationEnterpriseMessageStatus;
   readonly createdAt: string;
+  readonly collaboration?: ApplicationEnterpriseAgentConversationSource | null;
 }
 
 /** 查询企业协作消息的范围和数量上限。 */
@@ -387,6 +403,7 @@ export interface ApplicationEnterpriseMessageListResult {
   readonly schema: typeof APPLICATION_ENTERPRISE_RUNTIME_SCHEMA;
   readonly success: true;
   readonly messages: readonly ApplicationEnterpriseMessage[];
+  readonly projectionWarning?: string;
 }
 
 /** 企业协作消息写入结果。 */

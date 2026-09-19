@@ -11,7 +11,7 @@
 # __maintainer__ = "maoyo"; __email__ = "synapxnet@gmail.com"
 FROM node:22-alpine
 WORKDIR /app
-COPY server.js storage.js ./
+COPY server.js storage.js feature-drift-reader.js ./
 COPY vendor ./vendor
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8090 RESIDENT_DATA_DIR=/data
 EXPOSE 8090

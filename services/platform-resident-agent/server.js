@@ -17,6 +17,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { createHmac, randomUUID } = require("node:crypto");
 const { createStore, readJson } = require("./storage");
+const { createFeatureDriftReader } = require("./feature-drift-reader");
 const { COMPETITION_TOOL_REGISTRY, parseCompetitionToolArguments } = require("./vendor/competition-tool-registry");
 const { HttpCompetitionToolAdapter } = require("./vendor/competition-tool-adapter");
 const VERSION = "1.3.0";
@@ -88,6 +89,7 @@ function configFromEnv(env = process.env) {
     adminUserIds: (env.RESIDENT_ADMIN_USER_IDS || "").split(",").map(value => value.trim()).filter(Boolean),
     allowHttpModel: env.RESIDENT_ALLOW_HTTP_MODEL === "true", source: env.RESIDENT_SOURCE || "LIVE-STAGING",
     allowHttpTools: env.RESIDENT_ALLOW_HTTP_TOOLS === "true",
+    featureDriftUrl: env.RESIDENT_FEATURE_DRIFT_URL || "", featureDriftTokenFile: env.RESIDENT_FEATURE_DRIFT_TOKEN_FILE || "",
     modelTimeoutMs: 120000,
   };
 }
@@ -110,6 +112,7 @@ async function createResidentService(config, dependencies = {}) {
   for (const value of config.workspaceIds) text(value, "workspaceId", 128);
   if (!config.userInfoUrl) throw new Error("RESIDENT_USER_INFO_URL is required.");
   const request = dependencies.fetch || fetch;
+  const featureDriftReader = await createFeatureDriftReader(config, dependencies);
   const store = await createStore(config.directory, config.keyFile, config.platform);
   let model = await store.readModel();
   if (!model && config.bootstrapFile) {
@@ -295,6 +298,16 @@ async function createResidentService(config, dependencies = {}) {
     if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { status: "ALIVE", agentId, platform: config.platform, agentVersion: VERSION, contractVersion: "finals-v1.3.0" });
     if (!url.pathname.startsWith("/api/resident/v1/")) throw fail("NOT_FOUND", "Endpoint not found.", 404);
     const user = await authenticate(req);
+    if (url.pathname === "/api/resident/v1/feature-drift/runs" || url.pathname.startsWith("/api/resident/v1/feature-drift/runs/")) {
+      requireAdmin(user);
+      if (req.method !== "GET") throw fail("METHOD_NOT_ALLOWED", "真实执行证据入口只允许读取。", 405);
+      if ([...url.searchParams.keys()].some(key => key !== "workspaceId")) throw fail("INVALID_INPUT", "不支持的证据查询参数。", 400);
+      const workspaceId = url.searchParams.get("workspaceId") || undefined;
+      const suffix = url.pathname.slice("/api/resident/v1/feature-drift/runs".length);
+      if (!suffix) return send(res, 200, await featureDriftReader.list(workspaceId));
+      if (!/^\/[A-Za-z0-9_-]{1,160}$/.test(suffix) || !workspaceId) throw fail("INVALID_INPUT", "请选择完整的工作空间和事件。", 400);
+      return send(res, 200, await featureDriftReader.detail(workspaceId, suffix.slice(1)));
+    }
     if (req.method === "GET" && url.pathname === "/api/resident/v1/status") return send(res, 200, { agentId, platform: config.platform, agentVersion: VERSION, contractVersion: "finals-v1.3.0", source: config.source, status: "ONLINE", observedAt: now(), user: { userId: user.id, canConfigure: user.admin, canUseTools: toolsEnabled(user, config.workspaceIds[0]) }, modelConfigured: Boolean(model), model: publicModel(), workspaceIds: user.admin ? config.workspaceIds : [], toolsConfigured: Boolean(config.toolBaseUrl && secret && config.workspaceIds.length), allowedTools: toolsEnabled(user, config.workspaceIds[0]) ? descriptors.map(item => ({ name: item.name, title: item.title, riskLevel: item.riskLevel })) : [], handoffAvailable: false, handoffStatus: "PENDING_INTEGRATION" });
     if (url.pathname === "/api/resident/v1/model") {
       requireAdmin(user);

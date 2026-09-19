@@ -251,6 +251,7 @@
   <link rel="stylesheet" href="css/openxnet-workbench-surfaces.css?v=20260908-ui-actions1">
   <link rel="stylesheet" href="css/enterprise-sandbox-studio.css?v=20260908-skins1">
   <link rel="stylesheet" href="css/openxnet-enterprise-chat-experience.css?v=20260914-conversation1">
+  <link rel="stylesheet" href="css/openxnet-enterprise-approval-notices.css?v=20260918-approvals1">
   <link rel="stylesheet" href="css/enterprise-spatial-experience.css?v=20260914-spatial1">
   <link rel="stylesheet" href="css/openxnet-skin-surfaces.css?v=20260908-ui-actions1">
   <link rel="stylesheet" href="css/openxnet-ops-workspaces.css?v=20260908-ui-actions1">
@@ -1919,6 +1920,40 @@ function updateElement(el, rawMarkdown, formatFn) {
           <el-button @click="showKernelConsoleDialog = false">{{ t('confirm') || 'OK' }}</el-button>
         </span>
       </template>
+    </el-dialog>
+
+    <button v-if="canUseEnterprise && getEnterpriseApprovalNoticeCount() > 0 && !enterpriseApprovalNoticeVisible" type="button" class="enterprise-approval-entry" @click="openEnterpriseApprovalNotice()" :aria-label="(isCurrentLanguageZh() ? '待人工审批：' : 'Pending human approvals: ') + getEnterpriseApprovalNoticeCount()">
+      <i class="fa-solid fa-user-check" aria-hidden="true"></i><span>{{ isCurrentLanguageZh() ? '待人工审批' : 'Approval needed' }}</span><strong aria-live="polite">{{ getEnterpriseApprovalNoticeCount() }}</strong>
+    </button>
+    <el-dialog v-model="enterpriseApprovalNoticeVisible" :title="isCurrentLanguageZh() ? '需要你的审批' : 'Your approval is needed'" width="min(540px, calc(100vw - 28px))" top="12vh" class="enterprise-approval-dialog" :append-to-body="true" :close-on-click-modal="false" :close-on-press-escape="!enterpriseApprovalNoticeBusy" :show-close="!enterpriseApprovalNoticeBusy" :before-close="beforeCloseEnterpriseApprovalNotice" destroy-on-close>
+      <template #header="{ titleId }">
+        <h2 :id="titleId" class="enterprise-approval-title">{{ isCurrentLanguageZh() ? '需要你的审批' : 'Your approval is needed' }}</h2>
+        <nav v-if="enterpriseApprovalNoticeVisible && enterpriseApprovalNoticeTabs.length > 1" class="enterprise-approval-tabs" :aria-label="isCurrentLanguageZh() ? '审批便签' : 'Approval notes'">
+          <button v-for="(item, index) in enterpriseApprovalNoticeTabs" :key="item.approvalId" type="button" class="enterprise-approval-tab" :class="{ 'is-current': item.current, 'is-settled': item.status !== 'PENDING' }" :disabled="Boolean(enterpriseApprovalNoticeBusy)" :aria-pressed="item.current" :title="item.workspaceName + ' · ' + item.title" :aria-label="item.workspaceName + ' · ' + item.title" @click="selectEnterpriseApprovalNotice(item.approvalId)">
+            <span class="enterprise-approval-tab-number">{{ index + 1 }}</span><span class="enterprise-approval-tab-title">{{ item.title }}</span><small>{{ item.workspaceName }}</small><span class="enterprise-approval-tab-state">{{ item.status === 'APPROVED' ? (isCurrentLanguageZh() ? '已批准' : 'Approved') : item.status === 'REJECTED' ? (isCurrentLanguageZh() ? '已拒绝' : 'Rejected') : item.stale ? (isCurrentLanguageZh() ? '计划已变化' : 'Plan changed') : item.current ? (isCurrentLanguageZh() ? '正在查看' : 'Reviewing') : (isCurrentLanguageZh() ? '待审批' : 'Pending') }}</span>
+          </button>
+        </nav>
+      </template>
+      <div v-if="enterpriseApprovalNoticeView" class="enterprise-approval-content" :aria-busy="Boolean(enterpriseApprovalNoticeBusy)">
+        <div class="enterprise-approval-context"><span><i class="fa-solid fa-building" aria-hidden="true"></i>{{ enterpriseApprovalNoticeView.workspaceName }}</span><span>{{ enterpriseApprovalNoticeView.sourceLabel }}</span><span v-if="getEnterpriseApprovalNoticeCount() > 1">{{ getEnterpriseApprovalNoticeCount() }} {{ isCurrentLanguageZh() ? '项等待处理' : 'requests pending' }}</span></div>
+        <h2>{{ enterpriseApprovalNoticeView.title }}</h2>
+        <p class="enterprise-approval-summary">{{ enterpriseApprovalNoticeView.summary }}</p>
+        <div v-if="enterpriseApprovalNoticeOutcome" class="enterprise-approval-feedback is-complete" role="status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>{{ enterpriseApprovalNoticeOutcomeRecovered ? (enterpriseApprovalNoticeOutcome === 'APPROVED' ? (isCurrentLanguageZh() ? '该计划已批准。' : 'This plan has been approved.') : (isCurrentLanguageZh() ? '该计划已拒绝。' : 'This plan has been rejected.')) : (enterpriseApprovalNoticeOutcome === 'APPROVED' ? (isCurrentLanguageZh() ? '你的批准决定已记录。' : 'Your approval has been recorded.') : (isCurrentLanguageZh() ? '你的拒绝决定已记录。' : 'Your rejection has been recorded.')) }}</span></div>
+        <div v-else-if="enterpriseApprovalNoticeStale && !enterpriseApprovalNoticeError" class="enterprise-approval-feedback" role="alert"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>{{ isCurrentLanguageZh() ? '这项审批已处理或计划已变化，请关闭后查看当前请求。' : 'This request was handled or its plan changed. Close it to review the current request.' }}</span></div>
+        <div v-if="enterpriseApprovalNoticeError" class="enterprise-approval-feedback is-error" role="alert">{{ enterpriseApprovalNoticeError }}</div>
+        <details class="enterprise-approval-scroll">
+          <summary class="enterprise-approval-section-heading"><span>{{ isCurrentLanguageZh() ? '查看操作与补偿范围' : 'Review changes and compensation' }}</span><span>{{ enterpriseApprovalNoticeView.scopes.length }} {{ isCurrentLanguageZh() ? '个步骤' : 'steps' }} <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span></summary>
+          <ol class="enterprise-approval-steps">
+            <li v-for="(scope, index) in enterpriseApprovalNoticeView.scopes" :key="scope.stepId + ':' + index"><span class="enterprise-approval-step-number">{{ index + 1 }}</span><div><strong>{{ scope.title || scope.toolName }}</strong><p>{{ scope.resourceId }}</p><small v-if="scope.compensation"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>{{ isCurrentLanguageZh() ? '失败时执行的补偿' : 'Compensation if recovery fails' }}</small></div></li>
+          </ol>
+          <details class="enterprise-approval-evidence"><summary>{{ isCurrentLanguageZh() ? '查看版本、参数摘要与追踪依据' : 'Review versions, parameter digests and provenance' }}</summary><dl><div><dt>{{ isCurrentLanguageZh() ? '计划' : 'Plan' }}</dt><dd>{{ enterpriseApprovalNoticeView.planId }}</dd></div><div><dt>{{ isCurrentLanguageZh() ? '计划摘要' : 'Plan digest' }}</dt><dd>{{ enterpriseApprovalNoticeView.planDigest }}</dd></div><div><dt>{{ isCurrentLanguageZh() ? '审批' : 'Approval' }}</dt><dd>{{ enterpriseApprovalNoticeView.approvalId }}</dd></div><div><dt>{{ isCurrentLanguageZh() ? '运行追踪' : 'Run trace' }}</dt><dd>{{ enterpriseApprovalNoticeView.traceId }}</dd></div><div><dt>{{ isCurrentLanguageZh() ? '申请时间' : 'Requested at' }}</dt><dd>{{ enterpriseApprovalNoticeView.requestedAt }}</dd></div></dl><div v-for="(scope, index) in enterpriseApprovalNoticeView.scopes" :key="'scope-detail:' + index" class="enterprise-approval-scope-detail"><strong>{{ scope.title || scope.toolName }}</strong><dl><div><dt>{{ isCurrentLanguageZh() ? "调用能力" : "Tool" }}</dt><dd>{{ scope.toolName }}</dd></div><div><dt>{{ isCurrentLanguageZh() ? "操作对象" : "Target" }}</dt><dd>{{ scope.resourceId }}</dd></div><div><dt>{{ isCurrentLanguageZh() ? '资源版本' : 'Resource version' }}</dt><dd>{{ scope.expectedResourceVersion }}</dd></div><div><dt>{{ isCurrentLanguageZh() ? '目标修订' : 'Target revision' }}</dt><dd>{{ scope.targetRevision }}</dd></div><div><dt>{{ isCurrentLanguageZh() ? '参数摘要' : 'Parameter digest' }}</dt><dd>{{ scope.argumentsDigest }}</dd></div></dl></div></details>
+        </details>
+        <template v-if="!enterpriseApprovalNoticeStale && !enterpriseApprovalNoticeOutcome">
+          <details class="enterprise-approval-note"><summary>{{ isCurrentLanguageZh() ? '添加审批意见（选填）' : 'Add a decision note (optional)' }}</summary><label class="enterprise-approval-reason" for="enterprise-approval-reason">{{ isCurrentLanguageZh() ? '审批意见' : 'Decision note' }}<textarea id="enterprise-approval-reason" v-model="enterpriseApprovalNoticeReason" rows="2" maxlength="2048" :disabled="Boolean(enterpriseApprovalNoticeBusy)" :placeholder="isCurrentLanguageZh() ? '补充你的决定依据或限制条件' : 'Add your rationale or constraints'"></textarea></label></details>
+        </template>
+        <p v-if="enterpriseApprovalNoticeBusy" class="enterprise-approval-submitting" role="status"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>{{ enterpriseApprovalNoticeExecutionMode === 'automatic' ? (isCurrentLanguageZh() ? '正在提交决定并等待受控流程返回…' : 'Submitting your decision and awaiting the governed workflow…') : (isCurrentLanguageZh() ? '正在核对计划并提交决定…' : 'Checking the plan and submitting your decision…') }}</p>
+      </div>
+      <template #footer><fieldset v-if="!enterpriseApprovalNoticeStale && !enterpriseApprovalNoticeOutcome" class="enterprise-approval-mode" :disabled="Boolean(enterpriseApprovalNoticeBusy)"><legend>{{ isCurrentLanguageZh() ? '批准之后' : 'After approval' }}</legend><label :class="{ 'is-selected': enterpriseApprovalNoticeExecutionMode === 'step' }"><input type="radio" v-model="enterpriseApprovalNoticeExecutionMode" value="step" name="enterprise-approval-execution-mode"><span><strong>{{ isCurrentLanguageZh() ? '仅批准' : 'Approve only' }}</strong><small>{{ isCurrentLanguageZh() ? '执行前暂停' : 'Pause before execution' }}</small></span></label><label :class="{ 'is-selected': enterpriseApprovalNoticeExecutionMode === 'automatic' }"><input type="radio" v-model="enterpriseApprovalNoticeExecutionMode" value="automatic" name="enterprise-approval-execution-mode"><span><strong>{{ isCurrentLanguageZh() ? '批准并自动执行' : 'Approve and execute' }}</strong><small>{{ isCurrentLanguageZh() ? '执行、验证与失败补偿' : 'Execute, verify and compensate' }}</small></span></label></fieldset><div class="enterprise-approval-actions"><button type="button" class="ox-btn ox-btn--secondary" :disabled="Boolean(enterpriseApprovalNoticeBusy)" @click="closeEnterpriseApprovalNotice()">{{ enterpriseApprovalNoticeOutcome || enterpriseApprovalNoticeStale ? (isCurrentLanguageZh() ? '关闭' : 'Close') : (isCurrentLanguageZh() ? '稍后处理' : 'Later') }}</button><template v-if="!enterpriseApprovalNoticeStale && !enterpriseApprovalNoticeOutcome"><button type="button" class="ox-btn ox-btn--secondary enterprise-approval-reject" :disabled="Boolean(enterpriseApprovalNoticeBusy) || !enterpriseApprovalNoticeView" @click="submitEnterpriseApprovalNotice('REJECTED')">{{ isCurrentLanguageZh() ? '拒绝' : 'Reject' }}</button><button type="button" class="ox-btn ox-btn--primary" :disabled="Boolean(enterpriseApprovalNoticeBusy) || !enterpriseApprovalNoticeView" @click="submitEnterpriseApprovalNotice('APPROVED')"><i class="fa-solid fa-check" aria-hidden="true"></i>{{ enterpriseApprovalNoticeExecutionMode === 'automatic' ? (isCurrentLanguageZh() ? '批准并自动执行' : 'Approve and execute') : (isCurrentLanguageZh() ? '批准，暂不执行' : 'Approve without executing') }}</button></template></div></template>
     </el-dialog>
 
     <el-dialog
@@ -6465,7 +6500,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <div v-if="isPttRecording" class="recording-wave">
                             <span></span><span></span><span></span><span></span><span></span>
                           </div>
-                          
+
                           <!-- 文字提示 (国际化) -->
                           <span class="ptt-text">
                             {{ isPttRecording ? t('releaseToSend') : (isProcessingPtt ? t('converting') : t('holdToTalk')) }}
@@ -10617,7 +10652,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                               :placeholder="t('paramValue')"
                               @input="autoSaveSettings"
                             ></el-input>
-                          
+
                             <el-input-number
                               v-if="param.type === 'integer'"
                               v-model="param.value"
@@ -18587,6 +18622,10 @@ function updateElement(el, rawMarkdown, formatFn) {
                         <span>{{ enterpriseChatActionError || enterpriseChatLoadError }}</span>
                         <button v-if="enterpriseChatLoadError" type="button" :disabled="enterpriseChatLoading" @click="loadEnterpriseMessages()">{{ enterpriseChatText('重新读取', 'Reload') }}</button>
                       </div>
+                      <div v-if="enterpriseChatProjectionWarning" class="enterprise-chat-error enterprise-chat-projection-warning" role="status">
+                        <span>{{ enterpriseChatProjectionWarning }}</span>
+                        <button type="button" :disabled="enterpriseChatLoading" @click="loadEnterpriseMessages()">{{ enterpriseChatText('重新同步协作记录', 'Resync collaboration') }}</button>
+                      </div>
                       <div v-if="enterpriseChatNavigationOpen" class="enterprise-chat-navigation" :aria-label="enterpriseChatText('会话消息导航', 'Conversation navigation')">
                         <button v-for="entry in getEnterpriseMessageNavigation()" :key="'message-nav-' + entry.id" type="button" :class="{ 'is-active': enterpriseChatActiveMessageId === entry.id }" @click="jumpToEnterpriseMessage(entry.id)"><strong>{{ entry.name }}</strong><span>{{ entry.label }}</span></button>
                         <span v-if="!getEnterpriseMessageNavigation().length">{{ enterpriseChatText('暂无可定位的消息', 'No messages to navigate') }}</span>
@@ -18636,19 +18675,40 @@ function updateElement(el, rawMarkdown, formatFn) {
                         >
                           <div class="enterprise-sandbox-chat-message__avatar">
                             <img v-if="getEnterpriseMessageIdentity(message).image" :src="getEnterpriseMessageIdentity(message).image" alt="" @error="markEnterpriseAvatarFailed(message)" />
+                            <i v-else-if="getEnterpriseMessageIdentity(message).icon" :class="getEnterpriseMessageIdentity(message).icon" aria-hidden="true"></i>
                             <span v-else>{{ getEnterpriseMessageIdentity(message).text }}</span>
                           </div>
                           <div class="enterprise-sandbox-chat-message__main">
                             <div class="enterprise-sandbox-chat-message__meta">
                               <strong>{{ message.senderName }}</strong>
                               <span class="enterprise-sandbox-chat-message__role">{{ getEnterpriseMessageSenderLabel(message) }}</span>
-                              <span v-if="message.status === 'failed'" class="enterprise-chat-message-failed">{{ enterpriseChatText('发送失败', 'Delivery failed') }}</span>
+                              <span v-if="getEnterpriseMessageDeliveryFailure(message)" class="enterprise-chat-message-failed">{{ enterpriseChatText('发送失败', 'Delivery failed') }}</span>
                               <time>{{ formatEnterpriseMessageTime(message.createdAt) }}</time>
                             </div>
                             <div v-if="message.mentions && message.mentions.length" class="enterprise-sandbox-chat-message__mentions">
                               <span v-for="mention in message.mentions" :key="message.id + '-' + mention.roleCardId">@{{ mention.name }}</span>
                             </div>
-                            <div v-if="!message.operation" class="enterprise-sandbox-chat-message__bubble">{{ message.content }}</div>
+                            <template v-if="!message.operation">
+                              <div class="enterprise-sandbox-chat-message__bubble">{{ message.content }}</div>
+                              <div v-if="getEnterpriseCollaborationSource(message)" class="enterprise-chat-collaboration-source">
+                                <button type="button" class="enterprise-chat-source-toggle" :aria-expanded="String(enterpriseChatDetailId === message.id)" @click="toggleEnterpriseMessageDetails(message)">
+                                  <i :class="message.collaboration.kind === 'handoff' ? 'fa-solid fa-share-nodes' : 'fa-regular fa-file-lines'"></i>
+                                  <span>{{ getEnterpriseCollaborationSource(message).label }}</span>
+                                  <span>{{ enterpriseChatText('查看依据', 'View source') }}</span>
+                                  <i :class="enterpriseChatDetailId === message.id ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
+                                </button>
+                                <dl v-if="enterpriseChatDetailId === message.id" class="enterprise-chat-source-details">
+                                  <div><dt>{{ enterpriseChatText('阶段', 'Stage') }}</dt><dd>{{ getEnterpriseCollaborationSource(message).stage }}</dd></div>
+                                  <div><dt>{{ enterpriseChatText('已记录决策', 'Recorded decision') }}</dt><dd>{{ message.collaboration.decision || '—' }}</dd></div>
+                                  <div><dt>{{ enterpriseChatText('证据引用', 'Evidence references') }}</dt><dd>{{ (message.collaboration.evidenceIds || []).join(' · ') || enterpriseChatText('暂无引用', 'No references') }}</dd></div>
+                                  <div><dt>{{ enterpriseChatText('请求工具', 'Requested tools') }}</dt><dd>{{ (message.collaboration.toolNames || []).join(' · ') || enterpriseChatText('暂无请求', 'No requests') }}</dd></div>
+                                  <div><dt>{{ enterpriseChatText('事件 / 运行', 'Incident / Run') }}</dt><dd>{{ message.collaboration.incidentId }} / {{ message.taskId || '—' }}</dd></div>
+                                  <div><dt>{{ enterpriseChatText('追踪关联', 'Trace reference') }}</dt><dd>{{ message.traceId || '—' }}</dd></div>
+                                  <div><dt>{{ enterpriseChatText('来源记录', 'Source record') }}</dt><dd>{{ message.collaboration.decisionId }}<template v-if="message.collaboration.eventId"> · {{ message.collaboration.eventId }}</template></dd></div>
+                                  <div><dt>{{ enterpriseChatText('输出摘要校验', 'Output digest') }}</dt><dd>{{ message.collaboration.outputDigest || '—' }}</dd></div>
+                                </dl>
+                              </div>
+                            </template>
                             <div v-else class="enterprise-chat-activity">
                               <button type="button" class="enterprise-chat-activity__summary" :aria-expanded="String(enterpriseChatDetailId === message.id)" @click="toggleEnterpriseMessageDetails(message)">
                                 <i :class="getEnterpriseOperationPhaseIcon(message.operation.phase)"></i>
@@ -18737,7 +18797,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                               </div>
                             </div>
                             </div>
-                            <div v-if="message.taskId || message.traceId" class="enterprise-sandbox-chat-message__audit">
+                            <div v-if="!message.collaboration && (message.taskId || message.traceId)" class="enterprise-sandbox-chat-message__audit">
                               <span v-if="message.taskId"><i class="fa-solid fa-list-check"></i> {{ message.taskId }}</span>
                               <span v-if="message.traceId"><i class="fa-solid fa-wave-square"></i> {{ message.traceId }}</span>
                             </div>
@@ -18784,21 +18844,78 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <span class="enterprise-chat-compose-hint">{{ enterpriseChatText('发送消息用于沟通；发起任务进入协同调查。', 'Send a message to communicate; start a task to begin investigation.') }}</span>
                         </div>
                         <div v-if="enterpriseChatRecipientIds.length" class="enterprise-sandbox-chat-input__recipients">
-                          <span
+                          <button
                             v-for="role in getEnterpriseChatAvailableStaff().filter(item => enterpriseChatRecipientIds.includes(item.id))"
                             :key="'selected-recipient-' + role.id"
-                          >@{{ role.name }}</span>
+                            type="button"
+                            class="enterprise-chat-recipient-chip"
+                            :aria-label="enterpriseChatText('取消提及 ', 'Remove mention: ') + role.name"
+                            :disabled="enterpriseChatSending || enterpriseChatTaskStarting"
+                            @click="removeEnterpriseChatRecipient(role)"
+                          ><span>@{{ role.name }}</span><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
                         </div>
+                        <el-popover
+                          :visible="isEnterpriseMentionMenuVisible()"
+                          placement="top-start"
+                          :width="380"
+                          :show-arrow="false"
+                          :offset="8"
+                          :fallback-placements="['bottom-start', 'top-end', 'bottom-end']"
+                          popper-class="enterprise-chat-mentions-popover"
+                          :persistent="false"
+                        >
+                          <template #reference>
                         <el-input
+                          ref="enterpriseChatComposer"
                           v-model="enterpriseChatInput"
                           type="textarea"
                           :autosize="{ minRows: 2, maxRows: 5 }"
-                          :placeholder="isCurrentLanguageZh() ? '向协作群发送消息' : 'Message the team'"
+                          :placeholder="enterpriseChatText('向协作群发送消息，输入 @ 选择成员', 'Message the team; type @ to mention a member')"
                           :disabled="enterpriseChatSending || enterpriseChatTaskStarting"
-                          @keydown.enter.exact="handleEnterpriseComposerEnter"
+                          :aria-expanded="String(isEnterpriseMentionMenuVisible())"
+                          aria-autocomplete="list"
+                          aria-controls="enterprise-chat-mention-list"
+                          :aria-activedescendant="isEnterpriseMentionMenuVisible() && getEnterpriseMentionCandidates().length ? 'enterprise-mention-option-' + enterpriseChatMentionIndex : undefined"
+                          @input="handleEnterpriseComposerInput"
+                          @keydown="handleEnterpriseComposerKeydown"
+                          @keyup.left="updateEnterpriseChatMentionQuery"
+                          @keyup.right="updateEnterpriseChatMentionQuery"
+                          @keyup.home="updateEnterpriseChatMentionQuery"
+                          @keyup.end="updateEnterpriseChatMentionQuery"
+                          @click="updateEnterpriseChatMentionQuery"
+                          @blur="closeEnterpriseChatMentions"
+                          @compositionstart="handleEnterpriseComposerComposition($event, true)"
+                          @compositionend="handleEnterpriseComposerComposition($event, false)"
                           class="enterprise-sandbox-chat-textarea"
                         >
                         </el-input>
+                          </template>
+                          <div class="enterprise-chat-mentions-heading"><strong>{{ enterpriseChatText('提及群成员', 'Mention a member') }}</strong><span>{{ getEnterpriseMentionCandidates().length }} {{ enterpriseChatText('位', 'members') }}</span></div>
+                          <div id="enterprise-chat-mention-list" ref="enterpriseMentionList" class="enterprise-chat-mentions-list" role="listbox" :aria-label="enterpriseChatText('当前群成员', 'Current group members')">
+                            <button
+                              v-for="(role, index) in getEnterpriseMentionCandidates()"
+                              :id="'enterprise-mention-option-' + index"
+                              :key="'mention-choice-' + role.id"
+                              type="button"
+                              role="option"
+                              tabindex="-1"
+                              :aria-selected="String(index === enterpriseChatMentionIndex)"
+                              :data-mention-index="index"
+                              class="enterprise-chat-mention-option"
+                              :class="{ 'is-active': index === enterpriseChatMentionIndex }"
+                              @mouseenter="enterpriseChatMentionIndex = index"
+                              @mousedown.prevent
+                              @click="selectEnterpriseChatMention(role)"
+                            >
+                              <span class="enterprise-chat-mention-avatar"><img v-if="getEnterpriseStaffAvatar(role)" :src="getEnterpriseStaffAvatar(role)" alt="" /><i v-else :class="role.icon || 'fa-solid fa-user-tie'" aria-hidden="true"></i></span>
+                              <span class="enterprise-chat-mention-name">{{ role.name }}</span>
+                              <i v-if="enterpriseChatRecipientIds.includes(String(role.id))" class="fa-solid fa-check enterprise-chat-mention-selected" :title="enterpriseChatText('已提及', 'Mentioned')"></i>
+                            </button>
+                            <p v-if="!getEnterpriseMentionCandidates().length" class="enterprise-chat-mentions-empty" role="status">{{ getEnterpriseMentionMembers().length ? enterpriseChatText('没有匹配的成员，请换个名字试试。', 'No matching member. Try another name.') : enterpriseChatText('当前群没有可提及成员，请先将员工分配到这个工作空间或项目。', 'No members to mention. Assign staff to this workspace or project first.') }}</p>
+                          </div>
+                          <div class="enterprise-chat-mentions-help">↑↓ {{ enterpriseChatText('选择', 'navigate') }} · Enter / Tab {{ enterpriseChatText('确认', 'select') }} · Esc {{ enterpriseChatText('关闭', 'close') }}</div>
+                        </el-popover>
+                        <p class="enterprise-chat-mention-purpose">{{ enterpriseChatText('@ 指定关注成员，发起任务启动协作流程。', '@ identifies the intended members. Start task begins the collaboration workflow.') }}</p>
                         <div class="enterprise-chat-compose-tools">
                         <button type="button" class="enterprise-chat-task-options" :title="getEnterpriseScenarioLabel(enterpriseCompetitionScenarioType)" :aria-expanded="String(enterpriseChatTaskOptionsOpen)" @click="enterpriseChatTaskOptionsOpen = !enterpriseChatTaskOptionsOpen"><i class="fa-solid fa-sliders"></i> {{ enterpriseChatText('任务设置', 'Task settings') }}</button>
                         <button
@@ -26227,6 +26344,8 @@ function updateElement(el, rawMarkdown, formatFn) {
   <script src="js/openxnet-employee-bootstrap.js?v=20260914-employee-skills1"></script>
   <script src="js/openxnet-enterprise-chat-experience.js?v=20260914-conversation1"></script>
   <script src="js/openxnet-enterprise-chat-bootstrap.js?v=20260914-conversation1"></script>
+  <script src="js/openxnet-enterprise-approval-notices.js?v=20260918-approvals1"></script>
+  <script src="js/openxnet-enterprise-approval-bootstrap.js?v=20260918-approvals1"></script>
   <script>window.openxnetStartup?.mark('legacy-state-ready');</script>
   <script src="js/renderer.js?v=20260908-skins1"></script>
   <!-- Vite surfaces and Enterprise 3D load on first menu activation. -->

@@ -17,9 +17,13 @@ Maintainer: maoyo | Email: synapxnet@gmail.com
 
 **[Download Windows v1.3.0](https://github.com/synapxnet/OpenXnet/releases/download/v1.3.0/OpenXnet-Setup-1.3.0-goai-submission-win-x64.exe) · [Release and source](https://github.com/synapxnet/OpenXnet/releases/tag/v1.3.0) · [简体中文](README_ZH.md) · [SynapXnet website](https://openxnet.synapxnet.com/index.html)**
 
-## Current GOAI release
+## Latest 1.3.0 source
 
-The GOAI Agent Infra finals release is **v1.3.0**, centered on cross-domain feature drift recovery. The `v1.3.0` tag and source archive include the corrected README, demo endpoints and setup instructions. The reviewed application code baseline is `c841ef841da8477fc312e27cd390aecac8ed2d7e`, retained as `v1.3.0-code-baseline`; changes from that baseline are README-only. The release includes the Windows x64 installer, [source archive](https://github.com/synapxnet/OpenXnet/releases/download/v1.3.0/OpenXnet-v1.3.0-source.zip), and SHA256 checksums.
+The [v1.3.0 source branch](https://github.com/synapxnet/OpenXnet/tree/refs/heads/v1.3.0) includes the September 19 update: real CPU feature-drift execution, resident evidence reads, role-specific enterprise conversations, mentions, approval notices, and corrected compensation resource versions. See [source verification](docs/V1.3.0-SOURCE-UPDATE-20260919.md). This branch is newer than the existing `v1.3.0` release tag; that tag and its downloadable binaries have not been replaced by this source submission.
+
+## Published GOAI release
+
+The GOAI Agent Infra finals release is **v1.3.0**, centered on cross-domain feature drift recovery. The existing `v1.3.0` tag and source archive include the corrected README, demo endpoints and setup instructions. Their application code baseline is `c841ef841da8477fc312e27cd390aecac8ed2d7e`, retained as `v1.3.0-code-baseline`; differences within that published snapshot are README-only. The release includes the Windows x64 installer, [source archive](https://github.com/synapxnet/OpenXnet/releases/download/v1.3.0/OpenXnet-v1.3.0-source.zip), and SHA256 checksums.
 
 Historical upstream 0.3.8 installers, portable packages, and artifacts for other operating systems are not this release. Use the release page linked above for the current downloads and verification boundaries.
 
